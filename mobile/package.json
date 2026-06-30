@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync('../noga_swimming_app.html','public/extract.html')\"",
+    "prebuild": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync('../swim_tracker.html','public/extract.html')\"",
     "build": "vite build",
     "preview": "vite preview"
   },
