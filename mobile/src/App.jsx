@@ -172,6 +172,56 @@ function Stat({ n, l }) {
     </div>
   );
 }
+
+function MiniLine({ data, color, unit, title }) {
+  const { c } = useUI();
+  if (data.length < 2) return null;
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: c.dim, fontWeight: 700, marginBottom: 4 }}>{title}</div>
+      <div style={{ height: 130 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+            <CartesianGrid stroke={c.line} vertical={false} />
+            <XAxis dataKey="label" tick={{ fill: c.dim, fontSize: 9 }} />
+            <YAxis domain={["auto", "auto"]} tick={{ fill: c.dim, fontSize: 9 }} width={32} />
+            <Tooltip contentStyle={tooltipStyle(c)} formatter={(v) => [v + " " + unit, title]} />
+            <Line type="monotone" dataKey="y" stroke={color} strokeWidth={2.5} dot={{ r: 3, fill: color }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function GrowthCard({ swimmer }) {
+  const { c, s } = useUI();
+  const toSeries = (arr) => (arr || [])
+    .filter((e) => parseDate(e.date))
+    .map((e) => ({ x: parseDate(e.date), y: +e.value, label: fmtDateShort(parseDate(e.date)) }))
+    .sort((a, b) => a.x - b.x);
+  const heights = toSeries(swimmer?.heights);
+  const weights = toSeries(swimmer?.weights);
+  if (!heights.length && !weights.length) return null;
+  const lastH = heights[heights.length - 1], lastW = weights[weights.length - 1];
+  const bmi = lastH && lastW ? +(lastW.y / ((lastH.y / 100) ** 2)).toFixed(1) : null;
+  return (
+    <>
+      <div style={s.h2}>Growth</div>
+      <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
+        {lastH && <KPI val={lastH.y + " cm"} lbl="Height" color={c.blue} />}
+        {lastW && <KPI val={lastW.y + " kg"} lbl="Weight" color={c.amber} />}
+        {bmi && <KPI val={bmi} lbl="BMI" color={c.green} />}
+      </div>
+      {(heights.length > 1 || weights.length > 1) && (
+        <Card>
+          <MiniLine data={heights} color={c.blue} unit="cm" title="Height over time" />
+          <MiniLine data={weights} color={c.amber} unit="kg" title="Weight over time" />
+        </Card>
+      )}
+    </>
+  );
+}
 const INSIGHT_COLOR = { green: "green", blue: "blue", amber: "amber", red: "red" };
 function HomeTab({ D, swimmer }) {
   const { c, s } = useUI();
@@ -204,6 +254,8 @@ function HomeTab({ D, swimmer }) {
         <KPI val={bestPoints || "—"} lbl="Best Points" color={c.green} />
         <KPI val={comps} lbl="Competitions" color={c.blue} />
       </div>
+
+      <GrowthCard swimmer={swimmer} />
 
       {ins.length > 0 && <>
         <div style={s.h2}>Insights</div>
