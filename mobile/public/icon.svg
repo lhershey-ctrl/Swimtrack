@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f3d72"/>
+      <stop offset="0.55" stop-color="#1d4ed8"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#g)"/>
+  <!-- swimmer head -->
+  <circle cx="372" cy="412" r="74" fill="#ffffff"/>
+  <!-- swimmer arm + body stroke -->
+  <path d="M286 540 q130 -52 248 -14 q96 30 208 -34" fill="none" stroke="#ffffff" stroke-width="48" stroke-linecap="round"/>
+  <!-- water waves -->
+  <path d="M150 700 q92 -72 184 0 q92 72 184 0 q92 -72 184 0 q92 72 184 0" fill="none" stroke="#ffffff" stroke-width="42" stroke-linecap="round"/>
+  <path d="M150 824 q92 -72 184 0 q92 72 184 0 q92 -72 184 0 q92 72 184 0" fill="none" stroke="#bfe3ff" stroke-width="36" stroke-linecap="round" opacity="0.85"/>
+</svg>

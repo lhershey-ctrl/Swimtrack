@@ -1430,7 +1430,7 @@ function getStroke(ev){
   if(/פרפר|butterfly|fly(?!.*medley)/i.test(ev))return'Fly';
   if(/גב|backstroke|back(?!.*stroke.*free)/i.test(ev))return'Back';
   if(/חזה|breaststroke|breast/i.test(ev))return'Breast';
-  if(/medley|im\b|משולב|שחייה/i.test(ev))return'IM';
+  if(/medley|im\b|מעורב|משולב|שחייה/i.test(ev))return'IM';
   return'Free';
 }
 function getStrokeColor(ev){return STROKE_COLORS[getStroke(ev)]||'#185FA5';}
