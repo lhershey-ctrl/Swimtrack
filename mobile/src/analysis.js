@@ -1,5 +1,5 @@
 // ── SwimTrack analysis helpers ──────────────────────────────────────
-// Ported from the desktop app (noga_swimming_app.html). All functions
+// Ported from the desktop app (swim_tracker.html). All functions
 // are pure and take `D` = the swimmer's season map:
 //   { "2024-2025": { seasonId, bests:[], results:[] }, ... }
 // (Same shape as the desktop global `D`.)

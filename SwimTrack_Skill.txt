@@ -1,7 +1,7 @@
 # SwimTrack — Noga Swimming App
 
 ## What this skill does
-Helps you use, maintain, and extend the `noga_swimming_app.html` single-file swimming analysis tool. It tracks swim times, personal bests, season progress, and physical growth for one or more swimmers using data from the Israeli swim results site **loglig.com**.
+Helps you use, maintain, and extend the `swim_tracker.html` single-file swimming analysis tool. It tracks swim times, personal bests, season progress, and physical growth for one or more swimmers using data from the Israeli swim results site **loglig.com**.
 
 ## When to trigger this skill
 - User asks how to extract swim data from LogLig
@@ -14,7 +14,7 @@ Helps you use, maintain, and extend the `noga_swimming_app.html` single-file swi
 
 ## App Overview
 
-The app is a **single HTML file** (`noga_swimming_app.html`) with no build step, no server, no dependencies except CDN scripts loaded at runtime. Open it in any browser.
+The app is a **single HTML file** (`swim_tracker.html`) with no build step, no server, no dependencies except CDN scripts loaded at runtime. Open it in any browser.
 
 **Four tabs:**
 1. **Extract Data** — set up swimmers, copy extractor code, run it on LogLig

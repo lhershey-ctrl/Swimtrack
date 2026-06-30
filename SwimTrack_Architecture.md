@@ -2,7 +2,7 @@
 
 ## Overview
 
-`noga_swimming_app.html` is a **zero-dependency, single-file** swimming analysis tool. It requires no server, no build step, and no installation. Open in any browser. All state is stored in browser `localStorage`.
+`swim_tracker.html` is a **zero-dependency, single-file** swimming analysis tool. It requires no server, no build step, and no installation. Open in any browser. All state is stored in browser `localStorage`.
 
 ---
 
@@ -21,7 +21,7 @@
 
 ## File Structure
 
-Single file: `noga_swimming_app.html` (~3000 lines)
+Single file: `swim_tracker.html` (~3000 lines)
 
 ```
 <head>
