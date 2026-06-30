@@ -12,7 +12,7 @@ import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
   computePBTimeline, getStroke, getStrokeColor, STROKE_COLORS, COLORS, extractDist,
   getAgeAt, ageGroupLabel, latest, prevSeason, STROKES, eventCatalog, eventSeries,
-  competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend,
+  competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
 } from "./analysis.js";
 
 // ════════════════════════════════════════════════════════════════════
@@ -537,6 +537,49 @@ function RecordsTab({ D }) {
 // ════════════════════════════════════════════════════════════════════
 //  SEASONS (improvement + recap)
 // ════════════════════════════════════════════════════════════════════
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+function HeatmapSection({ D }) {
+  const { c, s } = useUI();
+  const ss = seasons(D);
+  const [season, setSeason] = useState(ss[ss.length - 1]);
+  const hm = useMemo(() => eventHeatmap(D, season), [D, season]);
+  const cols = `52px repeat(${hm ? hm.dists.length : 1}, 1fr)`;
+  return (
+    <>
+      <div style={s.h2}>Event Coverage</div>
+      <PillRow label="Season" active={season} onPick={setSeason} items={ss.map((x) => ({ key: x, label: x }))} />
+      <Card>
+        {!hm || !hm.strokes.length ? <div style={{ color: c.dim }}>No event data for this season.</div> : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: cols, gap: 4, marginBottom: 4 }}>
+              <div />
+              {hm.dists.map((d) => <div key={d} style={{ textAlign: "center", fontSize: 10.5, color: c.dim, fontWeight: 700 }}>{d}m</div>)}
+            </div>
+            {hm.strokes.map((st) => (
+              <div key={st} style={{ display: "grid", gridTemplateColumns: cols, gap: 4, marginBottom: 4, alignItems: "center" }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: STROKE_COLORS[st] }}>{st}</div>
+                {hm.dists.map((d) => {
+                  const v = (hm.counts[st] && hm.counts[st][d]) || 0;
+                  const a = v ? 0.22 + 0.78 * (v / hm.max) : 0;
+                  return (
+                    <div key={d} style={{ height: 34, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center",
+                      background: v ? hexA(STROKE_COLORS[st], a) : c.card2, border: `1px solid ${c.line}`,
+                      color: v ? (a > 0.55 ? "#fff" : c.text) : c.dim, fontSize: 12.5, fontWeight: 700 }}>{v || ""}</div>
+                  );
+                })}
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: c.dim, marginTop: 8 }}>Number = swims that season · darker = more · color = stroke</div>
+          </>
+        )}
+      </Card>
+    </>
+  );
+}
+
 function SeasonsTab({ D, swimmer }) {
   const { c, s } = useUI();
   const ss = seasons(D);
@@ -549,6 +592,8 @@ function SeasonsTab({ D, swimmer }) {
 
   return (
     <div style={s.pad}>
+      <HeatmapSection D={D} />
+
       <div style={s.h2}>Improvement (From → To)</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
         <Select label="From" value={from} options={ss} onChange={setFrom} />

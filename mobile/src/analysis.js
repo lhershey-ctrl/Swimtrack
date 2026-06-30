@@ -429,3 +429,26 @@ export function pointsTrend(D, opts) {
   }
   return { points: all, byEvent, trend, events: Object.keys(byEvent).sort() };
 }
+
+// Event-coverage heat map for one season: stroke (rows) × distance (cols),
+// value = number of swims. Used to see which events were raced and how often.
+export function eventHeatmap(D, seasonKey) {
+  const s = D[seasonKey];
+  if (!s) return null;
+  const src = s.results && s.results.length ? s.results : s.bests || [];
+  const distSet = new Set();
+  const counts = {}; // stroke -> dist -> count
+  src.forEach((r) => {
+    if (!r.event || !(r.seconds > 0) || isRelay(r.event)) return;
+    const st = getStroke(r.event), d = extractDist(r.event);
+    if (!d) return;
+    distSet.add(d);
+    counts[st] = counts[st] || {};
+    counts[st][d] = (counts[st][d] || 0) + 1;
+  });
+  const dists = Array.from(distSet).sort((a, b) => a - b);
+  const strokes = STROKES.filter((st) => counts[st] && dists.some((d) => counts[st][d] > 0));
+  let max = 0;
+  strokes.forEach((st) => dists.forEach((d) => { const v = (counts[st] && counts[st][d]) || 0; if (v > max) max = v; }));
+  return { strokes, dists, counts, max };
+}
