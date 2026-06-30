@@ -432,11 +432,13 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   window.selectSwimmer=function(idx){
     activeSwimmer=idx;
     renderSwimmerSelectors();
+    if(window.refreshCloudBar)window.refreshCloudBar();
   };
 
   window.selectLoadSwimmer=function(idx){
     activeSwimmer=idx;
     renderSwimmerSelectors();
+    if(window.refreshCloudBar)window.refreshCloudBar();
     // If data already loaded, refresh banner + analysis
     if(window.D&&Object.keys(window.D).filter(function(k){return k!=='_swimmerId';}).length){
       if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
