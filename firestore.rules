@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Owners: permanent admins, hardcoded. Can always access data and
+    //    can edit the live allow-list. Add more owner emails here only. ──
+    function ownerEmails() {
+      return [
+        "lhershey@gmail.com"
+      ];
+    }
+
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email in ownerEmails();
+    }
+
+    // ── Allow-list lives in Firestore (config/access.emails) so it can be
+    //    edited from the app's Settings tab without redeploying rules. ──
+    function accessEmails() {
+      return get(/databases/$(database)/documents/config/access).data.emails;
+    }
+
+    function isAllowed() {
+      return request.auth != null && (
+        isOwner() ||
+        (
+          exists(/databases/$(database)/documents/config/access) &&
+          request.auth.token.email in accessEmails()
+        )
+      );
+    }
+
+    // Swimmer data: any allow-listed (or owner) account may read/write.
+    match /swimmers/{swimmerId} {
+      allow read, write: if isAllowed();
+    }
+
+    // The access list: everyone allowed can read it; only owners can change it.
+    match /config/access {
+      allow read: if isAllowed();
+      allow write: if isOwner();
+    }
+  }
+}
