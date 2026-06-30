@@ -483,6 +483,23 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     if(st) st.innerText+=' · New swimmer added — rename in ⚙️ Settings.';
   };
 
+  // Add-or-select a swimmer by id with a proper name (used by cloud loads so
+  // swimmers synced from another device appear in the local roster + picker).
+  window.upsertSwimmer=function(pid,name){
+    pid=String(pid);
+    for(var i=0;i<SWIMMERS.length;i++){
+      if(String(SWIMMERS[i].id)===pid){
+        if(name&&(!SWIMMERS[i].name||/^Swimmer /.test(SWIMMERS[i].name)))SWIMMERS[i].name=name;
+        saveSettings();window.selectSwimmer(i);return i;
+      }
+    }
+    SWIMMERS.push({name:name||('Swimmer '+pid),id:pid,seasonIds:[],heights:[],weights:[],birthdate:''});
+    saveSettings();
+    renderSwimmerMgmt();
+    window.selectSwimmer(SWIMMERS.length-1);
+    return SWIMMERS.length-1;
+  };
+
     // Season management (immediate save)
     window.addSwimmerSeason=function(i,type){
       var sw=SWIMMERS[i];if(!sw)return;
@@ -3122,7 +3139,7 @@ function clearRace2(){
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc }
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -3140,6 +3157,8 @@ const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 let currentUser = null;
 let lastSyncedAt = null;
+let cloudSwimmers = []; // [{id, name}] fetched from Firestore when signed in
+function swIcon(name) { return name === "Noga" ? "🏊‍♀️ " : "🏊 "; }
 function fmtWhen(ms) {
   try { const d = new Date(ms); return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
   catch (e) { return ""; }
@@ -3175,7 +3194,15 @@ function render() {
       (loadedName ? ' · <span style="color:#0f3d72">' + loadedName + "</span>" : "") +
       (lastSyncedAt ? ' · <span style="color:#666">Last synced ' + fmtWhen(lastSyncedAt) + "</span>" : "");
     st.style.color = "#1a7a4f";
-    ac.appendChild(btn("☁ Load from cloud", () => doLoadFromCloud(), "#185FA5"));
+    if (cloudSwimmers.length) {
+      const lbl = document.createElement("span");
+      lbl.textContent = "☁ Load:";
+      lbl.style.cssText = "font-size:12px;color:#185FA5;font-weight:700;align-self:center";
+      ac.appendChild(lbl);
+      cloudSwimmers.forEach((s) => ac.appendChild(btn(swIcon(s.name) + s.name, () => doLoadFromCloud(s), "#185FA5")));
+    } else {
+      ac.appendChild(btn("☁ Load from cloud", () => doLoadFromCloud(), "#185FA5"));
+    }
     ac.appendChild(btn(loadedName ? ("☁ Sync " + loadedName) : "☁ Sync to cloud", () => doSync(), "#1D9E75"));
     ac.appendChild(btn("Sign out", () => signOut(auth), "#9aa6b5"));
   }
@@ -3187,28 +3214,50 @@ async function swimLoadFromCloud(id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-async function doLoadFromCloud() {
-  const st = statusEl();
-  const sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
-  if (!sw || !sw.id) { if (st) { st.style.color = "#c0392b"; st.textContent = "Pick a swimmer above first."; } return; }
-  if (st) { st.style.color = "#666"; st.textContent = "Loading " + sw.name + " from cloud…"; }
+// Fetch the swimmer roster from the cloud so any synced swimmer (e.g. on a
+// fresh browser) is loadable — not just the local localStorage defaults.
+async function refreshCloudSwimmers() {
   try {
-    const data = await swimLoadFromCloud(sw.id);
+    const snap = await getDocs(collection(db, "swimmers"));
+    cloudSwimmers = snap.docs
+      .map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (e) { cloudSwimmers = []; }
+  render();
+}
+
+// target optional {id, name}; defaults to the active local swimmer.
+async function doLoadFromCloud(target) {
+  const st = statusEl();
+  let id, name;
+  if (target && target.id) { id = String(target.id); name = target.name; }
+  else {
+    const sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
+    if (!sw || !sw.id) { if (st) { st.style.color = "#c0392b"; st.textContent = "Pick a swimmer above first."; } return; }
+    id = String(sw.id); name = sw.name;
+  }
+  if (st) { st.style.color = "#666"; st.textContent = "Loading " + (name || id) + " from cloud…"; }
+  try {
+    const data = await swimLoadFromCloud(id);
     const seasonsObj = data && data.seasons && typeof data.seasons === "object" ? data.seasons : null;
     const realKeys = seasonsObj ? Object.keys(seasonsObj).filter((k) => k[0] !== "_") : [];
     if (!realKeys.length) {
-      if (st) { st.style.color = "#9a6b00"; st.textContent = "No season data in the cloud for " + sw.name + " yet — extract & sync first."; }
+      if (st) { st.style.color = "#9a6b00"; st.textContent = "No season data in the cloud for " + (name || id) + " yet — extract & sync first."; }
       return;
     }
+    if (!name) name = data.name || ("Swimmer " + id);
+    // Ensure this swimmer exists in the local roster and is the active one, so
+    // the banner, picker and Sync button all reflect the right person.
+    if (window.upsertSwimmer) window.upsertSwimmer(id, name);
     // Build the global data object D directly from the cloud doc. For a
     // classic-script `var D`, window.D IS the same binding, so finalize() (a
     // hoisted global) sees what we set here.
     const fresh = {};
     realKeys.forEach((k) => { fresh[k] = seasonsObj[k]; });
-    fresh._swimmerId = String(sw.id);
-    fresh._swimmerName = sw.name;
+    fresh._swimmerId = String(id);
+    fresh._swimmerName = name;
     window.D = fresh;
-    window.__loadedSwimmerId = String(sw.id);
+    window.__loadedSwimmerId = String(id);
 
     if (typeof window.finalize === "function") {
       window.finalize([]); // cleans D, shows analysis, selects swimmer, builds charts
@@ -3224,7 +3273,7 @@ async function doLoadFromCloud() {
     if (data.updatedAt) lastSyncedAt = data.updatedAt;
     if (st) {
       st.style.color = "#1a7a4f";
-      st.textContent = "✅ Loaded " + sw.name + " — " + kept + " season(s)" + (data.updatedAt ? " · synced " + fmtWhen(data.updatedAt) : "");
+      st.textContent = "✅ Loaded " + name + " — " + kept + " season(s)" + (data.updatedAt ? " · synced " + fmtWhen(data.updatedAt) : "");
     }
   } catch (e) {
     if (st) { st.style.color = "#c0392b"; st.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Load failed: " + e.message; }
@@ -3326,7 +3375,11 @@ window.clearLoadedData = function () {
   render();
 };
 
-onAuthStateChanged(auth, (u) => { currentUser = u; window.swimUser = u; render(); });
+onAuthStateChanged(auth, (u) => {
+  currentUser = u; window.swimUser = u;
+  if (u) { refreshCloudSwimmers(); } else { cloudSwimmers = []; }
+  render();
+});
 // Re-render the sync button label when the active swimmer changes.
 window.addEventListener("focus", render);
 document.addEventListener("DOMContentLoaded", render);
