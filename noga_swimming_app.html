@@ -310,8 +310,10 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
       // Age line
       var ageLine='';
       if(sw.birthdate){
-        var age=getAgeAt(sw.birthdate,'');
-        if(age)ageLine='<span style="opacity:.8;font-size:12px">Age '+Math.floor(age)+' · '+ageGroupLabel(Math.floor(age))+'</span>';
+        var _bd=typeof parseDate==='function'?parseDate(sw.birthdate):null;
+        var swimAge=_bd?(new Date().getFullYear()-new Date(_bd).getFullYear()):null;
+        var age=swimAge||Math.floor(getAgeAt(sw.birthdate,'')||0)||null;
+        if(age)ageLine='<span style="opacity:.8;font-size:12px">Age '+age+' · '+ageGroupLabel(age)+'</span>';
       }
 
       // Season tags
@@ -1272,8 +1274,7 @@ function renderSwimmerBanner(){
     +'<div style="font-size:28px;line-height:1">'+icon+'</div>'
     +'<div style="flex:1;min-width:0">'
       +'<div style="font-size:22px;font-weight:800;letter-spacing:-.3px;line-height:1.1">'+sw.name+'</div>'
-      +'<div style="font-size:12px;opacity:.75;margin-top:3px">Player ID: '+sw.id+(sw.birthdate?(' &nbsp;·&nbsp; Born '+sw.birthdate+' &nbsp;·&nbsp; Age ~'+Math.floor(getAgeAt(sw.birthdate,''))+'  ('+ageGroupLabel(Math.floor(getAgeAt(sw.birthdate,'')))+')'):'')+'</div>'
-    +'</div>'
+      +'<div style="font-size:12px;opacity:.75;margin-top:3px">Player ID: '+sw.id+(sw.birthdate?(' &nbsp;·&nbsp; Born '+sw.birthdate+' &nbsp;·&nbsp; '+(function(){var _bbd=parseDate(sw.birthdate);var _sa=_bbd?(new Date().getFullYear()-new Date(_bbd).getFullYear()):Math.floor(getAgeAt(sw.birthdate,'')||0);return 'Age '+_sa+' · '+ageGroupLabel(_sa);}())):'')+'</div>'    +'</div>'
     +'<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">'
       +'<div style="text-align:center"><div style="font-size:20px;font-weight:700">'+ss.length+'</div>'
         +'<div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.05em">Season'+(ss.length!==1?'s':'')+'</div></div>'
@@ -1463,39 +1464,43 @@ function computePBTimeline(){
 
 var physChartInst=null;
 var _swCharts={};  // keyed by "i-h" and "i-w"
-window.showSwChart=function(divId,swimIdx,type){
+function showSwChart(divId,swimIdx,type){
   var el=document.getElementById(divId);
   if(!el)return;
   if(el.style.display==='block'){el.style.display='none';return;}
   el.style.display='block';
-  var key=swimIdx+'-'+type;
-  if(_swCharts[key])return;
-  var canvas=document.getElementById('swc-'+swimIdx+'-'+type);
-  if(!canvas)return;
-  var swimmers=window.getAllSwimmers?window.getAllSwimmers():[];
-  var sw=swimmers[swimIdx];if(!sw)return;
-  var arr=type==='h'?sw.heights:sw.weights;
-  var unit=type==='h'?'cm':'kg';
-  var color=type==='h'?'#185FA5':'#d97706';
-  if(!arr||arr.length<2)return;
-  var pts=arr.map(function(e){return{x:parseDate(e.date)||0,y:e.value};}).filter(function(p){return p.x>0;});
-  _swCharts[key]=new Chart(canvas.getContext('2d'),{
-    type:'line',
-    data:{datasets:[{label:unit,data:pts,borderColor:color,backgroundColor:color+'22',
-      borderWidth:2.5,pointRadius:5,pointHoverRadius:7,fill:true,tension:0.35}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{
-        title:function(c){return new Date(c[0].parsed.x).toLocaleDateString('he-IL');},
-        label:function(c){return ' '+c.parsed.y+unit;}
-      }}},
-      scales:{
-        x:{type:'linear',ticks:{color:'#aaa',font:{size:9},callback:function(v){var d=new Date(v);return(d.getMonth()+1)+'/'+d.getFullYear().toString().slice(2);}},grid:{color:'rgba(0,0,0,.04)'}},
-        y:{ticks:{color:color,font:{size:10},callback:function(v){return v+unit;}},grid:{color:'rgba(0,0,0,.04)'}}
+  // Use double-rAF so browser paints the div before Chart.js measures it
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+    var canvas=document.getElementById('swc-'+swimIdx+'-'+type);
+    if(!canvas)return;
+    // If a chart already lives on this canvas, nothing to rebuild
+    if(Chart.getChart(canvas))return;
+    var sw=(window.getAllSwimmers?window.getAllSwimmers():[])[swimIdx];
+    if(!sw)return;
+    var arr=type==='h'?sw.heights:sw.weights;
+    var unit=type==='h'?'cm':'kg';
+    var color=type==='h'?'#185FA5':'#d97706';
+    if(!arr||!arr.length)return;
+    var pts=arr.map(function(e){return{x:parseDate(e.date)||0,y:+e.value};}).filter(function(p){return p.x>0;});
+    if(!pts.length)return;
+    try{new Chart(canvas.getContext('2d'),{
+      type:'line',
+      data:{datasets:[{label:unit,data:pts,borderColor:color,backgroundColor:color+'22',
+        borderWidth:2.5,pointRadius:5,pointHoverRadius:7,fill:true,tension:0.35}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{
+          title:function(c){return new Date(c[0].parsed.x).toLocaleDateString('he-IL');},
+          label:function(c){return ' '+c.parsed.y+unit;}
+        }}},
+        scales:{
+          x:{type:'linear',ticks:{color:'#aaa',font:{size:9},callback:function(v){var d=new Date(v);return(d.getMonth()+1)+'/'+d.getFullYear().toString().slice(2);}},grid:{color:'rgba(0,0,0,.04)'}},
+          y:{ticks:{color:color,font:{size:10},callback:function(v){return v+unit;}},grid:{color:'rgba(0,0,0,.04)'}}
+        }
       }
-    }
-  });
-};
-window.toggleSwChart=function(id){
+    });}catch(e){console.error('[showSwChart]',e);canvas.parentElement.innerHTML='<p style="color:#a33;font-size:11px;padding:8px">⚠ '+e.message+'</p>';}
+  });});
+}
+function toggleSwChart(id){
   var el=document.getElementById(id);if(!el)return;
   el.style.display=el.style.display==='none'?'':' none';
   // fix: use proper toggle
@@ -1550,8 +1555,8 @@ function buildPhysChart(sw){
 
 // ── ⑥ BEST TIMES CHART ──────────────────────────────────────────────
 var btChartInst=null,btSelected=[],_btPool=null,_btStroke=null;
-window.setBtPool=function(p){_btPool=p;btSelected=[];buildBestTimes();};
-window.setBtStroke=function(s){_btStroke=s;btSelected=[];buildBestTimes();};
+function setBtPool(p){_btPool=p;btSelected=[];buildBestTimes();};
+function setBtStroke(s){_btStroke=s;btSelected=[];buildBestTimes();};
 function buildBestTimes(){
   var ar=allResults();
   // Pool filter selector
@@ -1641,7 +1646,7 @@ function buildBestTimes(){
     }
   });}catch(e){console.error('[chart] bestTimesChart error:',e);if(_btCvs)_btCvs.parentElement.innerHTML='<p style="color:#a32;font-size:10px;padding:8px">⚠ Chart error: '+e.message+'</p>';}
 }
-window.toggleBtEv=function(ev){var i=btSelected.indexOf(ev);if(i>=0){if(btSelected.length>1)btSelected.splice(i,1);}else btSelected.push(ev);buildBestTimes();};
+function toggleBtEv(ev){var i=btSelected.indexOf(ev);if(i>=0){if(btSelected.length>1)btSelected.splice(i,1);}else btSelected.push(ev);buildBestTimes();};
 
 // ── ⑦ SEASON RECAP ─────────────────────────────────────────────────
 function buildSeasonRecap(){
@@ -1870,8 +1875,8 @@ function buildStrokeBreakdown(){
     }
   });}catch(e){console.error('[chart] strokeChart error:',e);if(_stCvs)_stCvs.parentElement.innerHTML='<p style="color:#a32;font-size:10px;padding:8px">⚠ Chart error: '+e.message+'</p>';}
 }
-window.setStrokeA=function(s){window._strokeSeasonA=s;buildStrokeBreakdown();};
-window.setStrokeB=function(s){window._strokeSeasonB=s;buildStrokeBreakdown();};
+function setStrokeA(s){window._strokeSeasonA=s;buildStrokeBreakdown();};
+function setStrokeB(s){window._strokeSeasonB=s;buildStrokeBreakdown();};
 // ── ⑨ POINTS TREND ──────────────────────────────────────────────────
 var ptChartInst=null,ptFilter=null;
 function buildPointsTrend(){
@@ -1929,8 +1934,8 @@ function buildPointsTrend(){
     }
   });
 }
-window.setPtFilter=function(ev){ptFilter=ev;buildPointsTrend();};
-window.setPtPool=function(p){window._ptPool=p;buildPointsTrend();};
+function setPtFilter(ev){ptFilter=ev;buildPointsTrend();};
+function setPtPool(p){window._ptPool=p;buildPointsTrend();};
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2858,7 +2863,7 @@ function renderRaceResults(){
   }).join('');
   renderRaceChart();renderRaceMetrics();renderRaceLapTable();renderRaceInsights();renderRacePosition();renderRaceOpenClose();
 }
-window.selectRaceSwimmer=function(idx){raceHighlight=idx;renderRaceResults();};
+function selectRaceSwimmer(idx){raceHighlight=idx;renderRaceResults();};
 
 function renderRaceChart(){
   var sw=raceData[raceHighlight],winner=raceData[0];
@@ -3001,7 +3006,7 @@ var raceData2=null,raceHighlight2=0,racePosChartInst=null;
 // Optimal splits overlay: add dashed line to existing chart
 // (called from renderRaceChart - need to modify it)
 
-window.handleRaceDrop2=function(file){
+function handleRaceDrop2(file){
   if(!file||!file.name.toLowerCase().endsWith('.pdf'))return;
   var st=document.getElementById('raceCompareStatus');
   st.textContent='Reading…';st.style.color='#888';
@@ -3034,7 +3039,7 @@ window.handleRaceDrop2=function(file){
   };
   reader.readAsArrayBuffer(file);
 };
-window.clearRace2=function(){
+function clearRace2(){
   raceData2=null;raceHighlight2=0;
   var el=document.getElementById('raceCompareStatus');
   if(el)el.textContent='';
