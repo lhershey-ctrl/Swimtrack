@@ -219,7 +219,8 @@ function GrowthPercentile({ swimmer, D }) {
   const H = toSeries(swimmer?.heights), W = toSeries(swimmer?.weights);
   const lastH = H[H.length - 1], lastW = W[W.length - 1];
   const lastBMI = lastH && lastW ? +(lastW.v / ((lastH.v / 100) ** 2)).toFixed(1) : null;
-  if (!H.length && !W.length) return null;
+  const hasAnyMeas = H.length > 0 || W.length > 0;
+  const missingProfile = !sex || !bd;
 
   // Measured points for the selected metric, as {age, value}.
   const pts = useMemo(() => {
@@ -267,27 +268,49 @@ function GrowthPercentile({ swimmer, D }) {
     return { cm: best.cm, a0: best.a0, a1: best.a1, pbs: inWin.length };
   }, [swimmer, D, bd]);
 
+  const warnStyle = { borderColor: c.amber, background: c.card };
+  const hSeries = H.map((p) => ({ label: fmtDateShort(p.t), y: p.v }));
+  const wSeries = W.map((p) => ({ label: fmtDateShort(p.t), y: p.v }));
+
   return (
     <>
       <div style={s.h2}>Growth & Percentiles</div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-        {lastH && <KPI val={lastH.v + " cm"} lbl="Height" color={c.blue} />}
-        {lastW && <KPI val={lastW.v + " kg"} lbl="Weight" color={c.amber} />}
-        {lastBMI && <KPI val={lastBMI} lbl="BMI" color={c.green} />}
-      </div>
 
-      <PillRow active={metric} onPick={setMetric}
-        items={[{ key: "stature", label: "Height" }, { key: "weight", label: "Weight" }, { key: "bmi", label: "BMI" }]} />
-
-      <Card>
-        {!sex || !bd ? (
+      {!hasAnyMeas ? (
+        <Card style={warnStyle}>
+          <div style={{ color: c.amber, fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>⚠️ No growth data yet</div>
           <div style={{ color: c.dim, fontSize: 13, lineHeight: 1.6 }}>
-            Set <b>date of birth</b> and <b>sex</b> for {swimmer?.name} in <b>Settings</b> to see CDC percentile curves.
+            Add {swimmer?.name ? swimmer.name + "'s" : "the swimmer's"} <b>height</b> / <b>weight</b> (and <b>date of birth</b> + <b>sex</b>) in <b>Settings</b> to see growth charts and CDC percentiles.
           </div>
-        ) : !pts.length ? (
-          <div style={{ color: c.dim, fontSize: 13 }}>No {meta.label.toLowerCase()} measurements in the 5–19y range yet.</div>
-        ) : (
-          <>
+        </Card>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+            {lastH && <KPI val={lastH.v + " cm"} lbl="Height" color={c.blue} />}
+            {lastW && <KPI val={lastW.v + " kg"} lbl="Weight" color={c.amber} />}
+            {lastBMI && <KPI val={lastBMI} lbl="BMI" color={c.green} />}
+          </div>
+
+          {missingProfile ? (
+            <Card style={warnStyle}>
+              <div style={{ color: c.amber, fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
+                ⚠️ Add <b>date of birth</b>{!sex ? " & " : ""}{!sex ? <b>sex</b> : ""} in Settings to see CDC percentile curves. Showing raw measurements for now:
+              </div>
+              {hSeries.length > 1 && <MiniLine data={hSeries} color={c.blue} unit="cm" title="Height over time" />}
+              {wSeries.length > 1 && <MiniLine data={wSeries} color={c.amber} unit="kg" title="Weight over time" />}
+              {hSeries.length <= 1 && wSeries.length <= 1 && (
+                <div style={{ color: c.dim, fontSize: 13 }}>Add at least two measurements to see a trend.</div>
+              )}
+            </Card>
+          ) : (
+            <>
+              <PillRow active={metric} onPick={setMetric}
+                items={[{ key: "stature", label: "Height" }, { key: "weight", label: "Weight" }, { key: "bmi", label: "BMI" }]} />
+              <Card>
+                {!pts.length ? (
+                  <div style={{ color: c.dim, fontSize: 13 }}>No {meta.label.toLowerCase()} measurements in the 5–19y range yet — add some in Settings.</div>
+                ) : (
+                  <>
             {cur && (
               <div style={{ marginBottom: 8 }}>
                 <span style={{ fontSize: 26, fontWeight: 800, color: meta.color }}>{ordinal(cur.pctl)}</span>
@@ -316,19 +339,23 @@ function GrowthPercentile({ swimmer, D }) {
             </div>
           </>
         )}
-      </Card>
+              </Card>
 
-      {corr && corr.cm >= 1 && (
-        <Card style={{ display: "flex", gap: 12, alignItems: "flex-start", borderLeft: `4px solid ${c.green}` }}>
-          <div style={{ fontSize: 22 }}>📈</div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Growth vs performance</div>
-            <div style={{ fontSize: 12.5, color: c.dim, marginTop: 3, lineHeight: 1.5 }}>
-              Fastest growth: <b>+{corr.cm.toFixed(1)} cm</b> between age {corr.a0.toFixed(1)} and {corr.a1.toFixed(1)} —
-              {corr.pbs > 0 ? ` ${corr.pbs} personal best${corr.pbs !== 1 ? "s" : ""} set during that period.` : " no PBs recorded in that window."}
-            </div>
-          </div>
-        </Card>
+              {corr && corr.cm >= 1 && (
+                <Card style={{ display: "flex", gap: 12, alignItems: "flex-start", borderLeft: `4px solid ${c.green}` }}>
+                  <div style={{ fontSize: 22 }}>📈</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Growth vs performance</div>
+                    <div style={{ fontSize: 12.5, color: c.dim, marginTop: 3, lineHeight: 1.5 }}>
+                      Fastest growth: <b>+{corr.cm.toFixed(1)} cm</b> between age {corr.a0.toFixed(1)} and {corr.a1.toFixed(1)} —
+                      {corr.pbs > 0 ? ` ${corr.pbs} personal best${corr.pbs !== 1 ? "s" : ""} set during that period.` : " no PBs recorded in that window."}
+                    </div>
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+        </>
       )}
     </>
   );
