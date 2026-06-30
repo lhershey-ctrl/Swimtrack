@@ -1406,6 +1406,21 @@ window.loadSeasonsIntoView=function(seasonsObj,opts){
   return ss;
 };
 
+// Load a swimmer doc fetched from the cloud into the analysis view, reusing
+// the SAME merge+finalize path as loading a JSON file (proven to render).
+window.loadCloudDoc=function(docData){
+  if(!docData||!docData.seasons)return [];
+  D={}; // cloud load replaces the current view
+  var raw=Object.assign({},docData.seasons);
+  if(docData.id)raw._swimmerId=String(docData.id);
+  if(docData.name)raw._swimmerName=docData.name;
+  window.__loadedSwimmerId=docData.id?String(docData.id):null;
+  var errs=[];
+  mergeRaw(JSON.stringify(raw),errs);
+  finalize(errs);
+  return Object.keys(D).sort();
+};
+
 // Clear the loaded analysis data and reset the view.
 window.clearLoadedData=function(){
   D={};window.__loadedSwimmerId=null;
@@ -3230,8 +3245,8 @@ async function doLoadFromCloud() {
       if (st) { st.style.color = "#9a6b00"; st.textContent = "No cloud data for " + sw.name + " yet — extract & sync first."; }
       return;
     }
-    window.__loadedSwimmerId = String(sw.id);
-    if (window.loadSeasonsIntoView) window.loadSeasonsIntoView(data.seasons, { replace: true });
+    if (window.loadCloudDoc) window.loadCloudDoc(data);
+    else if (window.loadSeasonsIntoView) window.loadSeasonsIntoView(data.seasons, { replace: true });
     if (data.updatedAt) lastSyncedAt = data.updatedAt;
     const n = Object.keys(data.seasons).length;
     if (st) { st.style.color = "#1a7a4f"; st.textContent = "✅ Loaded " + sw.name + " from cloud — " + n + " season(s)." + (data.updatedAt ? " (synced " + fmtWhen(data.updatedAt) + ")" : ""); }
