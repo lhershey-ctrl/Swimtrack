@@ -1261,7 +1261,10 @@ function handleDrop(e){
 }
 function handleFile(e){var files=[...e.target.files];if(files.length)readFiles(files);}
 function readFiles(files){
-  D={};var remaining=files.length;var errs=[];
+  // NOTE: loading now MERGES into whatever is already loaded (cloud or file)
+  // so you can pull from cloud then add a freshly-extracted season. Use the
+  // "Clear" button to start fresh. mergeRaw resets if a different swimmer loads.
+  if(!D)D={};var remaining=files.length;var errs=[];
   files.forEach(function(f){
     var r=new FileReader();
     r.onload=function(ev){
@@ -1273,7 +1276,7 @@ function readFiles(files){
 }
 function readFile(f){readFiles([f]);}
 function loadPaste(){
-  D={};var errs=[];
+  if(!D)D={};var errs=[];
   mergeRaw(document.getElementById('jsonPaste').value.trim(),errs);
   finalize(errs);
 }
@@ -1281,6 +1284,13 @@ function loadPaste(){
 function mergeRaw(raw,errs){
   var parsed;
   try{parsed=JSON.parse(raw);}catch(e){errs.push('Invalid JSON: '+e.message);return;}
+  // If this file belongs to a different swimmer than what's loaded, start fresh
+  // (don't mix two swimmers' data in one view).
+  if(parsed._swimmerId){
+    var _pid=String(parsed._swimmerId);
+    if(window.__loadedSwimmerId&&window.__loadedSwimmerId!==_pid)D={};
+    window.__loadedSwimmerId=_pid;
+  }
   if(!D)D={};
   // Capture top-level _swimmerId before iterating season keys
   if(parsed._swimmerId&&!D._swimmerId)D._swimmerId=parsed._swimmerId;
@@ -1361,9 +1371,47 @@ function finalize(errs){
       window.addSwimmerById(detectedPid);
     }
   }
+  if(detectedPid)window.__loadedSwimmerId=detectedPid;
   renderSwimmerBanner();
   buildAll();
+  if(window.refreshCloudBar)window.refreshCloudBar();
 }
+
+// Load a seasons map (e.g. fetched from the cloud) into the analysis view.
+// opts.replace=true wipes the current view first; otherwise merges.
+window.loadSeasonsIntoView=function(seasonsObj,opts){
+  opts=opts||{};
+  if(opts.replace||!D)D={};
+  Object.keys(seasonsObj||{}).forEach(function(k){
+    if(k[0]==='_')return;
+    var s=seasonsObj[k];if(!s||typeof s!=='object')return;
+    if(!D[k])D[k]=s;
+    else{
+      if((s.bests||[]).length>(D[k].bests||[]).length)D[k].bests=s.bests;
+      if((s.results||[]).length>(D[k].results||[]).length)D[k].results=s.results;
+    }
+  });
+  var cleaned={};
+  Object.keys(D).forEach(function(k){if(k[0]==='_')return;var s=D[k];if(s&&((s.bests&&s.bests.length)||(s.results&&s.results.length)))cleaned[k]=s;});
+  D=cleaned;
+  var ss=Object.keys(D).sort();
+  if(ss.length){
+    document.getElementById('ph2').style.display='none';
+    document.getElementById('analysis').style.display='';
+    if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
+    if(typeof buildAll==='function')buildAll();
+  }
+  return ss;
+};
+
+// Clear the loaded analysis data and reset the view.
+window.clearLoadedData=function(){
+  D={};window.__loadedSwimmerId=null;
+  var an=document.getElementById('analysis');if(an)an.style.display='none';
+  var ph=document.getElementById('ph2');if(ph)ph.style.display='';
+  var st=document.getElementById('loadStatus');if(st){st.className='';st.innerText='';}
+  if(window.refreshCloudBar)window.refreshCloudBar();
+};
 
 // ═══════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -3104,7 +3152,7 @@ function clearRace2(){
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
-import { getFirestore, doc, setDoc }
+import { getFirestore, doc, setDoc, getDoc }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -3121,6 +3169,11 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 let currentUser = null;
+let lastSyncedAt = null;
+function fmtWhen(ms) {
+  try { const d = new Date(ms); return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+  catch (e) { return ""; }
+}
 
 const $ = (id) => document.getElementById(id);
 const statusEl = () => $("cloudStatus");
@@ -3138,18 +3191,46 @@ function render() {
   const st = statusEl(), ac = actionsEl();
   if (!st || !ac) return;
   ac.innerHTML = "";
+  const hasData = window.D && Object.keys(window.D).filter((k) => k[0] !== "_").length;
   if (!currentUser) {
-    st.textContent = "Not connected — sign in to sync to the phone app.";
+    st.textContent = "Not connected — sign in to load from or save to the cloud.";
     st.style.color = "#666";
     ac.appendChild(btn("☁ Sign in with Google", () => doSignIn(), "#185FA5"));
   } else {
     const sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
-    st.innerHTML = 'Signed in as <strong>' + currentUser.email + '</strong>';
+    st.innerHTML = "Signed in as <strong>" + currentUser.email + "</strong>" +
+      (lastSyncedAt ? ' · <span style="color:#666">Last synced ' + fmtWhen(lastSyncedAt) + "</span>" : "");
     st.style.color = "#1a7a4f";
-    const syncBtn = btn(sw ? ("☁ Sync " + sw.name + " to cloud") : "☁ Sync to cloud",
-      () => doSync(), "#1D9E75");
-    ac.appendChild(syncBtn);
+    ac.appendChild(btn(sw ? ("☁ Load " + sw.name) : "☁ Load from cloud", () => doLoadFromCloud(), "#185FA5"));
+    ac.appendChild(btn(sw ? ("☁ Sync " + sw.name) : "☁ Sync to cloud", () => doSync(), "#1D9E75"));
     ac.appendChild(btn("Sign out", () => signOut(auth), "#9aa6b5"));
+  }
+  if (hasData) ac.appendChild(btn("✕ Clear", () => window.clearLoadedData && window.clearLoadedData(), "#b06a3a"));
+}
+
+async function swimLoadFromCloud(id) {
+  const snap = await getDoc(doc(db, "swimmers", String(id)));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+async function doLoadFromCloud() {
+  const st = statusEl();
+  const sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
+  if (!sw || !sw.id) { if (st) { st.style.color = "#c0392b"; st.textContent = "Pick a swimmer above first."; } return; }
+  if (st) { st.style.color = "#666"; st.textContent = "Loading " + sw.name + " from cloud…"; }
+  try {
+    const data = await swimLoadFromCloud(sw.id);
+    if (!data || !data.seasons || !Object.keys(data.seasons).length) {
+      if (st) { st.style.color = "#9a6b00"; st.textContent = "No cloud data for " + sw.name + " yet — extract & sync first."; }
+      return;
+    }
+    window.__loadedSwimmerId = String(sw.id);
+    if (window.loadSeasonsIntoView) window.loadSeasonsIntoView(data.seasons, { replace: true });
+    if (data.updatedAt) lastSyncedAt = data.updatedAt;
+    const n = Object.keys(data.seasons).length;
+    if (st) { st.style.color = "#1a7a4f"; st.textContent = "✅ Loaded " + sw.name + " from cloud — " + n + " season(s)." + (data.updatedAt ? " (synced " + fmtWhen(data.updatedAt) + ")" : ""); }
+  } catch (e) {
+    if (st) { st.style.color = "#c0392b"; st.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Load failed: " + e.message; }
   }
 }
 
@@ -3192,6 +3273,7 @@ async function doSync() {
     };
     if (Object.keys(seasons).length) payload.seasons = seasons;
     await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
+    lastSyncedAt = payload.updatedAt;
     const nSeasons = Object.keys(seasons).length;
     if (st) { st.style.color = "#1a7a4f"; st.textContent = "✅ Synced " + sw.name + " — " + nSeasons + " season(s) · " + payload.heights.length + " height / " + payload.weights.length + " weight. Open the phone app."; }
   } catch (e) {
