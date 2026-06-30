@@ -1,0 +1,71 @@
+{
+  "2025-2026": {
+    "seasonId": "1715",
+    "bests": [
+      {
+        "event": "100 גב",
+        "pool": "25",
+        "place": 10,
+        "time": "01:07.96",
+        "seconds": 67.96,
+        "points": 359,
+        "date": "09/01/2026",
+        "competition": "אליפות ישראל ARENA מאסטרס חורף 2026"
+      },
+      {
+        "event": "100 פרפר",
+        "pool": "25",
+        "place": 12,
+        "time": "01:06.04",
+        "seconds": 66.04,
+        "points": 377,
+        "date": "09/01/2026",
+        "competition": "אליפות ישראל ARENA מאסטרס חורף 2026"
+      },
+      {
+        "event": "200 חזה",
+        "pool": "25",
+        "place": 3,
+        "time": "02:37.76",
+        "seconds": 157.76,
+        "points": 441,
+        "date": "09/01/2026",
+        "competition": "אליפות ישראל ARENA מאסטרס חורף 2026"
+      }
+    ],
+    "results": [
+      {
+        "event": "100 פרפר",
+        "pool": "25",
+        "place": 12,
+        "time": "01:06.04",
+        "seconds": 66.04,
+        "points": 377,
+        "date": "09/01/2026",
+        "competition": "אליפות ישראל ARENA מאסטרס חורף 2026"
+      },
+      {
+        "event": "200 חזה",
+        "pool": "25",
+        "place": 3,
+        "time": "02:37.76",
+        "seconds": 157.76,
+        "points": 441,
+        "date": "09/01/2026",
+        "competition": "אליפות ישראל ARENA מאסטרס חורף 2026"
+      },
+      {
+        "event": "100 גב",
+        "pool": "25",
+        "place": 10,
+        "time": "01:07.96",
+        "seconds": 67.96,
+        "points": 359,
+        "date": "09/01/2026",
+        "competition": "אליפות ישראל ARENA מאסטרס חורף 2026"
+      }
+    ]
+  },
+  "_swimmerId": "115352",
+  "_swimmerName": "לירון_הרשי"
+}
