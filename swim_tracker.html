@@ -507,7 +507,19 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
       saveSettings();renderSettingsUI();
     };
 
-    // Height/weight measurements (immediate save)
+    // Push one swimmer's profile to the cloud if signed in; show a hint if not.
+    function cloudAutoSave(sw){
+      if(!sw||!window.swimCloudSaveProfile)return;
+      window.swimCloudSaveProfile(sw).then(function(res){
+        var st=document.getElementById('settingsCloudStatus');if(!st)return;
+        if(res==='saved'){st.textContent='☁ Saved '+sw.name+' to cloud';st.style.color='#1a7a4f';
+          setTimeout(function(){if(st.textContent.indexOf('Saved '+sw.name)>=0)st.textContent='';},4000);}
+        else if(res==='offline'){st.textContent='Saved on this device. Click "☁ Save to Cloud" to sync to the phone.';st.style.color='#9a6b00';}
+        else {st.textContent='Cloud save failed: '+res.replace(/^error:/,'');st.style.color='#c0392b';}
+      });
+    }
+
+    // Height/weight measurements (immediate save — local + cloud)
     window.addMeasurement=function(i,field){
       var sw=SWIMMERS[i];if(!sw)return;
       var prefix=field==='heights'?'h':'w';
@@ -521,11 +533,26 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
       sw[field].sort(function(a,b){var ta=parseDate(a.date)||0,tb=parseDate(b.date)||0;return ta-tb;});
       dEl.value='';vEl.value='';
       saveSettings();renderSettingsUI();renderPhysStats();
+      cloudAutoSave(sw);
     };
     window.removeMeasurement=function(i,field,j){
       var sw=SWIMMERS[i];if(!sw||!sw[field])return;
       sw[field].splice(j,1);
       saveSettings();renderSettingsUI();
+      cloudAutoSave(sw);
+    };
+
+    // Sign in (if needed) and push ALL swimmers' profiles to the cloud.
+    window.saveAllToCloud=function(){
+      var st=document.getElementById('settingsCloudStatus');
+      if(st){st.textContent='Saving to cloud…';st.style.color='#666';}
+      saveSettings();
+      if(!window.swimCloudSaveAll){if(st){st.textContent='Cloud not available on this page.';st.style.color='#c0392b';}return;}
+      window.swimCloudSaveAll(SWIMMERS).then(function(res){
+        if(!st)return;
+        if(res==='saved'){st.textContent='☁ All swimmers saved to cloud — open the phone app to view.';st.style.color='#1a7a4f';}
+        else {st.textContent='Cloud save failed: '+res.replace(/^error:/,'');st.style.color='#c0392b';}
+      });
     };
 
   window.addSettingsSwimmer=function(){
@@ -556,6 +583,14 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     if(!ok)return;
     saveSettings();
     renderSwimmerMgmt();renderSwimmerSelectors();renderSettingsUI();renderPhysStats();
+    // If already signed in, also push profiles to the cloud (no popup).
+    if(window.swimUser&&window.swimCloudSaveAll){
+      window.swimCloudSaveAll(SWIMMERS).then(function(res){
+        var st=document.getElementById('settingsCloudStatus');if(!st)return;
+        st.textContent=res==='saved'?'☁ Also saved to cloud':'Cloud: '+res.replace(/^error:/,'');
+        st.style.color=res==='saved'?'#1a7a4f':'#c0392b';
+      });
+    }
     var btn=document.getElementById('saveAllBtn');
     if(btn){btn.textContent='✅ Saved!';btn.style.background='#1D9E75';setTimeout(function(){btn.textContent='💾 Save All Changes';btn.style.background='#185FA5';},2500);}
   };
@@ -816,11 +851,11 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
 
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px">
     <button id="saveAllBtn" onclick="saveAllSettings()" style="padding:9px 22px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">💾 Save All Changes</button>
-    <button onclick="saveSettingsToFile()" style="padding:9px 22px;background:#f5f4f0;color:#333;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">⬇ Export to File</button>
-    <label style="padding:9px 22px;background:#f5f4f0;color:#333;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">⬆ Import from File<input type="file" accept=".json" style="display:none" onchange="loadSettingsFromFile(event)"></label>
+    <button id="cloudSaveBtn" onclick="saveAllToCloud()" style="padding:9px 22px;background:#1D9E75;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">☁ Save to Cloud</button>
   </div>
+  <p id="settingsCloudStatus" style="font-size:12px;margin-top:6px;font-weight:600"></p>
   <p id="settingsLoadStatus" style="font-size:12px;margin-top:6px"></p>
-  <p style="font-size:12px;color:#aaa;margin-top:8px">Changes are saved automatically in the browser. Use Export/Import to back up or share settings between devices.</p>
+  <p style="font-size:12px;color:#aaa;margin-top:8px">Changes save automatically in this browser. Height, weight &amp; profile also save to the cloud (for the phone app) when you're signed in — use <strong>☁ Save to Cloud</strong> to sign in and push everything.</p>
 
 </div>
 
@@ -3169,7 +3204,39 @@ async function doSync() {
   }
 }
 
-onAuthStateChanged(auth, (u) => { currentUser = u; render(); });
+// ── Profile-only cloud save (height/weight/DOB/name/seasonIds) for ONE
+//    swimmer. Never touches season data (merge:true). Used by Settings. ──
+async function swimSaveProfile(sw) {
+  if (!sw || !sw.id) throw new Error("missing swimmer id");
+  await setDoc(doc(db, "swimmers", String(sw.id)), {
+    name: sw.name || ("Swimmer " + sw.id),
+    id: String(sw.id),
+    birthdate: sw.birthdate || "",
+    heights: Array.isArray(sw.heights) ? sw.heights : [],
+    weights: Array.isArray(sw.weights) ? sw.weights : [],
+    seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
+    updatedAt: Date.now(),
+  }, { merge: true });
+}
+
+// Public hooks for the Settings tab (IIFE). Return codes are strings so the
+// non-module IIFE can show status without sharing scope.
+window.swimCloudReady = () => !!currentUser;
+// Auto-save one swimmer if already signed in (silent no-op otherwise).
+window.swimCloudSaveProfile = async function (sw) {
+  if (!currentUser) return "offline";
+  try { await swimSaveProfile(sw); return "saved"; }
+  catch (e) { return "error:" + e.message; }
+};
+// Save ALL swimmers, signing in first if needed (triggered by the button).
+window.swimCloudSaveAll = async function (swimmers) {
+  if (!currentUser) { try { await doSignIn(); } catch (e) { return "error:" + e.message; } }
+  if (!currentUser) return "error:not signed in";
+  try { for (const sw of swimmers || []) { if (sw && sw.id) await swimSaveProfile(sw); } return "saved"; }
+  catch (e) { return "error:" + e.message; }
+};
+
+onAuthStateChanged(auth, (u) => { currentUser = u; window.swimUser = u; render(); });
 // Re-render the sync button label when the active swimmer changes.
 window.addEventListener("focus", render);
 document.addEventListener("DOMContentLoaded", render);
