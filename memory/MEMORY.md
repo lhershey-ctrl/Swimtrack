@@ -1,0 +1,8 @@
+# Project Memory — SwimTrack
+
+- [user-liron](user-liron.md) — who the user is + working style
+- [swimtrack-references](swimtrack-references.md) — URLs, Firebase/GitHub IDs, player IDs, file layout
+- [swimtrack-cloud-architecture](swimtrack-cloud-architecture.md) — two apps + Firestore model + data ownership + rules
+- [swimtrack-deploy-workflow](swimtrack-deploy-workflow.md) — build/deploy/push commands + syntax-check
+- [swimtrack-caching-and-debug-lessons](swimtrack-caching-and-debug-lessons.md) — caching + cloud-load gotchas (read before debugging "didn't update")
+- [swimtrack-status-next](swimtrack-status-next.md) — what's done + likely next tasks
