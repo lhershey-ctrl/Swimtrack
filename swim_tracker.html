@@ -663,7 +663,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   <!-- ☁ CLOUD SYNC BAR (Firebase) -->
   <div id="cloudBar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 2px;padding:11px 14px;background:linear-gradient(135deg,#eef5ff,#f7fbff);border:1px solid #cfe0f5;border-radius:12px">
     <span style="font-size:13px;color:#185FA5;font-weight:800">☁ Cloud</span>
-    <span style="font-size:9px;color:#9bb;font-weight:700;border:1px solid #cde;border-radius:4px;padding:1px 5px" title="app build">v7 · diag</span>
+    <span style="font-size:9px;color:#9bb;font-weight:700;border:1px solid #cde;border-radius:4px;padding:1px 5px" title="app build">v8</span>
     <span id="cloudStatus" style="font-size:12px;color:#666">Connecting…</span>
     <span style="flex:1"></span>
     <span id="cloudActions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
@@ -1411,21 +1411,14 @@ window.loadSeasonsIntoView=function(seasonsObj,opts){
 // directly from the doc's seasons map, then runs finalize() (the proven
 // render path). Returns counts for diagnostics.
 window.loadCloudDoc=function(docData){
-  var dbg={inKeys:0,inResults:0,inBests:0,builtKeys:0,kept:0,err:""};
-  if(!docData||!docData.seasons)return dbg;
-  var seasonsObj=docData.seasons;
-  var inKeys=Object.keys(seasonsObj).filter(function(k){return k[0]!=='_';});
-  dbg.inKeys=inKeys.length;
-  inKeys.forEach(function(k){var s=seasonsObj[k]||{};dbg.inResults+=(s.results||[]).length;dbg.inBests+=(s.bests||[]).length;});
+  if(!docData||!docData.seasons)return 0;
   D={};
-  inKeys.forEach(function(k){D[k]=seasonsObj[k];});
+  Object.keys(docData.seasons).forEach(function(k){if(k[0]!=='_')D[k]=docData.seasons[k];});
   if(docData.id)D._swimmerId=String(docData.id);
   if(docData.name)D._swimmerName=docData.name;
   window.__loadedSwimmerId=docData.id?String(docData.id):null;
-  dbg.builtKeys=Object.keys(D).filter(function(k){return k[0]!=='_';}).length;
-  try{ finalize([]); }catch(e){ dbg.err=e.message; }
-  dbg.kept=Object.keys(D).filter(function(k){return k[0]!=='_';}).length;
-  return dbg;
+  finalize([]);
+  return Object.keys(D).filter(function(k){return k[0]!=='_';}).length;
 };
 
 // Clear the loaded analysis data and reset the view.
@@ -3252,16 +3245,11 @@ async function doLoadFromCloud() {
       if (st) { st.style.color = "#9a6b00"; st.textContent = "No cloud data for " + sw.name + " yet — extract & sync first."; }
       return;
     }
-    const docKeys = Object.keys(data).join(",");
-    const seasonKeys = data.seasons && typeof data.seasons === "object" ? Object.keys(data.seasons).join(",") : "(no seasons field)";
-    const r = window.loadCloudDoc ? window.loadCloudDoc(data) : { inKeys: 0, inResults: 0, inBests: 0, kept: 0 };
+    const kept = window.loadCloudDoc ? window.loadCloudDoc(data) : 0;
     if (data.updatedAt) lastSyncedAt = data.updatedAt;
     if (st) {
-      const okRender = r.kept > 0;
-      st.style.color = okRender ? "#1a7a4f" : "#c0392b";
-      st.textContent = (okRender ? "✅ " : "⚠ ") + "Loaded " + sw.name +
-        ": in " + r.inKeys + " seasons / " + r.inResults + " results / " + r.inBests + " bests · built " +
-        r.builtKeys + " · kept " + r.kept + (r.err ? " · finalize ERROR: " + r.err : "");
+      if (kept > 0) { st.style.color = "#1a7a4f"; st.textContent = "✅ Loaded " + sw.name + " from cloud — " + kept + " season(s)." + (data.updatedAt ? " (synced " + fmtWhen(data.updatedAt) + ")" : ""); }
+      else { st.style.color = "#9a6b00"; st.textContent = "No season data found for " + sw.name + " in the cloud."; }
     }
   } catch (e) {
     if (st) { st.style.color = "#c0392b"; st.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Load failed: " + e.message; }
