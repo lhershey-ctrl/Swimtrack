@@ -663,7 +663,6 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   <!-- ☁ CLOUD SYNC BAR (Firebase) -->
   <div id="cloudBar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 2px;padding:11px 14px;background:linear-gradient(135deg,#eef5ff,#f7fbff);border:1px solid #cfe0f5;border-radius:12px">
     <span style="font-size:13px;color:#185FA5;font-weight:800">☁ Cloud</span>
-    <span style="font-size:9px;color:#9bb;font-weight:700;border:1px solid #cde;border-radius:4px;padding:1px 5px" title="app build">v10</span>
     <span id="cloudStatus" style="font-size:12px;color:#666">Connecting…</span>
     <span style="flex:1"></span>
     <span id="cloudActions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
@@ -1380,62 +1379,9 @@ function finalize(errs){
   if(window.refreshCloudBar)window.refreshCloudBar();
 }
 
-// Load a seasons map (e.g. fetched from the cloud) into the analysis view.
-// opts.replace=true wipes the current view first; otherwise merges.
-window.loadSeasonsIntoView=function(seasonsObj,opts){
-  opts=opts||{};
-  if(opts.replace||!D)D={};
-  Object.keys(seasonsObj||{}).forEach(function(k){
-    if(k[0]==='_')return;
-    var s=seasonsObj[k];if(!s||typeof s!=='object')return;
-    if(!D[k])D[k]=s;
-    else{
-      if((s.bests||[]).length>(D[k].bests||[]).length)D[k].bests=s.bests;
-      if((s.results||[]).length>(D[k].results||[]).length)D[k].results=s.results;
-    }
-  });
-  var cleaned={};
-  Object.keys(D).forEach(function(k){if(k[0]==='_')return;var s=D[k];if(s&&((s.bests&&s.bests.length)||(s.results&&s.results.length)))cleaned[k]=s;});
-  D=cleaned;
-  var ss=Object.keys(D).sort();
-  if(ss.length){
-    document.getElementById('ph2').style.display='none';
-    document.getElementById('analysis').style.display='';
-    if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
-    if(typeof buildAll==='function')buildAll();
-  }
-  return ss;
-};
-
-// Load a swimmer doc fetched from the cloud into the analysis view. Builds D
-// directly from the doc's seasons map, then runs finalize() (the proven
-// render path). Returns counts for diagnostics.
-window.loadCloudDoc=function(docData){
-  var dbg=window.__loadDbg={inKeys:0,first:"",built:0,kept:0,err:""};
-  if(!docData||!docData.seasons)return 0;
-  var sObj=docData.seasons;
-  var keys=Object.keys(sObj).filter(function(k){return k[0]!=='_';});
-  dbg.inKeys=keys.length;
-  if(keys[0]){var fv=sObj[keys[0]]||{};dbg.first=keys[0]+" r="+(Array.isArray(fv.results)?fv.results.length:("notArr:"+typeof fv.results))+" b="+(Array.isArray(fv.bests)?fv.bests.length:("notArr:"+typeof fv.bests));}
-  D={};
-  keys.forEach(function(k){D[k]=sObj[k];});
-  if(docData.id)D._swimmerId=String(docData.id);
-  if(docData.name)D._swimmerName=docData.name;
-  window.__loadedSwimmerId=docData.id?String(docData.id):null;
-  dbg.built=Object.keys(D).filter(function(k){return k[0]!=='_';}).length;
-  try{finalize([]);}catch(e){dbg.err=e.message;}
-  dbg.kept=Object.keys(D).filter(function(k){return k[0]!=='_';}).length;
-  return dbg.kept;
-};
-
-// Clear the loaded analysis data and reset the view.
-window.clearLoadedData=function(){
-  D={};window.__loadedSwimmerId=null;
-  var an=document.getElementById('analysis');if(an)an.style.display='none';
-  var ph=document.getElementById('ph2');if(ph)ph.style.display='';
-  var st=document.getElementById('loadStatus');if(st){st.className='';st.innerText='';}
-  if(window.refreshCloudBar)window.refreshCloudBar();
-};
+// NOTE: Cloud load ("☁ Load from cloud") and clear-data live in the Firebase
+// module at the bottom of the file. They set window.D and call finalize()
+// directly, so they don't depend on this script's top-level execution order.
 
 // ═══════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -3367,6 +3313,17 @@ window.swimCloudSaveAll = async function (swimmers) {
   if (!currentUser) return "error:not signed in";
   try { for (const sw of swimmers || []) { if (sw && sw.id) await swimSaveProfile(sw); } return "saved"; }
   catch (e) { return "error:" + e.message; }
+};
+
+// Clear the loaded analysis view (defined here so it's always available,
+// independent of the main script's execution order).
+window.clearLoadedData = function () {
+  window.D = {};
+  window.__loadedSwimmerId = null;
+  const an = document.getElementById("analysis"); if (an) an.style.display = "none";
+  const ph = document.getElementById("ph2"); if (ph) ph.style.display = "";
+  const ls = document.getElementById("loadStatus"); if (ls) { ls.className = ""; ls.innerText = ""; }
+  render();
 };
 
 onAuthStateChanged(auth, (u) => { currentUser = u; window.swimUser = u; render(); });

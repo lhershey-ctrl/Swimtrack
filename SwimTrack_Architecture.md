@@ -2,7 +2,72 @@
 
 ## Overview
 
-`swim_tracker.html` is a **zero-dependency, single-file** swimming analysis tool. It requires no server, no build step, and no installation. Open in any browser. All state is stored in browser `localStorage`.
+SwimTrack has **two front-ends sharing one cloud database**:
+
+1. **Desktop app** — `swim_tracker.html`, a zero-build single HTML file (vanilla JS, Chart.js, pdf.js). Used to **extract** data from loglig.com and **sync it to the cloud**. Also does full analysis + the Race-PDF tool.
+2. **Mobile app** — `mobile/` (React + Vite), a modern phone-first PWA that **reads from the cloud** and shows the analysis. Deployed to Firebase Hosting.
+
+Both authenticate with **Google Sign-In** and talk directly to **Firebase Firestore** (project `swimtrack-e12c8`). Access is restricted to an email allow-list. The desktop app still works fully offline via `localStorage` if you don't sign in.
+
+**Live URLs**
+- Mobile app: `https://swimtrack-e12c8.web.app/`
+- Desktop extractor + sync: `https://swimtrack-e12c8.web.app/extract.html` (the deploy copies `swim_tracker.html` → `extract.html`)
+
+> Google sign-in only works from a hosted origin (`*.web.app` or `localhost`), **never from a `file://` page** — so use the hosted `/extract.html`, not the local file, when you need to sync.
+
+---
+
+## Cloud Architecture (Firebase)
+
+```
+DESKTOP (swim_tracker.html)                MOBILE (mobile/ — React+Vite)
+  • Extract (console / bookmarklet)          • Google sign-in gate
+  • Analyze + Race                           • Swimmer picker (from cloud)
+  • ☁ Sign in / Load / Sync                  • Home/Meets/Progress/Records/
+        │  write/read                          Seasons/Settings (recharts)
+        ▼                                            ▲ read (live onSnapshot)
+   ┌─────────────────────────────────────────────────────────────┐
+   │  Firebase project: swimtrack-e12c8                            │
+   │  Firestore:                                                   │
+   │    swimmers/{playerId} = {                                    │
+   │      name, id, birthdate,                                     │
+   │      heights:[{date,value}], weights:[...], seasonIds:[...],  │
+   │      seasons:{ "2024-2025": {seasonId,bests[],results[]}, …}, │
+   │      updatedAt                                                │
+   │    }                                                          │
+   │    config/access = { emails:[...] }   ← live allow-list       │
+   │  Auth: Google                                                 │
+   │  Hosting: serves mobile/dist (+ extract.html)                 │
+   └───────────────────────────────────────────────────────────────┘
+```
+
+### Data ownership (avoids clobbering)
+- **`seasons`** (results/bests) is written by the **desktop** "☁ Sync to cloud" (Analyze tab). Firestore `merge:true` updates season-by-season, so re-syncing one season never wipes the others.
+- **Profile** (`name`, `birthdate`, `heights`, `weights`, `seasonIds`) is editable on **both** desktop Settings (auto-saves to cloud when signed in; "☁ Save to Cloud" button) **and** the mobile Settings tab. All writes use `merge:true` and only touch their own fields.
+
+### Security rules (`firestore.rules`)
+- **Owners** (hardcoded `ownerEmails()`, currently `lhershey@gmail.com`) always have access and can edit the allow-list.
+- Everyone else must be in **`config/access.emails`** (managed live from the mobile Settings → "Who can access"). `swimmers/*` allows read/write only to owners or allow-listed emails; `config/access` is readable by allow-listed users, writable only by owners.
+
+### Desktop ↔ cloud (Analyze tab "☁ Cloud" bar)
+- **☁ Load from cloud** — builds the global `D` from `swimmers/{activeId}.seasons` and renders via `finalize()`.
+- **☁ Sync to cloud** — pushes the loaded `D` + profile to `swimmers/{activeId}`.
+- File loads now **merge** into the current view; switching swimmers auto-resets; **✕ Clear** resets.
+- The Firebase code is a `<script type="module">` at the bottom of `swim_tracker.html` importing the modular SDK from gstatic. Cloud load/clear are defined **in that module** (using `window.D` + the hoisted `window.finalize`) so they don't depend on the main script's execution order.
+
+### Mobile app (`mobile/`)
+- Vite + React 19 + recharts; Firebase Web SDK.
+- `src/firebase.js` — init, Google auth (`signInWithPopup`), `fetchSwimmers`, `subscribeSwimmer` (live), profile CRUD, access-list read/write.
+- `src/analysis.js` — pure analysis builders ported from the desktop (`allResults`, `getStroke`, `competitions`, `scLc`, `insights`, `seasonRecap`, `strokeImprovement`, `pointsTrend`, `eventHeatmap`, …).
+- `src/theme.jsx` — light/dark palettes + context (`useUI`), persisted to `localStorage`.
+- `src/App.jsx` — auth gate, swimmer picker, 6 tabs (Home, Meets, Progress, Records, Seasons, Settings).
+- Build/deploy: `cd mobile && npm run build` (a `prebuild` copies `../swim_tracker.html` → `public/extract.html`) then `firebase deploy`.
+
+---
+
+## Desktop single-file app
+
+`swim_tracker.html` is a **zero-dependency, single-file** swimming analysis tool. No server, no build step. Open in any browser. Local state is stored in browser `localStorage` (key `sw_settings`); cloud sync is optional (sign in).
 
 ---
 
