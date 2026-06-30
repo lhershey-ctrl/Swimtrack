@@ -663,7 +663,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   <!-- ☁ CLOUD SYNC BAR (Firebase) -->
   <div id="cloudBar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 2px;padding:11px 14px;background:linear-gradient(135deg,#eef5ff,#f7fbff);border:1px solid #cfe0f5;border-radius:12px">
     <span style="font-size:13px;color:#185FA5;font-weight:800">☁ Cloud</span>
-    <span style="font-size:9px;color:#9bb;font-weight:700;border:1px solid #cde;border-radius:4px;padding:1px 5px" title="app build">v5 · diag</span>
+    <span style="font-size:9px;color:#9bb;font-weight:700;border:1px solid #cde;border-radius:4px;padding:1px 5px" title="app build">v6 · diag</span>
     <span id="cloudStatus" style="font-size:12px;color:#666">Connecting…</span>
     <span style="flex:1"></span>
     <span id="cloudActions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
@@ -3250,13 +3250,16 @@ async function doLoadFromCloud() {
       if (st) { st.style.color = "#9a6b00"; st.textContent = "No cloud data for " + sw.name + " yet — extract & sync first."; }
       return;
     }
+    const docKeys = Object.keys(data).join(",");
+    const seasonKeys = data.seasons && typeof data.seasons === "object" ? Object.keys(data.seasons).join(",") : "(no seasons field)";
     const r = window.loadCloudDoc ? window.loadCloudDoc(data) : { inKeys: 0, inResults: 0, inBests: 0, kept: 0 };
     if (data.updatedAt) lastSyncedAt = data.updatedAt;
     if (st) {
       const okRender = r.kept > 0;
       st.style.color = okRender ? "#1a7a4f" : "#c0392b";
-      st.textContent = "Loaded " + sw.name + ": " + r.inKeys + " seasons · " + r.inResults + " results · " + r.inBests + " bests → kept " + r.kept +
-        (okRender ? "" : " ⚠ nothing renderable — the cloud copy has no results/bests");
+      st.textContent = okRender
+        ? ("Loaded " + sw.name + ": " + r.inKeys + " seasons · " + r.inResults + " results · " + r.inBests + " bests")
+        : ("⚠ id=" + sw.id + " · doc=[" + docKeys + "] · seasons=[" + seasonKeys + "]");
     }
   } catch (e) {
     if (st) { st.style.color = "#c0392b"; st.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Load failed: " + e.message; }
