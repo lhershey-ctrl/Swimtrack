@@ -663,7 +663,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   <!-- ☁ CLOUD SYNC BAR (Firebase) -->
   <div id="cloudBar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 2px;padding:11px 14px;background:linear-gradient(135deg,#eef5ff,#f7fbff);border:1px solid #cfe0f5;border-radius:12px">
     <span style="font-size:13px;color:#185FA5;font-weight:800">☁ Cloud</span>
-    <span style="font-size:9px;color:#9bb;font-weight:700;border:1px solid #cde;border-radius:4px;padding:1px 5px" title="app build">v9 · diag</span>
+    <span style="font-size:9px;color:#9bb;font-weight:700;border:1px solid #cde;border-radius:4px;padding:1px 5px" title="app build">v10</span>
     <span id="cloudStatus" style="font-size:12px;color:#666">Connecting…</span>
     <span style="flex:1"></span>
     <span id="cloudActions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
@@ -3248,19 +3248,37 @@ async function doLoadFromCloud() {
   if (st) { st.style.color = "#666"; st.textContent = "Loading " + sw.name + " from cloud…"; }
   try {
     const data = await swimLoadFromCloud(sw.id);
-    if (!data || !data.seasons || !Object.keys(data.seasons).length) {
-      if (st) { st.style.color = "#9a6b00"; st.textContent = "No cloud data for " + sw.name + " yet — extract & sync first."; }
+    const seasonsObj = data && data.seasons && typeof data.seasons === "object" ? data.seasons : null;
+    const realKeys = seasonsObj ? Object.keys(seasonsObj).filter((k) => k[0] !== "_") : [];
+    if (!realKeys.length) {
+      if (st) { st.style.color = "#9a6b00"; st.textContent = "No season data in the cloud for " + sw.name + " yet — extract & sync first."; }
       return;
     }
-    const kept = window.loadCloudDoc ? window.loadCloudDoc(data) : 0;
+    // Build the global data object D directly from the cloud doc. For a
+    // classic-script `var D`, window.D IS the same binding, so finalize() (a
+    // hoisted global) sees what we set here.
+    const fresh = {};
+    realKeys.forEach((k) => { fresh[k] = seasonsObj[k]; });
+    fresh._swimmerId = String(sw.id);
+    fresh._swimmerName = sw.name;
+    window.D = fresh;
+    window.__loadedSwimmerId = String(sw.id);
+
+    if (typeof window.finalize === "function") {
+      window.finalize([]); // cleans D, shows analysis, selects swimmer, builds charts
+    } else {
+      // Fallback render if finalize is unavailable for any reason.
+      const ph = document.getElementById("ph2"); if (ph) ph.style.display = "none";
+      const an = document.getElementById("analysis"); if (an) an.style.display = "";
+      if (typeof window.renderSwimmerBanner === "function") window.renderSwimmerBanner();
+      if (typeof window.buildAll === "function") window.buildAll();
+    }
+
+    const kept = window.D ? Object.keys(window.D).filter((k) => k[0] !== "_").length : 0;
     if (data.updatedAt) lastSyncedAt = data.updatedAt;
     if (st) {
-      if (kept > 0) { st.style.color = "#1a7a4f"; st.textContent = "✅ Loaded " + sw.name + " from cloud — " + kept + " season(s)." + (data.updatedAt ? " (synced " + fmtWhen(data.updatedAt) + ")" : ""); }
-      else {
-        const d = window.__loadDbg || {};
-        st.style.color = "#c0392b";
-        st.textContent = "DBG inKeys=" + d.inKeys + " first[" + d.first + "] built=" + d.built + " kept=" + d.kept + (d.err ? " · finalize ERR: " + d.err : "");
-      }
+      st.style.color = "#1a7a4f";
+      st.textContent = "✅ Loaded " + sw.name + " — " + kept + " season(s)" + (data.updatedAt ? " · synced " + fmtWhen(data.updatedAt) : "");
     }
   } catch (e) {
     if (st) { st.style.color = "#c0392b"; st.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Load failed: " + e.message; }
