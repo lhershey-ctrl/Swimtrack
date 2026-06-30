@@ -14,6 +14,8 @@ import {
   getAgeAt, ageGroupLabel, latest, prevSeason, STROKES, eventCatalog, eventSeries,
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
 } from "./analysis.js";
+import { shareProgress } from "./share.js";
+import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
 
 // ════════════════════════════════════════════════════════════════════
 //  UI atoms
@@ -194,29 +196,138 @@ function MiniLine({ data, color, unit, title }) {
   );
 }
 
-function GrowthCard({ swimmer }) {
+const ONE_YR = 365.25 * 24 * 3600 * 1000;
+function ageYears(birthdate, ts) {
+  const bd = parseDate(birthdate);
+  return bd ? (ts - bd) / ONE_YR : null;
+}
+function ordinal(p) {
+  const n = Math.round(p), m = n % 100;
+  const suf = m >= 11 && m <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
+  return n + suf;
+}
+
+function GrowthPercentile({ swimmer, D }) {
   const { c, s } = useUI();
-  const toSeries = (arr) => (arr || [])
-    .filter((e) => parseDate(e.date))
-    .map((e) => ({ x: parseDate(e.date), y: +e.value, label: fmtDateShort(parseDate(e.date)) }))
-    .sort((a, b) => a.x - b.x);
-  const heights = toSeries(swimmer?.heights);
-  const weights = toSeries(swimmer?.weights);
-  if (!heights.length && !weights.length) return null;
-  const lastH = heights[heights.length - 1], lastW = weights[weights.length - 1];
-  const bmi = lastH && lastW ? +(lastW.y / ((lastH.y / 100) ** 2)).toFixed(1) : null;
+  const [metric, setMetric] = useState("stature");
+  const sex = swimmer?.sex === "male" ? 1 : swimmer?.sex === "female" ? 2 : null;
+  const bd = swimmer?.birthdate;
+  const META = { stature: { label: "Height", unit: "cm", color: c.blue }, weight: { label: "Weight", unit: "kg", color: c.amber }, bmi: { label: "BMI", unit: "", color: c.green } };
+  const meta = META[metric];
+
+  const toSeries = (arr) => (arr || []).map((e) => ({ t: parseDate(e.date), v: +e.value })).filter((p) => p.t && p.v).sort((a, b) => a.t - b.t);
+  const H = toSeries(swimmer?.heights), W = toSeries(swimmer?.weights);
+  const lastH = H[H.length - 1], lastW = W[W.length - 1];
+  const lastBMI = lastH && lastW ? +(lastW.v / ((lastH.v / 100) ** 2)).toFixed(1) : null;
+  if (!H.length && !W.length) return null;
+
+  // Measured points for the selected metric, as {age, value}.
+  const pts = useMemo(() => {
+    if (!bd) return [];
+    const nearest = (arr, t) => arr.reduce((best, p) => (!best || Math.abs(p.t - t) < Math.abs(best.t - t) ? p : best), null);
+    let raw = [];
+    if (metric === "stature") raw = H.map((p) => ({ age: ageYears(bd, p.t), value: p.v }));
+    else if (metric === "weight") raw = W.map((p) => ({ age: ageYears(bd, p.t), value: p.v }));
+    else raw = W.map((p) => { const h = nearest(H, p.t); if (!h || Math.abs(h.t - p.t) > 220 * 24 * 3600 * 1000) return null; return { age: ageYears(bd, p.t), value: +(p.v / ((h.v / 100) ** 2)).toFixed(1) }; }).filter(Boolean);
+    return raw.filter((p) => p.age >= CDC_AGE_MIN && p.age <= CDC_AGE_MAX);
+  }, [swimmer, metric, bd]);
+
+  const canPctl = sex && bd && pts.length;
+  const last = pts[pts.length - 1];
+  const cur = canPctl && last ? percentileFor(metric, sex, last.age, last.value) : null;
+
+  // Percentile band curves across the swimmer's age window (clamped 5–19).
+  const bandData = useMemo(() => {
+    if (!sex || !pts.length) return [];
+    const lo = Math.max(CDC_AGE_MIN, Math.floor(Math.min(...pts.map((p) => p.age)) - 0.5));
+    const hi = Math.min(CDC_AGE_MAX, Math.ceil(Math.max(...pts.map((p) => p.age)) + 0.5));
+    const rows = [];
+    for (let a = lo; a <= hi + 1e-9; a += 0.5) {
+      const row = { age: +a.toFixed(1) };
+      PCTL_BANDS.forEach((b) => (row["p" + b] = +valueAtBand(metric, sex, a, b).toFixed(1)));
+      rows.push(row);
+    }
+    return rows;
+  }, [sex, metric, pts]);
+
+  // Performance correlation: biggest growth interval vs PBs set in that window.
+  const corr = useMemo(() => {
+    if (!bd || H.length < 2) return null;
+    let best = null;
+    for (let i = 1; i < H.length; i++) {
+      const cm = H[i].v - H[i - 1].v;
+      if (cm > 0 && (!best || cm > best.cm)) best = { cm, t0: H[i - 1].t, t1: H[i].t, a0: ageYears(bd, H[i - 1].t), a1: ageYears(bd, H[i].t) };
+    }
+    if (!best) return null;
+    const pb = computePBTimeline(D);
+    const inWin = allResults(D).filter((r) => {
+      const t = parseDate(r.date);
+      return t && t >= best.t0 && t <= best.t1 && pb.has(r.event + "|" + poolNorm(r.pool) + "|" + (r.date || "") + "|" + r.seconds);
+    });
+    return { cm: best.cm, a0: best.a0, a1: best.a1, pbs: inWin.length };
+  }, [swimmer, D, bd]);
+
   return (
     <>
-      <div style={s.h2}>Growth</div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
-        {lastH && <KPI val={lastH.y + " cm"} lbl="Height" color={c.blue} />}
-        {lastW && <KPI val={lastW.y + " kg"} lbl="Weight" color={c.amber} />}
-        {bmi && <KPI val={bmi} lbl="BMI" color={c.green} />}
+      <div style={s.h2}>Growth & Percentiles</div>
+      <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+        {lastH && <KPI val={lastH.v + " cm"} lbl="Height" color={c.blue} />}
+        {lastW && <KPI val={lastW.v + " kg"} lbl="Weight" color={c.amber} />}
+        {lastBMI && <KPI val={lastBMI} lbl="BMI" color={c.green} />}
       </div>
-      {(heights.length > 1 || weights.length > 1) && (
-        <Card>
-          <MiniLine data={heights} color={c.blue} unit="cm" title="Height over time" />
-          <MiniLine data={weights} color={c.amber} unit="kg" title="Weight over time" />
+
+      <PillRow active={metric} onPick={setMetric}
+        items={[{ key: "stature", label: "Height" }, { key: "weight", label: "Weight" }, { key: "bmi", label: "BMI" }]} />
+
+      <Card>
+        {!sex || !bd ? (
+          <div style={{ color: c.dim, fontSize: 13, lineHeight: 1.6 }}>
+            Set <b>date of birth</b> and <b>sex</b> for {swimmer?.name} in <b>Settings</b> to see CDC percentile curves.
+          </div>
+        ) : !pts.length ? (
+          <div style={{ color: c.dim, fontSize: 13 }}>No {meta.label.toLowerCase()} measurements in the 5–19y range yet.</div>
+        ) : (
+          <>
+            {cur && (
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 26, fontWeight: 800, color: meta.color }}>{ordinal(cur.pctl)}</span>
+                <span style={{ color: c.dim, fontSize: 13 }}> percentile · {meta.label} {last.value}{meta.unit ? " " + meta.unit : ""} at age {last.age.toFixed(1)}</span>
+              </div>
+            )}
+            <div style={{ height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={bandData} margin={{ top: 6, right: 12, bottom: 0, left: -8 }}>
+                  <CartesianGrid stroke={c.line} />
+                  <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]} tick={{ fill: c.dim, fontSize: 10 }}
+                    tickFormatter={(v) => v + "y"} allowDecimals />
+                  <YAxis tick={{ fill: c.dim, fontSize: 10 }} width={40} domain={["auto", "auto"]} />
+                  <Tooltip contentStyle={tooltipStyle(c)} labelFormatter={(v) => "Age " + v + "y"} />
+                  {PCTL_BANDS.map((b) => (
+                    <Line key={b} dataKey={"p" + b} stroke={b === 50 ? c.dim : c.line} strokeWidth={b === 50 ? 2 : 1}
+                      strokeDasharray={b === 50 ? "5 4" : undefined} dot={false} isAnimationActive={false} name={b + "th"} />
+                  ))}
+                  <Scatter data={pts} dataKey="value" fill={meta.color} line={{ stroke: meta.color, strokeWidth: 3 }}
+                    isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ fontSize: 11, color: c.dim, textAlign: "center", marginTop: 6 }}>
+              Grey curves = CDC 3/10/25/50/75/90/97th percentiles · dashed = median · colored = {swimmer?.name}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {corr && corr.cm >= 1 && (
+        <Card style={{ display: "flex", gap: 12, alignItems: "flex-start", borderLeft: `4px solid ${c.green}` }}>
+          <div style={{ fontSize: 22 }}>📈</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Growth vs performance</div>
+            <div style={{ fontSize: 12.5, color: c.dim, marginTop: 3, lineHeight: 1.5 }}>
+              Fastest growth: <b>+{corr.cm.toFixed(1)} cm</b> between age {corr.a0.toFixed(1)} and {corr.a1.toFixed(1)} —
+              {corr.pbs > 0 ? ` ${corr.pbs} personal best${corr.pbs !== 1 ? "s" : ""} set during that period.` : " no PBs recorded in that window."}
+            </div>
+          </div>
         </Card>
       )}
     </>
@@ -234,14 +345,29 @@ function HomeTab({ D, swimmer }) {
   const age = swimmer?.birthdate ? getAgeAt(swimmer.birthdate, "") : null;
   const ins = useMemo(() => insights(D), [D]);
   const recent = ar.slice().sort((a, b) => (parseDate(b.date) || 0) - (parseDate(a.date) || 0)).slice(0, 10);
+  const [shareMsg, setShareMsg] = useState("");
+  async function onShare() {
+    setShareMsg("Preparing…");
+    const r = await shareProgress(swimmer, D);
+    setShareMsg(r === "shared" ? "Shared!" : r === "fallback" ? "Opened WhatsApp + saved image" : "");
+    if (r) setTimeout(() => setShareMsg(""), 3000);
+  }
 
   return (
     <div style={s.pad}>
       <Card style={{ background: GRAD, border: "none" }}>
-        <div style={{ fontSize: 24, fontWeight: 900, color: "#fff" }}>{swimmer?.name}</div>
-        <div style={{ color: "rgba(255,255,255,.85)", fontSize: 13, marginTop: 4 }}>
-          ID {swimmer?.id}{age ? ` · Age ${Math.floor(age)} · ${ageGroupLabel(age)}` : ""}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#fff" }}>{swimmer?.name}</div>
+            <div style={{ color: "rgba(255,255,255,.85)", fontSize: 13, marginTop: 4 }}>
+              ID {swimmer?.id}{age ? ` · Age ${Math.floor(age)} · ${ageGroupLabel(age)}` : ""}
+            </div>
+          </div>
+          <button onClick={onShare} style={{ flexShrink: 0, background: "rgba(255,255,255,.18)", color: "#fff",
+            border: "1px solid rgba(255,255,255,.35)", borderRadius: 10, padding: "8px 12px", fontSize: 13,
+            fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>📤 Share</button>
         </div>
+        {shareMsg && <div style={{ color: "#fff", fontSize: 12, marginTop: 8, opacity: .9 }}>{shareMsg}</div>}
         <div style={{ display: "flex", gap: 18, marginTop: 16 }}>
           <Stat n={ss.length} l={"Season" + (ss.length !== 1 ? "s" : "")} />
           <Stat n={ar.length} l="Swims" />
@@ -255,7 +381,7 @@ function HomeTab({ D, swimmer }) {
         <KPI val={comps} lbl="Competitions" color={c.blue} />
       </div>
 
-      <GrowthCard swimmer={swimmer} />
+      <GrowthPercentile swimmer={swimmer} D={D} />
 
       {ins.length > 0 && <>
         <div style={s.h2}>Insights</div>
@@ -755,6 +881,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
   const { c, s } = useUI();
   const [name, setName] = useState(sw.name || "");
   const [dob, setDob] = useState(sw.birthdate || "");
+  const [sex, setSex] = useState(sw.sex || "");
   const [heights, setHeights] = useState(sw.heights || []);
   const [weights, setWeights] = useState(sw.weights || []);
   const [status, setStatus] = useState("");
@@ -768,7 +895,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
   async function save() {
     setStatus("Saving…");
     try {
-      await saveSwimmerProfile(sw.id, { name: name.trim() || sw.name, birthdate: dob.trim(), heights, weights });
+      await saveSwimmerProfile(sw.id, { name: name.trim() || sw.name, birthdate: dob.trim(), sex, heights, weights });
       setStatus("✅ Saved"); reloadSwimmers();
     } catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Not allowed." : e.message)); }
   }
@@ -789,6 +916,12 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
         <div style={{ padding: "0 16px 16px" }}>
           <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} style={s.input} /></Field>
           <Field label="Date of birth (DD/MM/YYYY)"><input value={dob} onChange={(e) => setDob(e.target.value)} placeholder="DD/MM/YYYY" style={s.input} /></Field>
+          <Field label="Sex (for growth percentiles)">
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setSex("female")} style={s.pill(sex === "female")}>👧 Female</button>
+              <button onClick={() => setSex("male")} style={s.pill(sex === "male")}>👦 Male</button>
+            </div>
+          </Field>
 
           <MeasEditor title="📏 Height (cm)" unit="cm" color={c.blue} arr={heights} setArr={setHeights} onAdd={addMeas} />
           <MeasEditor title="⚖️ Weight (kg)" unit="kg" color={c.amber} arr={weights} setArr={setWeights} onAdd={addMeas} />
