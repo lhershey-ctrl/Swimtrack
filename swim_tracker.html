@@ -625,9 +625,11 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   loadSettings();
   renderSwimmerMgmt();
   renderSwimmerSelectors();
-  // init settings UI when tab is shown
-  document.addEventListener('DOMContentLoaded',function(){renderSettingsUI();});
-  setTimeout(renderSettingsUI,0);
+  // The Analyze-tab swimmer picker (#loadSwimmerPicker) appears later in the
+  // document than this script, so re-render the selectors once the DOM is
+  // ready — otherwise the picker shows up empty on first load.
+  document.addEventListener('DOMContentLoaded',function(){renderSwimmerSelectors();renderSettingsUI();});
+  setTimeout(function(){renderSwimmerSelectors();renderSettingsUI();},0);
 })();
 </script>
 
@@ -3198,11 +3200,15 @@ function render() {
     ac.appendChild(btn("☁ Sign in with Google", () => doSignIn(), "#185FA5"));
   } else {
     const sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
+    // Only show a swimmer's NAME once their data is actually loaded; until then
+    // the buttons are generic (no premature default name).
+    const loadedName = hasData && sw ? sw.name : null;
     st.innerHTML = "Signed in as <strong>" + currentUser.email + "</strong>" +
+      (loadedName ? ' · <span style="color:#0f3d72">' + loadedName + "</span>" : "") +
       (lastSyncedAt ? ' · <span style="color:#666">Last synced ' + fmtWhen(lastSyncedAt) + "</span>" : "");
     st.style.color = "#1a7a4f";
-    ac.appendChild(btn(sw ? ("☁ Load " + sw.name) : "☁ Load from cloud", () => doLoadFromCloud(), "#185FA5"));
-    ac.appendChild(btn(sw ? ("☁ Sync " + sw.name) : "☁ Sync to cloud", () => doSync(), "#1D9E75"));
+    ac.appendChild(btn("☁ Load from cloud", () => doLoadFromCloud(), "#185FA5"));
+    ac.appendChild(btn(loadedName ? ("☁ Sync " + loadedName) : "☁ Sync to cloud", () => doSync(), "#1D9E75"));
     ac.appendChild(btn("Sign out", () => signOut(auth), "#9aa6b5"));
   }
   if (hasData) ac.appendChild(btn("✕ Clear", () => window.clearLoadedData && window.clearLoadedData(), "#b06a3a"));
