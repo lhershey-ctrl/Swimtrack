@@ -3135,28 +3135,30 @@ async function doSync() {
   const st = statusEl();
   const D = window.D;
   const sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
-  if (!D || !Object.keys(D).filter((k) => k[0] !== "_").length) {
-    if (st) { st.style.color = "#c0392b"; st.textContent = "Load a JSON file first, then sync."; }
-    return;
-  }
   if (!sw || !sw.id) {
     if (st) { st.style.color = "#c0392b"; st.textContent = "No active swimmer selected (set one in Settings)."; }
     return;
   }
-  // Build the seasons map (strip internal _keys).
+  // Build the seasons map (strip internal _keys). May be empty if no JSON is
+  // loaded — in that case we still push the profile (name/DOB/height/weight).
   const seasons = {};
-  Object.keys(D).forEach((k) => { if (k[0] !== "_") seasons[k] = D[k]; });
+  Object.keys(D || {}).forEach((k) => { if (k[0] !== "_") seasons[k] = D[k]; });
   if (st) { st.style.color = "#666"; st.textContent = "Syncing…"; }
   try {
-    // merge:true so we never clobber mobile-owned profile fields (DOB/height/weight).
-    await setDoc(doc(db, "swimmers", String(sw.id)), {
+    // merge:true; we push season data AND profile fields edited here on desktop.
+    const payload = {
       name: sw.name || ("Swimmer " + sw.id),
       id: String(sw.id),
-      seasons,
+      birthdate: sw.birthdate || "",
+      heights: Array.isArray(sw.heights) ? sw.heights : [],
+      weights: Array.isArray(sw.weights) ? sw.weights : [],
+      seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
       updatedAt: Date.now(),
-    }, { merge: true });
+    };
+    if (Object.keys(seasons).length) payload.seasons = seasons;
+    await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
     const nSeasons = Object.keys(seasons).length;
-    if (st) { st.style.color = "#1a7a4f"; st.textContent = "✅ Synced " + sw.name + " — " + nSeasons + " season(s). Open the phone app to view."; }
+    if (st) { st.style.color = "#1a7a4f"; st.textContent = "✅ Synced " + sw.name + " — " + nSeasons + " season(s) · " + payload.heights.length + " height / " + payload.weights.length + " weight. Open the phone app."; }
   } catch (e) {
     if (st) {
       st.style.color = "#c0392b";
