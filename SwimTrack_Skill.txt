@@ -1,26 +1,37 @@
-# SwimTrack — Noga Swimming App
+# SwimTrack — Swimming Analysis App
 
 ## What this skill does
-Helps you use, maintain, and extend the `swim_tracker.html` single-file swimming analysis tool. It tracks swim times, personal bests, season progress, and physical growth for one or more swimmers using data from the Israeli swim results site **loglig.com**.
+Helps you use, maintain, and extend **SwimTrack** — a swimming analysis tool with a **desktop app** (`swim_tracker.html`) for extracting data from loglig.com and a **mobile web app** (`mobile/`, React+Vite) for viewing it on the phone. Both share a **Firebase** cloud (project `swimtrack-e12c8`) with Google sign-in. It tracks swim times, personal bests, season progress, and physical growth for one or more swimmers.
 
 ## When to trigger this skill
-- User asks how to extract swim data from LogLig
+- User asks how to extract swim data from LogLig, or sync/load to/from the cloud
 - User wants to add a new swimmer or season
-- User asks about any analysis tab or chart
-- User wants to modify or extend the app
-- User asks about settings, height/weight tracking, or PB badges
+- User asks about any analysis tab, chart, or the mobile app
+- User wants to modify or extend either app, or the Firebase setup
+- User asks about settings, height/weight tracking, PB badges, sign-in/access
 
 ---
 
-## App Overview
+## Two apps, one cloud
 
-The app is a **single HTML file** (`swim_tracker.html`) with no build step, no server, no dependencies except CDN scripts loaded at runtime. Open it in any browser.
+- **Desktop** (`swim_tracker.html`) — extract + analyze + Race; signs in and **syncs to the cloud**. Hosted at `https://swimtrack-e12c8.web.app/extract.html` (also runs as a local file, but cloud sign-in needs the hosted URL or localhost).
+- **Mobile** (`mobile/`, React+Vite) — Google sign-in, reads from the cloud (live), modern phone UI. Hosted at `https://swimtrack-e12c8.web.app/`. Installable to the home screen (PWA icon).
+- **Cloud:** Firebase Firestore `swimmers/{playerId}` (profile + `seasons` map) and `config/access` (email allow-list). Deploy: `cd mobile && npm run build && cd .. && firebase deploy`.
+- **Access:** owners (`lhershey@gmail.com`) always in; others must be added to the allow-list in the **mobile Settings → Who can access**.
+
+## Desktop App Overview
+
+A **single HTML file** (`swim_tracker.html`), no build step, CDN scripts at runtime. Open in a browser (use the hosted `/extract.html` to sync).
 
 **Four tabs:**
 1. **Extract Data** — set up swimmers, copy extractor code, run it on LogLig
-2. **Analyze** — load JSON files and explore all analysis sections
-3. **Race** — split-time race curve chart
-4. **Settings** — swimmer profiles, seasons, height/weight history
+2. **Analyze** — load JSON files (or **☁ Load from cloud**), explore all sections, and **☁ Sync to cloud** so the phone app sees it
+3. **Race** — split-time race curve chart (PDF upload)
+4. **Settings** — swimmer profiles, seasons, height/weight history (auto-saves to cloud when signed in; **☁ Save to Cloud** button)
+
+## Mobile App Overview
+
+React + Vite + recharts (`mobile/`), reads from Firestore. Tabs: **Home** (banner, KPIs, Growth chart, Insights, recent swims), **Meets** (competitions + PB badges), **Progress** (pool/stroke/distance filtered event charts + Points Trend), **Records** (PBs + SC-vs-LC), **Seasons** (event-coverage heat map, improvement, recap), **Settings** (theme, swimmer CRUD, access list). Theme: light/dark toggle in Settings.
 
 ---
 
