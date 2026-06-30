@@ -71,7 +71,7 @@ export function getStroke(ev) {
   if (/פרפר|butterfly|fly(?!.*medley)/i.test(ev)) return "Fly";
   if (/גב|backstroke|back(?!.*stroke.*free)/i.test(ev)) return "Back";
   if (/חזה|breaststroke|breast/i.test(ev)) return "Breast";
-  if (/medley|im\b|משולב|שחייה/i.test(ev)) return "IM";
+  if (/medley|im\b|מעורב|משולב|שחייה/i.test(ev)) return "IM";
   return "Free";
 }
 export function getStrokeColor(ev) {
@@ -260,7 +260,8 @@ export function competitions(D) {
       Object.entries(byDate).forEach(([date, evs]) => { totalComps++; totalSwims += evs.length; list.push({ name: "Competition", date, season: s, eventList: evs }); });
     });
   }
-  list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  // newest first, by actual parsed date (DD/MM/YYYY)
+  list.sort((a, b) => (parseDate(b.date) || 0) - (parseDate(a.date) || 0));
   return { metrics: { totalComps, totalSwims, avgEv: totalComps ? Math.round(totalSwims / totalComps) : 0, busiestName: maxName, busiestCount: maxEv }, list };
 }
 
