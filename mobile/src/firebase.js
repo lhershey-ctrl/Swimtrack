@@ -14,6 +14,7 @@ import {
   getDocs,
   getDoc,
   setDoc,
+  deleteDoc,
 } from "firebase/firestore";
 
 // ── Firebase config (project: swimtrack-e12c8) ──────────────────────
@@ -88,4 +89,22 @@ export async function getAccessList() {
 
 export async function saveAccessList(emails) {
   await setDoc(doc(db, "config", "access"), { emails });
+}
+
+// ── Swimmer profile CRUD (mobile-owned: name, DOB, height/weight, seasonIds) ──
+// merge:true so we never overwrite the `seasons` data written by desktop sync.
+export async function saveSwimmerProfile(swimmerId, profile) {
+  await setDoc(doc(db, "swimmers", String(swimmerId)), profile, { merge: true });
+}
+
+export async function createSwimmer(swimmerId, name) {
+  await setDoc(
+    doc(db, "swimmers", String(swimmerId)),
+    { id: String(swimmerId), name, seasons: {}, createdAt: Date.now() },
+    { merge: true }
+  );
+}
+
+export async function deleteSwimmer(swimmerId) {
+  await deleteDoc(doc(db, "swimmers", String(swimmerId)));
 }
