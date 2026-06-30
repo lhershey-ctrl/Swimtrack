@@ -1,0 +1,144 @@
+# SwimTrack — Noga Swimming App
+
+## What this skill does
+Helps you use, maintain, and extend the `noga_swimming_app.html` single-file swimming analysis tool. It tracks swim times, personal bests, season progress, and physical growth for one or more swimmers using data from the Israeli swim results site **loglig.com**.
+
+## When to trigger this skill
+- User asks how to extract swim data from LogLig
+- User wants to add a new swimmer or season
+- User asks about any analysis tab or chart
+- User wants to modify or extend the app
+- User asks about settings, height/weight tracking, or PB badges
+
+---
+
+## App Overview
+
+The app is a **single HTML file** (`noga_swimming_app.html`) with no build step, no server, no dependencies except CDN scripts loaded at runtime. Open it in any browser.
+
+**Four tabs:**
+1. **Extract Data** — set up swimmers, copy extractor code, run it on LogLig
+2. **Analyze** — load JSON files and explore all analysis sections
+3. **Race** — split-time race curve chart
+4. **Settings** — swimmer profiles, seasons, height/weight history
+
+---
+
+## How to Extract Data from LogLig
+
+### Method A — Auto Extraction (recommended, all seasons at once)
+
+1. Open the app → **Extract Data** tab
+2. Select the swimmer whose seasons you want
+3. Click **"📋 Copy Extractor Code"**
+4. Go to **loglig.com/Players/Details/{PlayerID}** (e.g. `268117` for Noga, `276401` for Gal)
+5. Press **F12** → click the **Console** tab
+6. Click in the console input, paste (**Ctrl+V**), press **Enter**
+7. A status box appears on the page — wait ~1 minute
+8. A JSON file downloads automatically: `swimming_Noga.json`
+
+### Method B — Manual Extraction (one season at a time, bookmarklet)
+
+1. Open the app → **Extract Data** tab
+2. **Drag** the green "📄 Extract This Season" button to your browser bookmarks bar (one-time setup)
+3. On LogLig, navigate to a specific season page: `loglig.com/Players/Details/{ID}?seasonId={SID}`
+4. Click the bookmarklet from your bookmarks bar
+5. One JSON file downloads per season
+
+### Known Season IDs (loglig.com)
+| Season | Season ID |
+|--------|-----------|
+| 2025–2026 | 1715 |
+| 2024–2025 | 1605 |
+| 2023–2024 | 1533 |
+| 2022–2023 | 1396 |
+| 2021–2022 | 1284 |
+| 2020–2021 | 1164 |
+
+### Player IDs
+| Swimmer | Player ID |
+|---------|-----------|
+| Noga Har-Shai | 268117 |
+| Gal | 276401 |
+
+---
+
+## Loading Data into the Analyzer
+
+1. Go to the **Analyze** tab
+2. Click the drop zone (or drag & drop) to load **one or more JSON files**
+3. Files from multiple seasons are **merged automatically**
+4. The swimmer banner appears at top with name, ID, age, total swims
+5. All analysis sections populate automatically
+
+---
+
+## Analysis Sections
+
+| # | Section | What it shows |
+|---|---------|---------------|
+| ① | Competitions | Per-meet table with PB badges, points, age column |
+| ② | Progress in Key Events | Top events by volume, time-series chart per event |
+| ③ | Personal Records | Best time per event × pool (25m / 50m) |
+| ④ | SC vs LC Analysis | Expected vs actual time difference between pool sizes |
+| ⑤ | SC/LC Insights | AI-style observations per event |
+| ⑥ | Best Times Over Time | Filterable by pool (25m/50m) and stroke |
+| ⑦ | Season Recap | Collapsible cards: meets, swims, PBs, top points, most improved |
+| ⑦b | Season Comparison | Side-by-side improvement table, two-season From/To selector |
+| ⑧ | Improvement by Stroke | Grouped bar chart + table comparing two seasons |
+| ⑨ | Points Trend | Points over time, colored by event |
+
+---
+
+## Settings Tab
+
+Each swimmer card contains:
+- **Name, Player ID, Date of Birth** (DOB enables age display and age-group labels)
+- **Seasons panel** — add/remove season IDs; known seasons shown as chips
+- **Height history** — date + cm entries, show/hide chart
+- **Weight history** — date + kg entries, show/hide chart
+
+Settings are persisted in **localStorage** under key `sw_settings`.
+
+---
+
+## Adding a New Swimmer
+
+1. **Extract Data** tab → enter name + Player ID → click **+ Add**
+2. Or in **Settings** tab → click **+ Add Swimmer**
+3. Add season IDs in the Seasons panel
+4. Run extraction, load the downloaded JSON file
+
+---
+
+## Stroke Color Coding
+
+| Stroke | Color |
+|--------|-------|
+| Freestyle | #185FA5 (blue) |
+| Backstroke | #1D9E75 (green) |
+| Breaststroke | #EF9F27 (orange) |
+| Butterfly | #e05252 (red) |
+| IM | #9b7bc4 (purple) |
+
+---
+
+## Tips
+
+- Load **multiple JSON files** at once — they merge by season key
+- **PB badges** (🥇) in the competition table flag swims that were a lifetime best at that date
+- The **Season Recap** cards are collapsible — click the header to expand
+- **Best Times** pool filter (25m/50m) splits SC and LC results so they don't overlap on the chart
+- **Date of birth** in Settings enables the age column in competition table and age-group label in the banner
+- If charts appear blank after loading, switch away from the Analyze tab and back — this triggers a Chart.js resize
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Action |
+|---------|-------------|--------|
+| `⚠️ competitions: Cannot read properties of undefined` | Old version of app | Reload with Ctrl+F5 |
+| Charts blank (no error) | Tab was hidden when charts built | Click off Analyze tab and back |
+| "Loaded: …" but no analysis | JSON file not from supported extractor format | Check JSON has `event`, `pool`, `seconds`, `date` fields |
+| Swimmer banner shows wrong name | Wrong swimmer active in Settings | Switch to correct swimmer in Settings tab |
