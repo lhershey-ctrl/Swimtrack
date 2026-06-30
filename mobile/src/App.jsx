@@ -320,7 +320,7 @@ function ProgressTab({ D }) {
               <LineChart data={data} margin={{ top: 6, right: 10, bottom: 0, left: -10 }}>
                 <CartesianGrid stroke={C.line} vertical={false} />
                 <XAxis dataKey="label" tick={{ fill: C.dim, fontSize: 10 }} interval="preserveStartEnd" />
-                <YAxis reversed domain={["auto", "auto"]} tick={{ fill: C.dim, fontSize: 10 }}
+                <YAxis domain={["auto", "auto"]} tick={{ fill: C.dim, fontSize: 10 }}
                   tickFormatter={fmtT} width={52} />
                 <Tooltip contentStyle={{ background: C.card2, border: `1px solid ${C.line}`, borderRadius: 10, color: C.text }}
                   formatter={(v) => [fmtT(v), "Time"]} labelStyle={{ color: C.dim }} />
@@ -331,7 +331,7 @@ function ProgressTab({ D }) {
           )}
         </div>
         <div style={{ fontSize: 11, color: C.dim, textAlign: "center", marginTop: 6 }}>
-          Higher on the chart = faster time
+          Lower on the chart = faster — the line drops as times improve
         </div>
       </Card>
     </div>

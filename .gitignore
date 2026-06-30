@@ -3,3 +3,4 @@ dist
 .DS_Store
 .firebase
 *.log
+mobile/public/extract.html
