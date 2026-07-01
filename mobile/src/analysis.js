@@ -135,6 +135,18 @@ export function recordCategories(records) {
 export function catLabel(cat) {
   return cat === "open" ? "Open / National" : /^\d{2}-\d{2}$/.test(cat) ? "Masters " + cat : "Age " + cat;
 }
+// Every record held by `name` across all pools / sexes / age groups (loose name match).
+export function recordsHeldBy(records, name) {
+  if (!records || !name) return [];
+  const out = [];
+  for (const p in records) for (const sx in records[p]) for (const cat in records[p][sx]) {
+    const m = records[p][sx][cat];
+    for (const k in m) if (nameMatch(m[k].name, name))
+      out.push({ pool: p, sex: sx, cat, dist: +k.split("|")[0], stroke: k.split("|")[1], ...m[k] });
+  }
+  const ci = (c) => CAT_ORDER.indexOf(c);
+  return out.sort((a, b) => a.pool.localeCompare(b.pool) || ci(a.cat) - ci(b.cat) || STROKES.indexOf(a.stroke) - STROKES.indexOf(b.stroke) || a.dist - b.dist);
+}
 // Gap from a PB to the relevant age record. Returns {rec, cat, gap, pct, holds}
 // or null when no matching record exists (missing data / under-10 / relay).
 export function recordGap(records, sex, age, pool, event, seconds) {

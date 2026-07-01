@@ -15,7 +15,7 @@ import {
   getAgeAt, ageGroupLabel, latest, prevSeason, STROKES, eventCatalog, eventSeries,
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
-  lookupRecord, bestInAgeGroup, recordAge,
+  lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -663,6 +663,8 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
     () => (records && sex && cat && swimmer && swimmer.birthdate) ? bestInAgeGroup(D, pool, swimmer.birthdate, cat) : {},
     [D, pool, records, sex, cat, swimmer && swimmer.birthdate]
   );
+  // Every record this swimmer holds, across all age groups (permanent achievements).
+  const held = useMemo(() => (records && myName ? recordsHeldBy(records, myName) : []), [records, myName]);
 
   return (
     <div style={s.pad}>
@@ -723,6 +725,23 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
           </div>
         ); })}
       </Card>
+      {held.length > 0 && (
+        <>
+          <div style={s.h2}>🏅 Records Held ({held.length})</div>
+          <Card style={{ padding: 6, borderColor: GOLD }}>
+            {held.map((r, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderBottom: i < held.length - 1 ? `1px solid ${c.line}` : "none" }}>
+                <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: GOLD }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{r.dist} {r.stroke}</div>
+                  <div style={{ fontSize: 11, color: c.dim }}>{catLabel(r.cat)} · {r.pool}m {r.sex === "F" ? "♀" : "♂"}{r.date ? " · " + r.date : ""}</div>
+                </div>
+                <div style={{ fontWeight: 800, fontSize: 15, color: GOLD }}>{fmtT(r.sec)}</div>
+              </div>
+            ))}
+          </Card>
+        </>
+      )}
       {showBrowser && <AllRecordsModal records={records} defaultPool={pool} defaultSex={sex} myName={myName} onClose={() => setShowBrowser(false)} />}
 
       <div style={s.h2}>Short Course vs Long Course</div>

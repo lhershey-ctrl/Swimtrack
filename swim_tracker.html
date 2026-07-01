@@ -732,13 +732,15 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
 
     <!-- ③ RECORDS ───────────────────────── -->
     <div class="section-title">③ Personal Records</div>
+    <div id="recGapHint" style="font-size:12px;color:#888;margin-bottom:10px"></div>
+    <button onclick="openRecordsBrowser()" style="background:#185FA5;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:12px">📖 Browse all Israeli records</button>
     <div class="tbl-2col">
       <div class="tbl-card">
-        <table><thead><tr><th>🏊 25m Pool</th><th>Best Time</th><th>Points</th><th>Season</th></tr></thead>
+        <table><thead><tr><th>🏊 25m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
         <tbody id="rec25"></tbody></table>
       </div>
       <div class="tbl-card">
-        <table><thead><tr><th>🏊 50m Pool</th><th>Best Time</th><th>Points</th><th>Season</th></tr></thead>
+        <table><thead><tr><th>🏊 50m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
         <tbody id="rec50"></tbody></table>
       </div>
     </div>
@@ -2314,6 +2316,29 @@ function renderEvCards(){
 // ═══════════════════════════════════════════════════════════════════
 //  ③ RECORDS
 // ═══════════════════════════════════════════════════════════════════
+// ── Israeli age-record gap helpers (mirror mobile analysis.js) ──
+function _sexN(s){s=(s||'').toString().toLowerCase();return s[0]==='f'?'F':s[0]==='m'?'M':null;}
+function _recAge(bd,ts){var b=parseDate(bd);if(!b)return null;return new Date(ts==null?Date.now():ts).getFullYear()-new Date(b).getFullYear();} // year-end age
+function _recCat(age){if(age==null)return null;var a=Math.floor(age);if(a>=10&&a<=18)return''+a;if(a>=19&&a<=24)return'open';if(a>=25){var base=25+Math.floor((a-25)/5)*5;return base+'-'+(base+4);}return null;}
+function _recKey(ev){var m=(ev||'').match(/^(\d+)/);return m?m[1]+'|'+getStroke(ev):null;}
+function _recRange(cat){if(!cat||cat==='open')return null;if(/^\d{1,2}$/.test(cat))return[+cat,+cat];var m=cat.match(/^(\d{2})-(\d{2})$/);return m?[+m[1],+m[2]]:null;}
+function _nameMatch(a,b){var n=function(x){return(x||'').toString().replace(/['’‘׳\s\-]/g,'');};return !!a&&!!b&&n(a)===n(b);}
+function _lookupRec(recs,S,age,pool,ev){var cat=_recCat(age),key=_recKey(ev);if(!recs||!S||!cat||!key)return null;var r=(((recs[pool]||{})[S]||{})[cat]||{})[key];return r&&r.sec?r:null;}
+function _bestInGroup(pool,bd,cat){var range=_recRange(cat),out={};seasons().forEach(function(sk){(D[sk].bests||[]).forEach(function(b){if(!b.event||!b.seconds||isRelay(b.event)||poolNorm(b.pool)!==pool)return;if(range){var a=_recAge(bd,parseDate(b.date));if(a==null||a<range[0]||a>range[1])return;}if(!out[b.event]||b.seconds<out[b.event].seconds)out[b.event]={seconds:b.seconds,time:b.time};});});return out;}
+function _gapCells(recs,S,age,pool,ev,ebMap,myName){
+  var rec=_lookupRec(recs,S,age,pool,ev); if(!rec)return['<span style="color:#bbb">—</span>','<span style="color:#bbb">—</span>'];
+  var recTxt=fmtT(rec.sec)+' <span style="color:#999;font-size:11px">'+rec.name+'</span>';
+  var eb=ebMap[ev], nameOwn=myName&&_nameMatch(rec.name,myName), gapTxt;
+  if(eb){
+    var g=+(eb.seconds-rec.sec).toFixed(2), pct=+((g/rec.sec)*100).toFixed(1);
+    if(nameOwn||Math.abs(g)<=0.005)gapTxt='<span style="color:#c8961f;font-weight:700">🏅 you hold it</span>';
+    else if(g<-0.005)gapTxt='<span style="color:#1D9E75;font-weight:700">🏅 faster!</span>';
+    else gapTxt='<span style="color:'+(pct<=5?'#1D9E75':pct<=15?'#9b7a0b':'#a32d2d')+';font-weight:700">+'+g+'s · '+pct+'%</span>';
+  } else if(nameOwn){ gapTxt='<span style="color:#c8961f;font-weight:700">🏅 you hold it</span>'; }
+  else { gapTxt='<span style="color:#bbb">no in-group swim</span>'; }
+  return[recTxt,gapTxt];
+}
+
 function buildRecords(){
   var ss=seasons();
   var rec25={},rec50={};
@@ -2326,14 +2351,60 @@ function buildRecords(){
         store[b.event]={seconds:b.seconds,time:b.time,points:b.points,season:s};
     });
   });
-  function renderRec(store,tbodyId){
+  // Age-group record context (needs published records + swimmer sex/birthdate).
+  var prof=window.__recProfile||{}, sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
+  var bd=prof.birthdate||sw.birthdate||'', S=_sexN(prof.sex), myName=prof.recordName||'';
+  var recs=window.__records||null, age=bd?_recAge(bd):null, cat=_recCat(age);
+  var canGap=!!(recs&&S&&cat);
+  var eb25=canGap?_bestInGroup('25',bd,cat):{}, eb50=canGap?_bestInGroup('50',bd,cat):{};
+  var hint=document.getElementById('recGapHint');
+  if(hint){
+    if(!recs)hint.innerHTML='Load Israeli records (Extract tab ③) to see the gap to each age-group record.';
+    else if(!S||!cat)hint.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> (phone app Settings) to see age-group record gaps.';
+    else hint.innerHTML='Gaps vs <b>'+(cat==='open'?'Open/National':'age '+cat)+'</b> records ('+(S==='F'?'women':'men')+'). Age group uses year-end age; a faster time from a younger group doesn\'t count.';
+  }
+  function renderRec(store,tbodyId,pool,ebMap){
     var rows=Object.entries(store).sort(function(a,b){return parseInt(a[0])-parseInt(b[0])||a[0].localeCompare(b[0]);})
-      .map(function(e){return'<tr><td><strong>'+e[0]+'</strong></td><td>'+fmtT(e[1].seconds)+'</td><td>'+pBadge(e[1].points)+'</td><td>'+e[1].season+'</td></tr>';}).join('');
+      .map(function(e){
+        var gc=canGap?_gapCells(recs,S,age,pool,e[0],ebMap,myName):['<span style="color:#bbb">—</span>','<span style="color:#bbb">—</span>'];
+        return'<tr><td><strong>'+e[0]+'</strong></td><td>'+fmtT(e[1].seconds)+'</td><td>'+pBadge(e[1].points)+'</td><td>'+e[1].season+'</td><td>'+gc[0]+'</td><td>'+gc[1]+'</td></tr>';
+      }).join('');
     document.getElementById(tbodyId).innerHTML=rows;
   }
-  renderRec(rec25,'rec25');
-  renderRec(rec50,'rec50');
+  renderRec(rec25,'rec25','25',eb25);
+  renderRec(rec50,'rec50','50',eb50);
 }
+window.buildRecords=buildRecords;
+
+// ── All-records browser (Extract-published records, filterable) ──
+var _REC_CATS=['open','10','11','12','13','14','15','16','17','18','25-29','30-34','35-39','40-44','45-49','50-54','55-59','60-64','65-69','70-74','75-79','80-84','85-89','90-94'];
+var _REC_STROKES=['Free','Back','Breast','Fly','IM'];
+function _catLbl(c){return c==='open'?'Open / National':/^\d{2}-\d{2}$/.test(c)?'Masters '+c:'Age '+c;}
+window.openRecordsBrowser=function(){
+  var recs=window.__records;
+  if(!recs){alert('No Israeli records loaded yet.\nSign in on the Analyze tab; if none are published, load them in the Extract tab ③.');return;}
+  var set={}; for(var p in recs)for(var s in recs[p])for(var c in recs[p][s])set[c]=1;
+  var cats=_REC_CATS.filter(function(c){return set[c];});
+  document.getElementById('rbCat').innerHTML=cats.map(function(c){return '<option value="'+c+'">'+_catLbl(c)+'</option>';}).join('');
+  var S=_sexN((window.__recProfile||{}).sex); if(S)document.getElementById('rbSex').value=S;
+  document.getElementById('recBrowser').style.display='block';
+  window.renderRecordsBrowser();
+};
+window.closeRecordsBrowser=function(){document.getElementById('recBrowser').style.display='none';};
+window.renderRecordsBrowser=function(){
+  var recs=window.__records||{};
+  var pool=document.getElementById('rbPool').value, sex=document.getElementById('rbSex').value, cat=document.getElementById('rbCat').value;
+  var q=(document.getElementById('rbSearch').value||'').toLowerCase().trim();
+  var m=(((recs[pool]||{})[sex]||{})[cat]||{}), myName=(window.__recProfile||{}).recordName;
+  var rows=Object.keys(m).map(function(k){var v=m[k];return{dist:+k.split('|')[0],stroke:k.split('|')[1],sec:v.sec,name:v.name,date:v.date};})
+    .filter(function(r){return !q||((r.dist+' '+r.stroke).toLowerCase().indexOf(q)>=0)||((r.name||'').toLowerCase().indexOf(q)>=0);})
+    .sort(function(a,b){return _REC_STROKES.indexOf(a.stroke)-_REC_STROKES.indexOf(b.stroke)||a.dist-b.dist;});
+  var html='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:#888"><th style="text-align:left;padding:6px">Event</th><th style="text-align:left;padding:6px">Holder</th><th style="text-align:left;padding:6px">Date</th><th style="text-align:right;padding:6px">Time</th></tr></thead><tbody>';
+  if(!rows.length)html+='<tr><td colspan="4" style="padding:12px;color:#888">No records match.</td></tr>';
+  rows.forEach(function(r){var own=myName&&_nameMatch(r.name,myName);
+    html+='<tr style="border-top:1px solid #eee;'+(own?'background:#fdf3d7':'')+'"><td style="padding:6px;font-weight:600">'+(own?'🏅 ':'')+r.dist+' '+r.stroke+'</td><td style="padding:6px">'+(r.name||'')+'</td><td style="padding:6px;color:#888">'+(r.date||'')+'</td><td style="padding:6px;text-align:right;font-weight:800">'+fmtT(r.sec)+'</td></tr>';});
+  document.getElementById('rbBody').innerHTML=html+'</tbody></table>';
+};
 
 // =======================================================================
 //  SC vs LC ANALYSIS
@@ -3484,6 +3555,8 @@ async function doLoadFromCloud(target) {
     fresh._swimmerName = name;
     window.D = fresh;
     window.__loadedSwimmerId = String(id);
+    // Stash the cloud profile (sex/birthdate/recordName) so buildRecords can show gaps.
+    window.__recProfile = { sex: data.sex || "", birthdate: data.birthdate || "", recordName: data.recordName || "" };
 
     if (typeof window.finalize === "function") {
       window.finalize([]); // cleans D, shows analysis, selects swimmer, builds charts
@@ -3617,6 +3690,9 @@ async function refreshRecordsStatus() {
   if (!currentUser) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published records."; return; }
   try {
     const d = await window.swimFetchRecords();
+    // Cache the records for the Analyze-tab gap columns; re-render if a swimmer is loaded.
+    window.__records = d && d.records ? d.records : null;
+    if (window.buildRecords && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildRecords();
     if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No records published yet — upload the PDFs below."; return; }
     const segs = d.segments || {}; let anyStale = false;
     const parts = Object.keys(SEG_LABEL).map((k) => {
@@ -3663,5 +3739,22 @@ render();
 // Expose a hook so other UI (swimmer switch) can refresh the bar.
 window.refreshCloudBar = render;
 </script>
+
+<!-- All-records browser modal -->
+<div id="recBrowser" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999">
+  <div style="max-width:840px;margin:28px auto;background:#fff;border-radius:14px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="padding:14px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #eee">
+      <strong style="flex:1;font-size:16px;color:#0f3d72">All Israeli Records</strong>
+      <button onclick="closeRecordsBrowser()" style="background:#f0f2f5;border:none;border-radius:999px;width:30px;height:30px;font-size:15px;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:12px 20px;border-bottom:1px solid #eee;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <select id="rbPool" onchange="renderRecordsBrowser()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px"><option value="25">25m</option><option value="50">50m</option></select>
+      <select id="rbSex" onchange="renderRecordsBrowser()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px"><option value="F">Women ♀</option><option value="M">Men ♂</option></select>
+      <select id="rbCat" onchange="renderRecordsBrowser()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px"></select>
+      <input id="rbSearch" oninput="renderRecordsBrowser()" placeholder="🔎 search event or name…" style="flex:1;min-width:160px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px">
+    </div>
+    <div id="rbBody" style="overflow:auto;padding:8px 20px 20px"></div>
+  </div>
+</div>
 </body>
 </html>
