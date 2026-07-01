@@ -220,6 +220,52 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     </details>
   </div>
 
+  <div class="section-title">③ Israeli Age Records</div>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Official Israeli records (juniors + masters, long &amp; short course). Upload whichever PDF(s) changed — <strong>you don't need all four</strong>. Each file is parsed the moment you pick it and shows its own record count. Then <strong>Review changes vs cloud</strong> to see exactly what's new/updated, and upload only those.</p>
+  <div class="card" style="padding:16px 20px">
+    <div id="recStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
+
+    <div style="font-weight:700;color:#374151;font-size:13px;margin-bottom:8px">Upload record PDFs (any subset)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
+      <label class="rec-slot" data-slot="lcJ" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#185FA5">🏊 Juniors · Long course (50m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'lcJ')">
+      </label>
+      <label class="rec-slot" data-slot="scJ" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#185FA5">🏊 Juniors · Short course (25m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'scJ')">
+      </label>
+      <label class="rec-slot" data-slot="lcM" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Masters · Long course (50m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'lcM')">
+      </label>
+      <label class="rec-slot" data-slot="scM" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Masters · Short course (25m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'scM')">
+      </label>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button id="recReviewBtn" onclick="recReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="recPublishBtn" onclick="recPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="recPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="recPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+
+    <details style="font-size:12px;color:#666;margin-top:14px">
+      <summary style="cursor:pointer;font-weight:600;color:#185FA5">Alternative: upload a pre-built records JSON</summary>
+      <div style="margin-top:10px">
+        <label style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;background:#6b7684;color:#fff;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">
+          📂 Choose records.json
+          <input type="file" accept=".json" style="display:none" onchange="recPickFile(event)">
+        </label>
+      </div>
+    </details>
+  </div>
+
 </div>
 
 <script>
@@ -3111,6 +3157,204 @@ function clearRace2(){
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════
+     🏆 ISRAELI RECORDS — in-browser PDF parser (ported from parse_records.mjs)
+     Uploads the 4 official record PDFs, reconstructs records[pool][sex][cat]
+     and hands the result to recPublish() (Firebase module) via window.__recPayload.
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  const TIME_RE=/^\d{1,2}:\d{2}\.\d{1,2}$/, DATE_RE=/^\d{1,2}\/\d{1,2}\/\d{2,4}$/, AGE_RE=/^\d{2}-\d{2}$/;
+  const relayRe=/שליחים|מיקס|4[xX]|[xX]4/;
+  const MIN_SEC={"50":18,"100":42,"200":90,"400":190,"800":400,"1500":780};
+  const strokeKey=(t)=>/פרפר|fly/i.test(t)?"Fly":/גב|back/i.test(t)?"Back":/חזה|breast/i.test(t)?"Breast":/מעורב|משולב|medley/i.test(t)?"IM":/חופשי|free/i.test(t)?"Free":null;
+  const parseTime=(s)=>{const m=s.match(/^(?:(\d{1,2}):)?(\d{1,2})\.(\d{1,2})$/);return m?((m[1]?+m[1]*60:0)+ +m[2]+ +("0."+m[3])):null;};
+  const findTime=(c)=>{const x=c.find((c)=>TIME_RE.test(c.s));return x?x.s:null;};
+  const findDate=(c)=>{const x=c.find((c)=>DATE_RE.test(c.s));return x?x.s:null;};
+  const bandJoin=(cells,lo,hi)=>cells.filter((c)=>c.x>=lo&&c.x<hi).filter((c)=>!DATE_RE.test(c.s)&&!TIME_RE.test(c.s)&&!/^\d+$/.test(c.s)).sort((a,b)=>b.x-a.x).map((c)=>c.s).join(" ").replace(/\s+/g," ").replace(/\s*-\s*/g,"-").replace(/\s*['’‘׳]\s*/g,"'").trim();
+
+  function mergeSplitRows(rows){
+    const hasName=(c)=>c.some((c)=>c.x>=205&&c.x<=340), hasTime=(c)=>c.some((c)=>TIME_RE.test(c.s)), isFrag=(c)=>hasName(c)&&!hasTime(c);
+    const out=[];
+    for(let i=0;i<rows.length;i++){
+      let r=rows[i];
+      if(hasTime(r.cells)&&!hasName(r.cells)){
+        const prev=out[out.length-1], nxt=rows[i+1];
+        if(prev&&isFrag(prev.cells)&&Math.abs(prev.gy-r.gy)<6){r={gy:r.gy,cells:prev.cells.concat(r.cells).sort((a,b)=>a.x-b.x)};out.pop();}
+        else if(nxt&&isFrag(nxt.cells)&&Math.abs(nxt.gy-r.gy)<6){r={gy:r.gy,cells:r.cells.concat(nxt.cells).sort((a,b)=>a.x-b.x)};i++;}
+      }
+      out.push(r);
+    }
+    return out;
+  }
+  function eventHeader(cells){
+    if(findTime(cells))return null;
+    const joined=cells.map((c)=>c.s).join(" "), sk=strokeKey(joined), dn=cells.find((c)=>/^(50|100|200|400|800|1500)$/.test(c.s));
+    return sk&&dn?{dist:dn.s,stroke:sk,relay:relayRe.test(joined)}:null;
+  }
+  function sexRow(cells){
+    if(findTime(cells))return null;
+    const j=cells.map((c)=>c.s).join("");
+    return /^גברים$/.test(j)?"M":/^נשים$/.test(j)?"F":null;
+  }
+  function addRec(out,pool,sex,cat,evKey,sec,time,name,date){
+    if(!sex||!cat||!evKey||!sec)return;
+    const floor=MIN_SEC[evKey.split("|")[0]]; if(floor&&sec<floor)return;
+    const P=out[pool]=out[pool]||{}, S=P[sex]=P[sex]||{}, C=S[cat]=S[cat]||{};
+    if(!C[evKey]||sec<C[evKey].sec)C[evKey]={sec:+sec.toFixed(2),time,name,date};
+  }
+  function countRecords(recs){let n=0;for(const p in recs)for(const s in recs[p])for(const c in recs[p][s])n+=Object.keys(recs[p][s][c]).length;return n;}
+
+  async function loadRows(buf){
+    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const rows=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p), tc=await page.getTextContent(), byY={};
+      tc.items.forEach((it)=>{if(!it.str.trim())return;const y=Math.round(it.transform[5]);(byY[y]=byY[y]||[]).push({x:it.transform[4],s:it.str.trim()});});
+      Object.keys(byY).map(Number).sort((a,b)=>b-a).forEach((y)=>rows.push({gy:p*100000-y,cells:byY[y].sort((a,b)=>a.x-b.x)}));
+    }
+    return mergeSplitRows(rows);
+  }
+
+  function parseMasters(rows,pool,out){
+    let sex=null,ev=null;
+    for(const r of rows){
+      const s=sexRow(r.cells); if(s){sex=s;continue;}
+      const eh=eventHeader(r.cells); if(eh){ev=eh.relay?null:eh;continue;}
+      const time=findTime(r.cells); if(!time||!ev||!sex)continue;
+      const ageTok=r.cells.find((c)=>AGE_RE.test(c.s)); if(!ageTok)continue;
+      addRec(out,pool,sex,ageTok.s,ev.dist+"|"+ev.stroke,parseTime(time),time,bandJoin(r.cells,250,392),findDate(r.cells));
+    }
+  }
+  function parseJuniors(rows,pool,out){
+    let relayStarted=false; const strokeFrags=[],distFrags=[],blocks=[]; let cur=null;
+    for(const r of rows){
+      const joined=r.cells.map((c)=>c.s).join(" ");
+      if(relayRe.test(joined))relayStarted=true;
+      if(relayStarted)continue;
+      r.cells.forEach((c)=>{
+        if(c.x>=478&&c.x<=505){const sk=strokeKey(c.s);if(sk)strokeFrags.push({gy:r.gy,stroke:sk});}
+        if(c.x>=505&&/^(50|100|200|400|800|1500)$/.test(c.s))distFrags.push({gy:r.gy,dist:c.s});
+      });
+      const time=findTime(r.cells); if(!time)continue;
+      if((joined.match(/,/g)||[]).length>=2)continue; // relay rows list 4 swimmers
+      let cat=null;
+      if(r.cells.some((c)=>c.s==="ישראל"&&c.x>=428&&c.x<=448))cat="open";
+      else if(r.cells.some((c)=>c.s==="גיל")){const n=r.cells.find((c)=>/^\d{1,2}$/.test(c.s)&&+c.s>=10&&+c.s<=18&&c.x>420);if(n)cat=n.s;}
+      if(!cat)continue;
+      if(cat==="open"||!cur){cur={rows:[]};blocks.push(cur);}
+      cur.rows.push({cat,time,name:bandJoin(r.cells,205,300),date:findDate(r.cells)});
+    }
+    const events=strokeFrags.map((s)=>{const d=distFrags.reduce((b,a)=>(!b||Math.abs(a.gy-s.gy)<Math.abs(b.gy-s.gy)?a:b),null);return{gy:s.gy,dist:d?d.dist:null,stroke:s.stroke};}).filter((e)=>e.dist).sort((a,b)=>a.gy-b.gy);
+    blocks.forEach((blk,b)=>{
+      const ev=events[Math.floor(b/2)], sex=b%2===0?"M":"F"; if(!ev)return;
+      blk.rows.forEach((row)=>addRec(out,pool,sex,row.cat,ev.dist+"|"+ev.stroke,parseTime(row.time),row.time,row.name,row.date));
+    });
+  }
+
+  // ── UI wiring ──────────────────────────────────────────────────────
+  const SLOTS={lcJ:{pool:"50",type:"J",label:"Juniors 50m"},scJ:{pool:"25",type:"J",label:"Juniors 25m"},lcM:{pool:"50",type:"M",label:"Masters 50m"},scM:{pool:"25",type:"M",label:"Masters 25m"}};
+  const HE={Free:"חופשי",Back:"גב",Breast:"חזה",Fly:"פרפר",IM:"מעורב"};
+  const $=(id)=>document.getElementById(id);
+  const fmtT=(sec)=>{const m=Math.floor(sec/60),r=(sec-m*60).toFixed(2);return (m<10?"0"+m:m)+":"+(+r<10?"0"+r:r);};
+  const evLabel=(ev)=>{const[d,s]=ev.split("|");return d+" "+(HE[s]||s);};
+  // Each slot parses independently → its own slice of records[pool][sex][cat].
+  window.__recSlices={};   // slot → { records, count, pool, type }
+  let mergedPayload=null, mergedSegments=null;
+
+  function resetPublish(){ mergedPayload=null; const pb=$("recPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("recPreview"); if(pv)pv.style.display="none"; }
+  function updateReviewBtn(){ const any=Object.keys(window.__recSlices).length>0; const b=$("recReviewBtn"); if(b){b.disabled=!any;b.style.opacity=any?"1":".5";} resetPublish(); }
+
+  // Parse ONE file the moment it's chosen, and show that file's own count.
+  window.recPickPdf=async function(e,slot){
+    const f=e.target.files&&e.target.files[0]; if(!f)return;
+    const lab=e.target.closest(".rec-slot"), fn=lab&&lab.querySelector(".rec-fname");
+    if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
+    if(lab){lab.style.borderColor="#c9d3df";lab.style.background="#fafbfc";}
+    try{
+      const {pool,type}=SLOTS[slot];
+      const rows=await loadRows(await f.arrayBuffer());
+      const out={}; if(type==="M")parseMasters(rows,pool,out); else parseJuniors(rows,pool,out);
+      const n=countRecords(out);
+      if(!n)throw new Error("0 records — wrong PDF for this slot?");
+      window.__recSlices[slot]={records:out,count:n,pool,type};
+      if(fn){fn.innerHTML="✓ <strong>"+n+"</strong> records — "+f.name;fn.style.color="#1a7a4f";}
+      if(lab){lab.style.borderColor="#1D9E75";lab.style.background="#f0faf5";}
+    }catch(err){
+      delete window.__recSlices[slot];
+      if(fn){fn.textContent="⚠ "+err.message;fn.style.color="#c0392b";}
+      if(lab){lab.style.borderColor="#e5a05a";lab.style.background="#fef6ee";}
+    }
+    updateReviewBtn();
+  };
+
+  // JSON fallback: a pre-built records_out.json becomes one "full" slice.
+  window.recPickFile=function(e){
+    const f=e.target.files&&e.target.files[0]; if(!f)return;
+    const st=$("recPublishStatus"), rd=new FileReader();
+    rd.onload=()=>{ try{
+      const obj=JSON.parse(rd.result);
+      if(!obj||!obj["50"]||!obj["25"])throw new Error('need "50" and "25" pools');
+      window.__recSlices={full:{records:obj,count:countRecords(obj),full:true}};
+      if(st){st.style.color="#185FA5";st.textContent="Loaded JSON — "+countRecords(obj)+" records. Click “Review changes vs cloud”.";}
+      updateReviewBtn();
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent="Invalid JSON: "+err.message;} } };
+    rd.readAsText(f);
+  };
+
+  // Compare the parsed slices against what's in the cloud, list the changes,
+  // and stage a merged payload (only changed/new records differ).
+  window.recReview=async function(){
+    const st=$("recPublishStatus"), pv=$("recPreview"), pubBtn=$("recPublishBtn");
+    const slices=window.__recSlices;
+    if(!Object.keys(slices).length){ if(st){st.style.color="#c0392b";st.textContent="Parse at least one PDF first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Signing in / reading current cloud records…";}
+    if(!(await window.swimEnsureSignIn())){ if(st){st.style.color="#c0392b";st.textContent="Sign-in needed to compare with the cloud.";} return; }
+    try{
+      const cloud=await window.swimFetchRecords();
+      const base=cloud&&cloud.records?cloud.records:{};
+      const merged=JSON.parse(JSON.stringify(base));
+      const segments=Object.assign({}, cloud&&cloud.segments?cloud.segments:{});
+      let added=0,changed=0; const changes=[];
+      const now=Date.now();
+      for(const slot in slices){
+        const sl=slices[slot], rec=sl.records;
+        for(const p in rec)for(const s in rec[p])for(const c in rec[p][s])for(const e in rec[p][s][c]){
+          const nv=rec[p][s][c][e], ov=((((base[p]||{})[s]||{})[c]||{})[e]);
+          if(!ov){added++; changes.push("➕ "+p+"m "+s+" "+c+" "+evLabel(e)+"  "+nv.time+"  "+nv.name);}
+          else if(ov.time!==nv.time){changed++; changes.push("✎ "+p+"m "+s+" "+c+" "+evLabel(e)+"  "+ov.time+" → "+nv.time+"  ("+nv.name+")");}
+          merged[p]=merged[p]||{};merged[p][s]=merged[p][s]||{};merged[p][s][c]=merged[p][s][c]||{};merged[p][s][c][e]=nv;
+        }
+        if(sl.full){ ["50|J","25|J","50|M","25|M"].forEach((k)=>segments[k]={loadedAt:now,count:(segments[k]&&segments[k].count)||0}); }
+        else segments[sl.pool+"|"+sl.type]={loadedAt:now,count:sl.count};
+      }
+      mergedPayload=merged; mergedSegments=segments;
+      const total=added+changed;
+      const body=total?("Changes to upload: "+added+" new, "+changed+" updated.\n\n"+changes.slice(0,60).join("\n")+(changes.length>60?("\n… +"+(changes.length-60)+" more"):"")):"No changes — the cloud already matches these files.";
+      if(pv){pv.style.display="";pv.textContent=body;}
+      if(pubBtn){pubBtn.disabled=!total;pubBtn.style.opacity=total?"1":".5";pubBtn.textContent="☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud";}
+      if(st){st.style.color=total?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):"Nothing to upload — already up to date.";}
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Not allowed — your email isn't on the access list.":"Compare failed: "+err.message;} }
+  };
+
+  // Upload the staged merged payload (owner-only, enforced by rules).
+  window.recPublish=async function(){
+    const st=$("recPublishStatus");
+    if(!mergedPayload){ if(st){st.style.color="#c0392b";st.textContent="Click “Review changes vs cloud” first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Uploading…";}
+    try{
+      await window.swimPublishRecords(mergedPayload, mergedSegments);
+      if(st){st.style.color="#1a7a4f";st.textContent="✅ Uploaded. Cloud now has "+countRecords(mergedPayload)+" records total.";}
+      window.__recSlices={}; updateReviewBtn();
+      if(window.swimRefreshRecordsStatus)window.swimRefreshRecordsStatus();
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish records.":"Upload failed: "+err.message;} }
+  };
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
      ☁ FIREBASE CLOUD SYNC  (project: swimtrack-e12c8)
      Signs in with Google and pushes the loaded data to Firestore so the
      mobile app can read it. Extraction stays 100% on the desktop.
@@ -3346,6 +3590,55 @@ window.swimCloudSaveAll = async function (swimmers) {
   catch (e) { return "error:" + e.message; }
 };
 
+// ── Israeli age records (config/records) ────────────────────────────────
+// Shape: { records:{pool:{sex:{cat:{ev:{sec,time,name,date}}}}},
+//          segments:{ "50|J":{loadedAt,count}, "25|J":.., "50|M":.., "25|M":.. },
+//          count, loadedAt, by }.  Warn a segment if it hasn't changed in 6 months.
+const SIX_MONTHS_MS = 182 * 24 * 60 * 60 * 1000;
+const SEG_LABEL = { "50|J": "Juniors · 50m", "25|J": "Juniors · 25m", "50|M": "Masters · 50m", "25|M": "Masters · 25m" };
+function countRecords(recs) {
+  let n = 0;
+  for (const p in recs) for (const s in recs[p]) for (const c in recs[p][s]) n += Object.keys(recs[p][s][c]).length;
+  return n;
+}
+// Exposed for the parser script (previous <script>): sign-in, read, and
+// owner-only publish of the MERGED records + per-segment timestamps.
+window.swimEnsureSignIn = async () => { if (!currentUser) { try { await doSignIn(); } catch (e) { return false; } } return !!currentUser; };
+window.swimFetchRecords = async () => { const s = await getDoc(doc(db, "config", "records")); return s.exists() ? s.data() : null; };
+window.swimPublishRecords = async (records, segments) => {
+  await setDoc(doc(db, "config", "records"), {
+    records, segments: segments || {}, count: countRecords(records),
+    loadedAt: Date.now(), by: currentUser ? currentUser.email : "",
+  });
+};
+// Show the currently-published records per segment + a >6-month staleness flag.
+async function refreshRecordsStatus() {
+  const el = $("recStatus"); if (!el) return;
+  if (!currentUser) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published records."; return; }
+  try {
+    const d = await window.swimFetchRecords();
+    if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No records published yet — upload the PDFs below."; return; }
+    const segs = d.segments || {}; let anyStale = false;
+    const parts = Object.keys(SEG_LABEL).map((k) => {
+      const seg = segs[k];
+      if (seg && seg.loadedAt) {
+        const stale = Date.now() - seg.loadedAt > SIX_MONTHS_MS; if (stale) anyStale = true;
+        return (stale ? "⚠ " : "• ") + SEG_LABEL[k] + ": " + (seg.count || "?") + " records · " + fmtWhen(seg.loadedAt);
+      }
+      return "• " + SEG_LABEL[k] + ": (not loaded yet)";
+    });
+    el.style.color = anyStale ? "#b06a3a" : "#1a7a4f";
+    el.innerHTML = "<strong>" + (d.count || countRecords(d.records || {})) + "</strong> records published" +
+      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "") +
+      '<div style="margin-top:6px;font-size:12px;color:#555;line-height:1.8">' + parts.join("<br>") + "</div>" +
+      (anyStale ? '<div style="color:#b06a3a;margin-top:4px">⚠ A section hasn\'t been updated in over 6 months — upload its latest PDF.</div>' : "");
+  } catch (e) {
+    el.style.color = "#c0392b";
+    el.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Couldn't read records: " + e.message;
+  }
+}
+window.swimRefreshRecordsStatus = refreshRecordsStatus;
+
 // Clear the loaded analysis view (defined here so it's always available,
 // independent of the main script's execution order).
 window.clearLoadedData = function () {
@@ -3361,6 +3654,7 @@ onAuthStateChanged(auth, (u) => {
   currentUser = u; window.swimUser = u;
   if (u) { refreshCloudSwimmers(); } else { cloudSwimmers = []; }
   render();
+  refreshRecordsStatus();
 });
 // Re-render the sync button label when the active swimmer changes.
 window.addEventListener("focus", render);

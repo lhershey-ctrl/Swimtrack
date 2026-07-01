@@ -96,6 +96,95 @@ export function ageGroupLabel(age) {
   return "Senior (20+)";
 }
 
+// ── Israeli record gap ──────────────────────────────────────────────
+// Normalise a swimmer sex value ("female"/"male"/"F"/"M") → "F"|"M"|null.
+export function sexNorm(sex) {
+  const x = (sex || "").toString().trim().toLowerCase();
+  if (x[0] === "f") return "F";
+  if (x[0] === "m") return "M";
+  return null;
+}
+// Current age → the record category key used in config/records.
+export function recordCategory(age) {
+  if (age == null) return null;
+  const a = Math.floor(age);
+  if (a >= 10 && a <= 18) return String(a);      // juniors single-age groups
+  if (a >= 19 && a <= 24) return "open";          // national / open
+  if (a >= 25) { const base = 25 + Math.floor((a - 25) / 5) * 5; return base + "-" + (base + 4); } // masters 5-yr band
+  return null;                                    // under 10: no age record
+}
+// Swimmer event string ("100 גב") → records key ("100|Back"), or null.
+export function recordKey(event) {
+  const d = extractDist(event);
+  return d ? d + "|" + getStroke(event) : null;
+}
+// Loose name match (ignore spaces / hyphens / geresh) so a swimmer's "name in
+// records" matches a record holder even with punctuation/spacing differences.
+export function nameMatch(a, b) {
+  const norm = (x) => (x || "").toString().replace(/['’‘׳\s-]/g, "");
+  return !!a && !!b && norm(a) === norm(b);
+}
+// Ordered list of category keys present anywhere in a records doc.
+const CAT_ORDER = ["open", "10", "11", "12", "13", "14", "15", "16", "17", "18",
+  "25-29", "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74", "75-79", "80-84", "85-89", "90-94"];
+export function recordCategories(records) {
+  const set = new Set();
+  for (const p in records) for (const s in records[p]) for (const c in records[p][s]) set.add(c);
+  return CAT_ORDER.filter((c) => set.has(c));
+}
+export function catLabel(cat) {
+  return cat === "open" ? "Open / National" : /^\d{2}-\d{2}$/.test(cat) ? "Masters " + cat : "Age " + cat;
+}
+// Gap from a PB to the relevant age record. Returns {rec, cat, gap, pct, holds}
+// or null when no matching record exists (missing data / under-10 / relay).
+export function recordGap(records, sex, age, pool, event, seconds) {
+  const rec = lookupRecord(records, sex, age, pool, event);
+  if (!rec || !seconds) return null;
+  const gap = +(seconds - rec.sec).toFixed(2);
+  return { rec, cat: recordCategory(age), gap, pct: +((gap / rec.sec) * 100).toFixed(1), holds: gap <= 0 };
+}
+// Fetch just the record entry for a swimmer's current age group + event (no gap math).
+export function lookupRecord(records, sex, age, pool, event) {
+  const S = sexNorm(sex), cat = recordCategory(age), key = recordKey(event);
+  if (!records || !S || !cat || !key) return null;
+  const rec = (((records[pool] || {})[S] || {})[cat] || {})[key];
+  return rec && rec.sec ? rec : null;
+}
+// Age band [min,max] inclusive for a category, or null when unrestricted (open/national).
+export function categoryAgeRange(cat) {
+  if (!cat || cat === "open") return null;
+  if (/^\d{1,2}$/.test(cat)) return [+cat, +cat];
+  const m = cat.match(/^(\d{2})-(\d{2})$/);
+  return m ? [+m[1], +m[2]] : null;
+}
+// Israeli age groups use the age a swimmer REACHES during the calendar year (age on
+// Dec 31) — not their age on the meet day. So a swim in the year they turn 45 counts
+// as 45 even if it was before their birthday.
+export function birthYear(birthdate) {
+  const bd = parseDate(birthdate);
+  return bd ? new Date(bd).getFullYear() : null;
+}
+export function recordAge(birthdate, atTs) {
+  const by = birthYear(birthdate);
+  if (by == null) return null;
+  return new Date(atTs == null ? Date.now() : atTs).getFullYear() - by;
+}
+// Best time per event among results swum WHILE in `cat`'s age band (year-end age at
+// each meet). A faster time set in a younger age group does NOT count toward this
+// group's record. Returns { event: {seconds,time,date} }.
+export function bestInAgeGroup(D, pool, birthdate, cat) {
+  const range = categoryAgeRange(cat), out = {};
+  allResults(D).forEach((r) => {
+    if (poolNorm(r.pool) !== pool || !r.seconds || r.seconds <= 0) return;
+    if (range) {
+      const a = recordAge(birthdate, parseDate(r.date));
+      if (a == null || a < range[0] || a > range[1]) return;
+    }
+    if (!out[r.event] || r.seconds < out[r.event].seconds) out[r.event] = { seconds: r.seconds, time: r.time, date: r.date };
+  });
+  return out;
+}
+
 // ── Season / result aggregation ─────────────────────────────────────
 export function seasons(D) {
   return Object.keys(D || {}).sort();

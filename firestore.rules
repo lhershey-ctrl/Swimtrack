@@ -41,5 +41,12 @@ service cloud.firestore {
       allow read: if isAllowed();
       allow write: if isOwner();
     }
+
+    // Israeli age records: everyone allowed can read; only owners can publish
+    // (loaded ~once a year from the official record PDFs via the desktop app).
+    match /config/records {
+      allow read: if isAllowed();
+      allow write: if isOwner();
+    }
   }
 }
