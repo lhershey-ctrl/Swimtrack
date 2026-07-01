@@ -87,6 +87,15 @@ export async function getAccessList() {
   return snap.exists() ? snap.data().emails || [] : [];
 }
 
+// ── Israeli age records (config/records) ─────────────────────────────
+// Published from the desktop app (~yearly). Shape:
+//   { records: { "50"|"25": { "M"|"F": { cat: { "dist|stroke": {sec,time,name,date} } } } },
+//     count, loadedAt: <ms>, by }
+export async function fetchRecords() {
+  const snap = await getDoc(doc(db, "config", "records"));
+  return snap.exists() ? snap.data() : null;
+}
+
 export async function saveAccessList(emails) {
   await setDoc(doc(db, "config", "access"), { emails });
 }

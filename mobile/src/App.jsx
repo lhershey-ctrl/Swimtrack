@@ -7,12 +7,15 @@ import { useUI, GRAD } from "./theme.jsx";
 import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
+  fetchRecords,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
   computePBTimeline, getStroke, getStrokeColor, STROKE_COLORS, COLORS, extractDist,
   getAgeAt, ageGroupLabel, latest, prevSeason, STROKES, eventCatalog, eventSeries,
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
+  recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
+  lookupRecord, bestInAgeGroup, recordAge,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -408,7 +411,8 @@ function HomeTab({ D, swimmer }) {
         <KPI val={comps} lbl="Competitions" color={c.blue} />
       </div>
 
-      <GrowthPercentile swimmer={swimmer} D={D} />
+      {/* CDC growth percentiles only apply to ages 5–19 — skip for adults. */}
+      {(age == null || age <= CDC_AGE_MAX) && <GrowthPercentile swimmer={swimmer} D={D} />}
 
       {ins.length > 0 && <>
         <div style={s.h2}>Insights</div>
@@ -635,34 +639,91 @@ function PointsTrend({ D }) {
 // ════════════════════════════════════════════════════════════════════
 //  RECORDS (+ SC vs LC)
 // ════════════════════════════════════════════════════════════════════
-function RecordsTab({ D }) {
+const GOLD = "#e0a52a";
+function RecordsTab({ D, swimmer, recordsDoc }) {
   const { c, s } = useUI();
   const [pool, setPool] = useState("25");
+  const [showBrowser, setShowBrowser] = useState(false);
   const recs = useMemo(() => personalRecords(D, pool), [D, pool]);
   const sclc = useMemo(() => scLc(D), [D]);
   const clsColor = { good: c.green, warn: c.amber, bad: c.red };
 
+  const records = recordsDoc && recordsDoc.records;
+  const sex = sexNorm(swimmer && swimmer.sex);
+  // Israeli age groups use year-end age (age on Dec 31 of the year).
+  const age = swimmer && swimmer.birthdate ? recordAge(swimmer.birthdate) : null;
+  const cat = recordCategory(age);
+  const groupLabel = cat === "open" ? "National/Open" : cat ? "Age " + cat : null;
+  const myName = swimmer && swimmer.recordName;
+  // Israeli records >6 months old → gentle staleness note.
+  const stale = recordsDoc && recordsDoc.loadedAt && (Date.now() - recordsDoc.loadedAt > 182 * 864e5);
+  // Best time per event swum WHILE in the current age group — a faster PB set in a
+  // younger group doesn't qualify for this group's record, so we compare on this.
+  const eligible = useMemo(
+    () => (records && sex && cat && swimmer && swimmer.birthdate) ? bestInAgeGroup(D, pool, swimmer.birthdate, cat) : {},
+    [D, pool, records, sex, cat, swimmer && swimmer.birthdate]
+  );
+
   return (
     <div style={s.pad}>
-      <div style={s.h2}>Personal Records</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={s.h2}>Personal Records</div>
+        {records && <button onClick={() => setShowBrowser(true)} style={{ background: c.blue, border: "none", color: "#fff", borderRadius: 999, padding: "5px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📖 All records</button>}
+      </div>
       <PillRow active={pool} onPick={setPool} items={[{ key: "25", label: "🏊 25m Pool" }, { key: "50", label: "🏊 50m Pool" }]} />
+
+      {!records && <Card style={{ borderColor: c.amber }}><div style={{ fontSize: 12.5, color: c.dim }}>Israeli records not published yet — load them in the desktop app to see gaps.</div></Card>}
+      {records && (!sex || !cat) && <Card style={{ borderColor: c.amber }}><div style={{ fontSize: 12.5, color: c.dim }}>Add {swimmer && swimmer.name}'s <strong>sex</strong> and <strong>birthdate</strong> in Settings to see the gap to each age record.</div></Card>}
+      {records && sex && cat && (
+        <div style={{ fontSize: 11.5, color: c.dim, margin: "0 4px 8px" }}>
+          Gaps vs <strong>{groupLabel}</strong> records ({sex === "F" ? "girls/women" : "boys/men"}, age group by year-end age).
+          {stale && <span style={{ color: c.amber }}> · ⚠ records over 6 months old</span>}
+        </div>
+      )}
+
       <Card style={{ padding: 6 }}>
         {recs.length === 0 && <div style={{ color: c.dim, padding: 14 }}>No {pool}m records.</div>}
-        {recs.map((r, i) => (
+        {recs.map((r, i) => {
+          const rec = lookupRecord(records, sex, age, pool, r.event);
+          // Compare on the best time swum WHILE in the current age group (not the all-time PB).
+          const eb = eligible[r.event];
+          const gap = rec && eb ? +(eb.seconds - rec.sec).toFixed(2) : null;
+          const pct = gap != null ? +((gap / rec.sec) * 100).toFixed(1) : null;
+          const ebDiffers = eb && Math.abs(eb.seconds - r.seconds) > 0.001;
+          // Ownership from the swimmer's best time swum WHILE in this age group:
+          //  · name matches the holder, or ties the record → holds it
+          //  · strictly faster than the published record → beat it (record likely stale)
+          const nameOwn = !!rec && myName && nameMatch(rec.name, myName);
+          const tiesRec = !!(rec && eb && Math.abs(eb.seconds - rec.sec) <= 0.005);
+          const beatsRec = !!(rec && eb && eb.seconds < rec.sec - 0.005);
+          const holdsIt = nameOwn || tiesRec;
+          const own = holdsIt || beatsRec;
+          return (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 10px",
+            background: own ? hexA(GOLD, 0.12) : "transparent", borderRadius: own ? 8 : 0,
             borderBottom: i < recs.length - 1 ? `1px solid ${c.line}` : "none" }}>
-            <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: getStrokeColor(r.event) }} />
+            <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: own ? GOLD : getStrokeColor(r.event) }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 600 }}>{r.event}</div>
+              <div style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "🏅 " : ""}{r.event}</div>
               <div style={{ fontSize: 11.5, color: c.dim }}>{fmtDateShort(parseDate(r.date))}{r.competition ? " · " + r.competition : ""}</div>
+              {rec && <div style={{ fontSize: 11, color: c.dim, marginTop: 1 }}>record {fmtT(rec.sec)} · {rec.name}{ebDiffers ? ` · your ${groupLabel} best ${eb.time}` : ""}</div>}
+              {rec && !eb && <div style={{ fontSize: 11, color: c.dim, fontStyle: "italic", marginTop: 1 }}>no {groupLabel} swim yet</div>}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontWeight: 800, fontSize: 16, color: c.amber }}>{fmtT(r.seconds)}</div>
               {r.points ? <div style={{ fontSize: 11, color: c.dim }}>{r.points} pts</div> : null}
+              {rec && (holdsIt
+                ? <div style={{ fontSize: 11, fontWeight: 800, color: GOLD }}>🏅 You hold this!</div>
+                : beatsRec
+                  ? <div style={{ fontSize: 11, fontWeight: 800, color: c.green }}>🏅 faster than record!</div>
+                  : gap == null
+                    ? null
+                    : <div style={{ fontSize: 11, fontWeight: 700, color: pct <= 5 ? c.green : pct <= 15 ? c.amber : c.red }}>+{gap}s · {pct}%</div>)}
             </div>
           </div>
-        ))}
+        ); })}
       </Card>
+      {showBrowser && <AllRecordsModal records={records} defaultPool={pool} defaultSex={sex} myName={myName} onClose={() => setShowBrowser(false)} />}
 
       <div style={s.h2}>Short Course vs Long Course</div>
       <div style={{ fontSize: 11.5, color: c.dim, margin: "0 4px 8px" }}>Expected SC gain ≈ 1.5s per 50m. Green = on target.</div>
@@ -683,6 +744,61 @@ function RecordsTab({ D }) {
           ))}
         </Card>
       )}
+    </div>
+  );
+}
+
+// Full-screen browser for every published record, with pool / sex / group / search filters.
+function AllRecordsModal({ records, defaultPool, defaultSex, myName, onClose }) {
+  const { c, s } = useUI();
+  const cats = useMemo(() => recordCategories(records || {}), [records]);
+  const [pool, setPool] = useState(defaultPool || "50");
+  const [sex, setSex] = useState(defaultSex || "M");
+  const [cat, setCat] = useState(cats.includes("open") ? "open" : cats[0] || "open");
+  const [q, setQ] = useState("");
+
+  const rows = useMemo(() => {
+    const m = (((records || {})[pool] || {})[sex] || {})[cat] || {};
+    const qn = q.trim().toLowerCase();
+    return Object.keys(m).map((k) => ({ dist: +k.split("|")[0], stroke: k.split("|")[1], ...m[k] }))
+      .filter((r) => !qn || (r.dist + " " + r.stroke).toLowerCase().includes(qn) || (r.name || "").toLowerCase().includes(qn))
+      .sort((a, b) => STROKES.indexOf(a.stroke) - STROKES.indexOf(b.stroke) || a.dist - b.dist);
+  }, [records, pool, sex, cat, q]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: c.bg, zIndex: 1000, display: "flex", flexDirection: "column", maxWidth: 540, margin: "0 auto" }}>
+      <div style={{ padding: "14px 16px", borderBottom: `1px solid ${c.line}`, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1, fontWeight: 800, fontSize: 16, color: c.text }}>All Israeli Records</div>
+        <button onClick={onClose} style={{ background: c.card, border: `1px solid ${c.line}`, color: c.text, borderRadius: 999, width: 32, height: 32, fontSize: 16, cursor: "pointer" }}>✕</button>
+      </div>
+      <div style={{ padding: "10px 16px", borderBottom: `1px solid ${c.line}`, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {["25", "50"].map((p) => <button key={p} onClick={() => setPool(p)} style={s.pill(pool === p)}>{p}m</button>)}
+          <div style={{ width: 6 }} />
+          <button onClick={() => setSex("F")} style={s.pill(sex === "F")}>♀ Women</button>
+          <button onClick={() => setSex("M")} style={s.pill(sex === "M")}>♂ Men</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+          {cats.map((k) => <button key={k} onClick={() => setCat(k)} style={s.pill(cat === k)}>{catLabel(k)}</button>)}
+        </div>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔎 search event or name…" style={s.input} />
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "6px 12px 24px" }}>
+        {rows.length === 0 && <div style={{ color: c.dim, padding: 16 }}>No records match.</div>}
+        {rows.map((r, i) => {
+          const own = myName && nameMatch(r.name, myName);
+          return (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 8px", background: own ? hexA(GOLD, 0.12) : "transparent", borderRadius: own ? 8 : 0, borderBottom: `1px solid ${c.line}` }}>
+              <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: own ? GOLD : (STROKE_COLORS[r.stroke] || c.blue) }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: c.text }}>{own ? "🏅 " : ""}{r.dist} {r.stroke}</div>
+                <div style={{ fontSize: 11, color: c.dim }}>{r.name}{r.date ? " · " + r.date : ""}</div>
+              </div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: c.text }}>{fmtT(r.sec)}</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -909,6 +1025,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
   const [name, setName] = useState(sw.name || "");
   const [dob, setDob] = useState(sw.birthdate || "");
   const [sex, setSex] = useState(sw.sex || "");
+  const [recordName, setRecordName] = useState(sw.recordName || "");
   const [heights, setHeights] = useState(sw.heights || []);
   const [weights, setWeights] = useState(sw.weights || []);
   const [status, setStatus] = useState("");
@@ -922,7 +1039,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
   async function save() {
     setStatus("Saving…");
     try {
-      await saveSwimmerProfile(sw.id, { name: name.trim() || sw.name, birthdate: dob.trim(), sex, heights, weights });
+      await saveSwimmerProfile(sw.id, { name: name.trim() || sw.name, birthdate: dob.trim(), sex, recordName: recordName.trim(), heights, weights });
       setStatus("✅ Saved"); reloadSwimmers();
     } catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Not allowed." : e.message)); }
   }
@@ -949,6 +1066,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
               <button onClick={() => setSex("male")} style={s.pill(sex === "male")}>👦 Male</button>
             </div>
           </Field>
+          <Field label="Name in records (Hebrew, optional)"><input value={recordName} onChange={(e) => setRecordName(e.target.value)} placeholder="e.g. הר-שי לירון — to flag records they hold" style={s.input} dir="rtl" /></Field>
 
           <MeasEditor title="📏 Height (cm)" unit="cm" color={c.blue} arr={heights} setArr={setHeights} onAdd={addMeas} />
           <MeasEditor title="⚖️ Weight (kg)" unit="kg" color={c.amber} arr={weights} setArr={setWeights} onAdd={addMeas} />
@@ -1080,9 +1198,11 @@ export default function App() {
   const [swimmer, setSwimmer] = useState(null);
   const [loadErr, setLoadErr] = useState("");
   const [tab, setTab] = useState("home");
+  const [recordsDoc, setRecordsDoc] = useState(null);
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
+  useEffect(() => { if (user) fetchRecords().then(setRecordsDoc).catch(() => setRecordsDoc(null)); }, [user]);
 
   function loadSwimmers() {
     return fetchSwimmers()
@@ -1132,7 +1252,7 @@ export default function App() {
             {tab === "home" && <HomeTab D={D} swimmer={swimmer} />}
             {tab === "meets" && <MeetsTab D={D} swimmer={swimmer} />}
             {tab === "progress" && <ProgressTab D={D} />}
-            {tab === "records" && <RecordsTab D={D} />}
+            {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
             {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} />}
           </>}
         </>
