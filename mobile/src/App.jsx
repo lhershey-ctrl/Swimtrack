@@ -700,7 +700,11 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
           const beatsRec = !!(rec && curBest && curBest.seconds < rec.sec - 0.005);
           const holdsIt = nameOwn || tiesRec;
           const own = holdsIt || beatsRec;
-          const headSec = curBest ? curBest.seconds : r.seconds; // fall back to all-time PB if no current-group swim
+          // If he holds the record, his true in-group best IS the record time — which
+          // may be an international swim missing from loglig. Use it as the headline
+          // unless a documented time is actually faster.
+          const headSec = (holdsIt && rec) ? (curBest ? Math.min(curBest.seconds, rec.sec) : rec.sec) : (curBest ? curBest.seconds : r.seconds);
+          const headFromRecord = holdsIt && rec && (!curBest || rec.sec < curBest.seconds - 0.005);
           return (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 10px",
             background: own ? hexA(GOLD, 0.12) : "transparent", borderRadius: own ? 8 : 0,
@@ -708,13 +712,14 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
             <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: own ? GOLD : getStrokeColor(r.event) }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "🏅 " : ""}{r.event}
-                {cat && !curBest && <span style={{ fontSize: 11, color: c.dim, fontWeight: 400 }}> · no {groupLabel} time yet</span>}</div>
+                {cat && !curBest && !holdsIt && <span style={{ fontSize: 11, color: c.dim, fontWeight: 400 }}> · no {groupLabel} time yet</span>}</div>
               {!records && <div style={{ fontSize: 11.5, color: c.dim }}>{fmtDateShort(parseDate(r.date))}{r.competition ? " · " + r.competition : ""}</div>}
               {rec && <div style={{ fontSize: 11, color: c.dim, marginTop: 2 }}>{groupLabel} record: {fmtT(rec.sec)} · {rec.name}</div>}
+              {headFromRecord && <div style={{ fontSize: 10.5, color: GOLD, marginTop: 2 }}>★ record time — not in the meet data (e.g. international meet)</div>}
               {prev.length > 0 && <div style={{ fontSize: 10.5, color: c.dim, marginTop: 2, opacity: 0.85 }}>Earlier: {prev.map((g) => shortCat(g.cat) + " " + g.time).join(" · ")}</div>}
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 800, fontSize: 16, color: curBest ? c.amber : c.dim }}>{fmtT(headSec)}</div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: (curBest || holdsIt) ? c.amber : c.dim }}>{fmtT(headSec)}</div>
               {rec && (holdsIt
                 ? <div style={{ fontSize: 11, fontWeight: 800, color: GOLD }}>🏅 You hold this!</div>
                 : beatsRec
