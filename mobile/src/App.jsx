@@ -15,7 +15,7 @@ import {
   getAgeAt, ageGroupLabel, latest, prevSeason, STROKES, eventCatalog, eventSeries,
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
-  lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy,
+  lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -868,7 +868,7 @@ function HeatmapSection({ D }) {
   );
 }
 
-function SeasonsTab({ D, swimmer }) {
+function SeasonsTab({ D, swimmer, recordsDoc }) {
   const { c, s } = useUI();
   const ss = seasons(D);
   const [from, setFrom] = useState(ss.length >= 2 ? ss[ss.length - 2] : ss[0]);
@@ -877,6 +877,7 @@ function SeasonsTab({ D, swimmer }) {
   const chartData = rows.slice(0, 12).map((r) => ({ name: r.event + " " + r.pool + "m", pct: r.pct, ev: r.event }));
   const recap = useMemo(() => seasonRecap(D, swimmer), [D, swimmer]);
   const [openSeason, setOpenSeason] = useState(null);
+  const [reportSeason, setReportSeason] = useState(null);
 
   return (
     <div style={s.pad}>
@@ -924,13 +925,16 @@ function SeasonsTab({ D, swimmer }) {
       <div style={s.h2}>Season Recap</div>
       {recap.map((r) => (
         <Card key={r.season} style={{ padding: 0, overflow: "hidden" }}>
-          <button onClick={() => setOpenSeason(openSeason === r.season ? null : r.season)} style={{ width: "100%", textAlign: "left",
-            display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", background: "transparent", border: "none",
-            color: c.text, cursor: "pointer" }}>
-            <span style={{ fontWeight: 800, fontSize: 13, color: "#fff", background: c.blue, padding: "3px 10px", borderRadius: 999 }}>{r.season}</span>
-            <span style={{ flex: 1, fontSize: 11.5, color: c.dim }}>{r.nMeets} meets · {r.nSwims} swims · {r.nPBs} PBs</span>
-            <span style={{ color: c.dim }}>{openSeason === r.season ? "▴" : "▾"}</span>
-          </button>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <button onClick={() => setOpenSeason(openSeason === r.season ? null : r.season)} style={{ flex: 1, textAlign: "left",
+              display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", background: "transparent", border: "none",
+              color: c.text, cursor: "pointer" }}>
+              <span style={{ fontWeight: 800, fontSize: 13, color: "#fff", background: c.blue, padding: "3px 10px", borderRadius: 999 }}>{r.season}</span>
+              <span style={{ flex: 1, fontSize: 11.5, color: c.dim }}>{r.nMeets} meets · {r.nSwims} swims · {r.nPBs} PBs</span>
+              <span style={{ color: c.dim }}>{openSeason === r.season ? "▴" : "▾"}</span>
+            </button>
+            <button onClick={() => setReportSeason(r.season)} title="Season report" style={{ background: "none", border: "none", color: c.blue, fontSize: 17, cursor: "pointer", padding: "0 14px" }}>🖨️</button>
+          </div>
           {openSeason === r.season && (
             <div style={{ padding: "0 16px 16px" }}>
               {r.ageLabel && <div style={{ fontSize: 12, color: c.dim, marginBottom: 8 }}>{r.ageLabel}</div>}
@@ -946,6 +950,78 @@ function SeasonsTab({ D, swimmer }) {
           )}
         </Card>
       ))}
+      {reportSeason && <SeasonReport season={reportSeason} recap={recap.find((x) => x.season === reportSeason)} D={D} swimmer={swimmer} recordsDoc={recordsDoc} onClose={() => setReportSeason(null)} />}
+    </div>
+  );
+}
+
+// Printable one-page season report (opens full-screen; Print → Save as PDF).
+function SeasonReport({ season, recap, D, swimmer, recordsDoc, onClose }) {
+  const rep = useMemo(() => seasonEventReport(D, swimmer, recordsDoc, season), [D, swimmer, recordsDoc, season]);
+  const r = recap || {};
+  const hasRec = rep.events.some((e) => e.rec);
+  const th = { textAlign: "left", padding: "5px 8px", color: "#64748b", fontWeight: 700, fontSize: 11, borderBottom: "2px solid #e2e8f0" };
+  const td = { padding: "5px 8px", borderBottom: "1px solid #eef2f7" };
+  return (
+    <div id="season-report" style={{ position: "fixed", inset: 0, background: "#fff", color: "#0f172a", zIndex: 2000, overflowY: "auto" }}>
+      <style>{`@media print { body * { visibility: hidden !important; } #season-report, #season-report * { visibility: visible !important; } #season-report { position: absolute !important; inset: 0; } .sr-noprint { display: none !important; } }`}</style>
+      <div className="sr-noprint" style={{ position: "sticky", top: 0, display: "flex", gap: 10, padding: "12px 16px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
+        <div style={{ flex: 1, fontWeight: 800, color: "#0f3d72" }}>Season Report</div>
+        <button onClick={() => window.print()} style={{ background: "#1D9E75", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontWeight: 700, cursor: "pointer" }}>🖨️ Print / Save PDF</button>
+        <button onClick={onClose} style={{ background: "#e2e8f0", border: "none", borderRadius: 8, padding: "7px 12px", fontWeight: 700, cursor: "pointer" }}>✕</button>
+      </div>
+
+      <div style={{ maxWidth: 780, margin: "0 auto", padding: "22px 26px 40px", fontFamily: "system-ui, sans-serif" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", borderBottom: "3px solid #0f3d72", paddingBottom: 10 }}>
+          <div style={{ fontSize: 24, fontWeight: 900, color: "#0f3d72" }}>🏊 {swimmer?.name} — {season}</div>
+          <div style={{ fontSize: 12, color: "#64748b" }}>{r.ageLabel || (rep.seasonAge != null ? "Age " + rep.seasonAge : "")} · #{swimmer?.id}</div>
+        </div>
+
+        {/* KPIs */}
+        <div style={{ display: "flex", gap: 24, margin: "16px 0", fontSize: 14 }}>
+          <div><b style={{ fontSize: 22, color: "#185FA5" }}>{r.nMeets ?? "—"}</b> meets</div>
+          <div><b style={{ fontSize: 22, color: "#185FA5" }}>{r.nSwims ?? "—"}</b> swims</div>
+          <div><b style={{ fontSize: 22, color: "#EF9F27" }}>{r.nPBs ?? "—"}</b> new PBs</div>
+          {r.bestPts && <div><b style={{ fontSize: 22, color: "#1D9E75" }}>{r.bestPts.points}</b> best pts</div>}
+        </div>
+
+        {/* Highlights */}
+        <div style={{ background: "#f7fafc", borderRadius: 10, padding: "10px 14px", fontSize: 13, lineHeight: 1.9, marginBottom: 18 }}>
+          {r.bestPts && <div><b>Top swim:</b> {r.bestPts.event} — {r.bestPts.points} pts{r.bestPts.time ? " (" + r.bestPts.time + ")" : ""}</div>}
+          {rep.bestDrop && <div><b>Biggest drop:</b> {rep.bestDrop.event} {rep.bestDrop.pool}m — {rep.bestDrop.deltaPct}% faster than last season</div>}
+          {r.impEv && !rep.bestDrop && <div><b>Most improved:</b> {r.impEv} ({r.impPct?.toFixed(1)}% faster)</div>}
+          {rep.held.length > 0 && <div><b>🏅 Records held:</b> {rep.held.map((e) => e.event + " " + e.pool + "m").join(", ")}</div>}
+        </div>
+
+        {/* Per-event table */}
+        <div style={{ fontWeight: 800, color: "#0f3d72", marginBottom: 6 }}>Best times this season</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr>
+            <th style={th}>Event</th><th style={th}>Pool</th><th style={{ ...th, textAlign: "right" }}>Best</th>
+            <th style={{ ...th, textAlign: "right" }}>vs last</th>
+            {hasRec && <th style={{ ...th, textAlign: "right" }}>Record</th>}
+            {hasRec && <th style={{ ...th, textAlign: "right" }}>Gap</th>}
+          </tr></thead>
+          <tbody>
+            {rep.events.map((e, i) => (
+              <tr key={i}>
+                <td style={{ ...td, fontWeight: 600 }}>{e.holds ? "🏅 " : ""}{e.event}</td>
+                <td style={td}>{e.pool}m</td>
+                <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmtT(e.seconds)}</td>
+                <td style={{ ...td, textAlign: "right", color: e.deltaPct > 0 ? "#1D9E75" : e.deltaPct < 0 ? "#a32d2d" : "#94a3b8" }}>
+                  {e.deltaPct == null ? "—" : (e.deltaPct > 0 ? "▼ " : e.deltaPct < 0 ? "▲ " : "") + Math.abs(e.deltaPct) + "%"}
+                </td>
+                {hasRec && <td style={{ ...td, textAlign: "right", color: "#64748b" }}>{e.rec ? fmtT(e.rec.sec) : "—"}</td>}
+                {hasRec && <td style={{ ...td, textAlign: "right", fontWeight: 700, color: e.holds ? "#c8961f" : "#0f172a" }}>{e.rec ? (e.holds ? "🏅" : "+" + e.gap + "s") : "—"}</td>}
+              </tr>
+            ))}
+            {rep.events.length === 0 && <tr><td colSpan={6} style={{ ...td, color: "#94a3b8" }}>No swims this season.</td></tr>}
+          </tbody>
+        </table>
+
+        <div style={{ marginTop: 24, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>Generated {new Date().toLocaleDateString()} · SwimTrack</div>
+      </div>
     </div>
   );
 }
@@ -1272,7 +1348,7 @@ export default function App() {
             {tab === "meets" && <MeetsTab D={D} swimmer={swimmer} />}
             {tab === "progress" && <ProgressTab D={D} />}
             {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
-            {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} />}
+            {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
           </>}
         </>
       )}

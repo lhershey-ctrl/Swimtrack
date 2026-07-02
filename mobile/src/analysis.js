@@ -197,6 +197,44 @@ export function bestInAgeGroup(D, pool, birthdate, cat) {
   return out;
 }
 
+// Per-event table for a season report: best time that season per event+pool,
+// the Δ vs the previous season, and the gap to that season's age-group record.
+export function seasonEventReport(D, swimmer, recordsDoc, season) {
+  const records = recordsDoc && recordsDoc.records;
+  const sex = sexNorm(swimmer && swimmer.sex);
+  const by = birthYear(swimmer && swimmer.birthdate);
+  const endYear = +(String(season).split("-")[1]) || null;
+  const cat = by && endYear ? recordCategory(endYear - by) : null; // group that season (year-end age)
+  const bestMap = (bests) => {
+    const m = {};
+    (bests || []).forEach((b) => {
+      if (!b.event || !b.seconds || b.seconds <= 0 || isRelay(b.event)) return;
+      const k = poolNorm(b.pool) + "|" + b.event;
+      if (!m[k] || b.seconds < m[k].seconds) m[k] = { pool: poolNorm(b.pool), event: b.event, seconds: b.seconds, time: b.time };
+    });
+    return m;
+  };
+  const cur = bestMap((D[season] || {}).bests);
+  const all = seasons(D), idx = all.indexOf(season), prevK = idx > 0 ? all[idx - 1] : null;
+  const prev = prevK ? bestMap((D[prevK] || {}).bests) : {};
+  const events = Object.keys(cur).map((k) => {
+    const e = cur[k], p = prev[k] ? prev[k].seconds : null;
+    const deltaPct = p ? +(((p - e.seconds) / p) * 100).toFixed(1) : null; // + = faster than last season
+    let rec = null, gap = null, pct = null, holds = false;
+    if (records && sex && cat) {
+      rec = (((records[e.pool] || {})[sex] || {})[cat] || {})[recordKey(e.event)] || null;
+      if (rec && rec.sec) {
+        gap = +(e.seconds - rec.sec).toFixed(2);
+        pct = +((gap / rec.sec) * 100).toFixed(1);
+        holds = gap <= 0.005 || (swimmer.recordName && nameMatch(rec.name, swimmer.recordName));
+      }
+    }
+    return { ...e, prevSec: p, deltaPct, rec, gap, pct, holds };
+  }).sort((a, b) => a.pool.localeCompare(b.pool) || extractDist(a.event) - extractDist(b.event) || a.event.localeCompare(b.event));
+  const drops = events.filter((e) => e.deltaPct != null && e.deltaPct > 0).sort((a, b) => b.deltaPct - a.deltaPct);
+  return { season, cat, seasonAge: by && endYear ? endYear - by : null, events, bestDrop: drops[0] || null, held: events.filter((e) => e.holds) };
+}
+
 // ── Season / result aggregation ─────────────────────────────────────
 export function seasons(D) {
   return Object.keys(D || {}).sort();
