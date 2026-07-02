@@ -667,6 +667,23 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
   const shortCat = (k) => catLabel(k).replace("Masters ", "").replace("Age ", "");
   // Every record this swimmer holds, across all age groups (permanent achievements).
   const held = useMemo(() => (records && myName ? recordsHeldBy(records, myName) : []), [records, myName]);
+  // Records the swimmer holds in the CURRENT group for THIS pool that aren't in the
+  // loglig data at all (e.g. set at an international meet) — add them as rows too.
+  const HE_STROKE = { Free: "חופשי", Back: "גב", Breast: "חזה", Fly: "פרפר", IM: "מעורב" };
+  const listRows = useMemo(() => {
+    const extra = [];
+    if (records && sex && cat && myName) {
+      const inList = new Set(recs.map((r) => recordKey(r.event)).filter(Boolean));
+      const m = ((records[pool] || {})[sex] || {})[cat] || {};
+      Object.keys(m).forEach((k) => {
+        if (nameMatch(m[k].name, myName) && !inList.has(k)) {
+          const [d, st] = k.split("|");
+          extra.push({ event: d + " " + (HE_STROKE[st] || st), seconds: m[k].sec });
+        }
+      });
+    }
+    return [...recs, ...extra].sort((a, b) => extractDist(a.event) - extractDist(b.event) || getStroke(a.event).localeCompare(getStroke(b.event)));
+  }, [recs, records, sex, cat, pool, myName]);
 
   return (
     <div style={s.pad}>
@@ -686,8 +703,8 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
       )}
 
       <Card style={{ padding: 6 }}>
-        {recs.length === 0 && <div style={{ color: c.dim, padding: 14 }}>No {pool}m records.</div>}
-        {recs.map((r, i) => {
+        {listRows.length === 0 && <div style={{ color: c.dim, padding: 14 }}>No {pool}m records.</div>}
+        {listRows.map((r, i) => {
           const rec = lookupRecord(records, sex, age, pool, r.event);
           const groups = byGroup[r.event] || [];
           const curBest = groups.find((g) => g.cat === cat) || null;   // best in the current age group
@@ -708,7 +725,7 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
           return (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 10px",
             background: own ? hexA(GOLD, 0.12) : "transparent", borderRadius: own ? 8 : 0,
-            borderBottom: i < recs.length - 1 ? `1px solid ${c.line}` : "none" }}>
+            borderBottom: i < listRows.length - 1 ? `1px solid ${c.line}` : "none" }}>
             <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: own ? GOLD : getStrokeColor(r.event) }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "🏅 " : ""}{r.event}
