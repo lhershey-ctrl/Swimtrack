@@ -155,6 +155,23 @@ export function recordGap(records, sex, age, pool, event, seconds) {
   const gap = +(seconds - rec.sec).toFixed(2);
   return { rec, cat: recordCategory(age), gap, pct: +((gap / rec.sec) * 100).toFixed(1), holds: gap <= 0 };
 }
+// For each event, the swimmer's best time in EACH age group they swam it (year-end
+// age at the meet). Returns { event: [ {cat, seconds, time, date} ] } sorted by age.
+export function bestsByAgeGroup(D, pool, birthdate) {
+  const tmp = {};
+  allResults(D).forEach((r) => {
+    if (poolNorm(r.pool) !== pool || !r.seconds || r.seconds <= 0) return;
+    const cat = recordCategory(recordAge(birthdate, parseDate(r.date)));
+    if (!cat) return;
+    const ev = tmp[r.event] = tmp[r.event] || {};
+    if (!ev[cat] || r.seconds < ev[cat].seconds) ev[cat] = { cat, seconds: r.seconds, time: r.time, date: r.date };
+  });
+  const out = {};
+  Object.keys(tmp).forEach((ev) => {
+    out[ev] = Object.values(tmp[ev]).sort((a, b) => CAT_ORDER.indexOf(a.cat) - CAT_ORDER.indexOf(b.cat));
+  });
+  return out;
+}
 // Fetch just the record entry for a swimmer's current age group + event (no gap math).
 export function lookupRecord(records, sex, age, pool, event) {
   const S = sexNorm(sex), cat = recordCategory(age), key = recordKey(event);

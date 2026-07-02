@@ -15,7 +15,7 @@ import {
   getAgeAt, ageGroupLabel, latest, prevSeason, STROKES, eventCatalog, eventSeries,
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
-  lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport,
+  lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -657,12 +657,14 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
   const myName = swimmer && swimmer.recordName;
   // Israeli records >6 months old → gentle staleness note.
   const stale = recordsDoc && recordsDoc.loadedAt && (Date.now() - recordsDoc.loadedAt > 182 * 864e5);
-  // Best time per event swum WHILE in the current age group — a faster PB set in a
-  // younger group doesn't qualify for this group's record, so we compare on this.
-  const eligible = useMemo(
-    () => (records && sex && cat && swimmer && swimmer.birthdate) ? bestInAgeGroup(D, pool, swimmer.birthdate, cat) : {},
-    [D, pool, records, sex, cat, swimmer && swimmer.birthdate]
+  // Best time per event in EACH age group the swimmer swam it (year-end age). We
+  // lead with the CURRENT group's best (what counts for this group's record) and
+  // list earlier groups below.
+  const byGroup = useMemo(
+    () => (records && cat && swimmer && swimmer.birthdate) ? bestsByAgeGroup(D, pool, swimmer.birthdate) : {},
+    [D, pool, records, cat, swimmer && swimmer.birthdate]
   );
+  const shortCat = (k) => catLabel(k).replace("Masters ", "").replace("Age ", "");
   // Every record this swimmer holds, across all age groups (permanent achievements).
   const held = useMemo(() => (records && myName ? recordsHeldBy(records, myName) : []), [records, myName]);
 
@@ -687,33 +689,32 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
         {recs.length === 0 && <div style={{ color: c.dim, padding: 14 }}>No {pool}m records.</div>}
         {recs.map((r, i) => {
           const rec = lookupRecord(records, sex, age, pool, r.event);
-          // Compare on the best time swum WHILE in the current age group (not the all-time PB).
-          const eb = eligible[r.event];
-          const gap = rec && eb ? +(eb.seconds - rec.sec).toFixed(2) : null;
+          const groups = byGroup[r.event] || [];
+          const curBest = groups.find((g) => g.cat === cat) || null;   // best in the current age group
+          const prev = groups.filter((g) => g.cat !== cat).slice().reverse(); // earlier groups, most-recent first
+          // Compare on the current-age-group best (what actually counts for this record).
+          const gap = rec && curBest ? +(curBest.seconds - rec.sec).toFixed(2) : null;
           const pct = gap != null ? +((gap / rec.sec) * 100).toFixed(1) : null;
-          const ebDiffers = eb && Math.abs(eb.seconds - r.seconds) > 0.001;
-          // Ownership from the swimmer's best time swum WHILE in this age group:
-          //  · name matches the holder, or ties the record → holds it
-          //  · strictly faster than the published record → beat it (record likely stale)
           const nameOwn = !!rec && myName && nameMatch(rec.name, myName);
-          const tiesRec = !!(rec && eb && Math.abs(eb.seconds - rec.sec) <= 0.005);
-          const beatsRec = !!(rec && eb && eb.seconds < rec.sec - 0.005);
+          const tiesRec = !!(rec && curBest && Math.abs(curBest.seconds - rec.sec) <= 0.005);
+          const beatsRec = !!(rec && curBest && curBest.seconds < rec.sec - 0.005);
           const holdsIt = nameOwn || tiesRec;
           const own = holdsIt || beatsRec;
+          const headSec = curBest ? curBest.seconds : r.seconds; // fall back to all-time PB if no current-group swim
           return (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 10px",
             background: own ? hexA(GOLD, 0.12) : "transparent", borderRadius: own ? 8 : 0,
             borderBottom: i < recs.length - 1 ? `1px solid ${c.line}` : "none" }}>
             <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: own ? GOLD : getStrokeColor(r.event) }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "🏅 " : ""}{r.event}</div>
-              <div style={{ fontSize: 11.5, color: c.dim }}>{fmtDateShort(parseDate(r.date))}{r.competition ? " · " + r.competition : ""}</div>
-              {rec && <div style={{ fontSize: 11, color: c.dim, marginTop: 1 }}>record {fmtT(rec.sec)} · {rec.name}{ebDiffers ? ` · your ${groupLabel} best ${eb.time}` : ""}</div>}
-              {rec && !eb && <div style={{ fontSize: 11, color: c.dim, fontStyle: "italic", marginTop: 1 }}>no {groupLabel} swim yet</div>}
+              <div style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "🏅 " : ""}{r.event}
+                {cat && !curBest && <span style={{ fontSize: 11, color: c.dim, fontWeight: 400 }}> · no {groupLabel} time yet</span>}</div>
+              {!records && <div style={{ fontSize: 11.5, color: c.dim }}>{fmtDateShort(parseDate(r.date))}{r.competition ? " · " + r.competition : ""}</div>}
+              {rec && <div style={{ fontSize: 11, color: c.dim, marginTop: 2 }}>{groupLabel} record: {fmtT(rec.sec)} · {rec.name}</div>}
+              {prev.length > 0 && <div style={{ fontSize: 10.5, color: c.dim, marginTop: 2, opacity: 0.85 }}>Earlier: {prev.map((g) => shortCat(g.cat) + " " + g.time).join(" · ")}</div>}
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 800, fontSize: 16, color: c.amber }}>{fmtT(r.seconds)}</div>
-              {r.points ? <div style={{ fontSize: 11, color: c.dim }}>{r.points} pts</div> : null}
+              <div style={{ fontWeight: 800, fontSize: 16, color: curBest ? c.amber : c.dim }}>{fmtT(headSec)}</div>
               {rec && (holdsIt
                 ? <div style={{ fontSize: 11, fontWeight: 800, color: GOLD }}>🏅 You hold this!</div>
                 : beatsRec
