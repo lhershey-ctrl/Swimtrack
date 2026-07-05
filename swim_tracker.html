@@ -528,6 +528,28 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     return SWIMMERS.length-1;
   };
 
+  // Pull the profile fields (heights/weights/birthdate/seasonIds) that live
+  // in the cloud doc into the matching local swimmer, so Settings reflects
+  // what ☁ Load actually loaded instead of stale/empty localStorage values.
+  window.applyCloudProfile=function(pid,profile){
+    pid=String(pid);
+    if(!profile)return -1;
+    for(var i=0;i<SWIMMERS.length;i++){
+      if(String(SWIMMERS[i].id)===pid){
+        var sw=SWIMMERS[i];
+        if(Array.isArray(profile.heights))sw.heights=profile.heights;
+        if(Array.isArray(profile.weights))sw.weights=profile.weights;
+        if(Array.isArray(profile.seasonIds)&&profile.seasonIds.length)sw.seasonIds=profile.seasonIds;
+        if(profile.birthdate)sw.birthdate=profile.birthdate;
+        saveSettings();
+        if(typeof renderSettingsUI==='function')renderSettingsUI();
+        if(typeof renderPhysStats==='function')renderPhysStats();
+        return i;
+      }
+    }
+    return -1;
+  };
+
     // Season management (immediate save)
     window.addSwimmerSeason=function(i,type){
       var sw=SWIMMERS[i];if(!sw)return;
@@ -3536,16 +3558,20 @@ async function doLoadFromCloud(target) {
   if (st) { st.style.color = "#666"; st.textContent = "Loading " + (name || id) + " from cloud…"; }
   try {
     const data = await swimLoadFromCloud(id);
+    if (!name) name = (data && data.name) || ("Swimmer " + id);
+    // Ensure this swimmer exists in the local roster and is the active one, so
+    // the banner, picker and Sync button all reflect the right person. Apply
+    // profile fields (height/weight/DOB) even if there's no season data yet —
+    // otherwise Settings never picks up cloud height/weight for a swimmer
+    // who was only ever profile-synced.
+    if (window.upsertSwimmer) window.upsertSwimmer(id, name);
+    if (window.applyCloudProfile) window.applyCloudProfile(id, data);
     const seasonsObj = data && data.seasons && typeof data.seasons === "object" ? data.seasons : null;
     const realKeys = seasonsObj ? Object.keys(seasonsObj).filter((k) => k[0] !== "_") : [];
     if (!realKeys.length) {
       if (st) { st.style.color = "#9a6b00"; st.textContent = "No season data in the cloud for " + (name || id) + " yet — extract & sync first."; }
       return;
     }
-    if (!name) name = data.name || ("Swimmer " + id);
-    // Ensure this swimmer exists in the local roster and is the active one, so
-    // the banner, picker and Sync button all reflect the right person.
-    if (window.upsertSwimmer) window.upsertSwimmer(id, name);
     // Build the global data object D directly from the cloud doc. For a
     // classic-script `var D`, window.D IS the same binding, so finalize() (a
     // hoisted global) sees what we set here.
