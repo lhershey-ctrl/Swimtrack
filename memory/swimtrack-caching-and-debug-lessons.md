@@ -4,7 +4,7 @@ description: Hard-won lessons from a long SwimTrack debugging session (caching +
 metadata: 
   node_type: memory
   type: feedback
-  originSessionId: ef1d7e26-ea8d-4006-a5e3-d5de216c00bf
+  originSessionId: aa2468ed-d83c-497d-a96c-a5606287bdf8
 ---
 
 Two issues each cost many rounds; avoid repeating them.

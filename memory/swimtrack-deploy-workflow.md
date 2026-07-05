@@ -4,10 +4,10 @@ description: Build / deploy / push commands for SwimTrack
 metadata: 
   node_type: memory
   type: project
-  originSessionId: ef1d7e26-ea8d-4006-a5e3-d5de216c00bf
+  originSessionId: aa2468ed-d83c-497d-a96c-a5606287bdf8
 ---
 
-From `c:\Users\liron.hs\Claude\Projects\Swimming`:
+From `d:\Liron\Tools\Swimtrack`:
 
 ```
 cd mobile && npm run build && cd ..      # prebuild copies ../swim_tracker.html -> mobile/public/extract.html -> dist/extract.html
