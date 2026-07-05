@@ -528,6 +528,28 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     return SWIMMERS.length-1;
   };
 
+  // Add a swimmer discovered in the cloud (e.g. Liron, on a machine whose
+  // local roster only has the hardcoded defaults) without changing which
+  // swimmer is currently active — used by the sign-in auto-sync, which
+  // may see cloud swimmers the user isn't actively viewing this session.
+  window.silentAddSwimmer=function(pid,name,profile){
+    pid=String(pid);
+    for(var i=0;i<SWIMMERS.length;i++){if(String(SWIMMERS[i].id)===pid)return i;}
+    SWIMMERS.push({
+      name:name||('Swimmer '+pid),
+      id:pid,
+      seasonIds:(profile&&Array.isArray(profile.seasonIds))?profile.seasonIds:[],
+      heights:(profile&&Array.isArray(profile.heights))?profile.heights:[],
+      weights:(profile&&Array.isArray(profile.weights))?profile.weights:[],
+      birthdate:(profile&&profile.birthdate)||''
+    });
+    saveSettings();
+    renderSwimmerMgmt();
+    if(typeof renderSettingsUI==='function')renderSettingsUI();
+    if(typeof renderPhysStats==='function')renderPhysStats();
+    return SWIMMERS.length-1;
+  };
+
   // Pull the profile fields (heights/weights/birthdate/seasonIds) that live
   // in the cloud doc into the matching local swimmer, so Settings reflects
   // what ☁ Load actually loaded instead of stale/empty localStorage values.
@@ -3752,9 +3774,28 @@ window.clearLoadedData = function () {
   render();
 };
 
+// Pull profile fields (height/weight/DOB) for every cloud swimmer on
+// sign-in, so Settings shows cloud data right away instead of only after
+// an explicit "☁ Load" on the Analyze tab. Covers swimmers that aren't
+// even in the local roster yet (fresh browser/machine only has the
+// hardcoded Noga/Gal defaults) by silently adding them — without
+// switching the active swimmer, unlike upsertSwimmer.
+async function autoSyncProfilesFromCloud() {
+  try {
+    const snap = await getDocs(collection(db, "swimmers"));
+    const locals = window.getAllSwimmers ? window.getAllSwimmers() : [];
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      const isLocal = locals.some((sw) => String(sw.id) === d.id);
+      if (isLocal) { if (window.applyCloudProfile) window.applyCloudProfile(d.id, data); }
+      else if (window.silentAddSwimmer) window.silentAddSwimmer(d.id, data.name, data);
+    });
+  } catch (e) { /* not signed in / no access yet — ignore */ }
+}
+
 onAuthStateChanged(auth, (u) => {
   currentUser = u; window.swimUser = u;
-  if (u) { refreshCloudSwimmers(); } else { cloudSwimmers = []; }
+  if (u) { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); } else { cloudSwimmers = []; }
   render();
   refreshRecordsStatus();
 });
