@@ -17,6 +17,9 @@ metadata:
 - Records list also shows held records with no matching loglig row, as rows.
 - Extract tab: removed the Auto Extraction (console-script) option, keeping only the Manual (single-season bookmarklet) method — **note: `SwimTrack_Architecture.md` and `SwimTrack_Skill.txt` still describe the old Auto Extraction method as the recommended path; those docs are now stale on this point and should be updated if touched.**
 
+**Recently done (2026-07-05):**
+- Fixed desktop Settings not showing cloud height/weight/DOB — was only synced as a side effect of the Analyze tab's manual "☁ Load" button. Now auto-syncs every cloud swimmer's profile on sign-in. Confirmed fixed by the user. See [[swimtrack-caching-and-debug-lessons]] lesson 3, [[swimtrack-cloud-architecture]].
+
 **Open / ideas not built:**
 - Race PDF analysis on mobile — desktop only.
 - Sex selector only on mobile Settings; desktop Settings doesn't set it yet.
