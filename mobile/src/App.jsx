@@ -21,6 +21,35 @@ import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
 
 // ════════════════════════════════════════════════════════════════════
+//  Error boundary — without this, an uncaught error during a tab's
+//  render silently blanks the whole app with nothing shown on screen
+//  (and no dev tools on a phone to see why). Show the message instead.
+// ════════════════════════════════════════════════════════════════════
+class TabErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("Tab crashed:", error, info); }
+  render() {
+    if (this.state.error) {
+      const e = this.state.error;
+      return (
+        <div style={{ padding: 16 }}>
+          <div style={{ background: "#fee2e2", border: "1px solid #ef4444", borderRadius: 10, padding: 14, color: "#7f1d1d", fontSize: 13 }}>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>⚠️ This tab hit an error</div>
+            <div style={{ fontFamily: "monospace", fontSize: 11.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {String((e && e.message) || e)}
+              {e && e.stack ? "\n\n" + e.stack : ""}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 11, opacity: 0.8 }}>Screenshot this and send it over.</div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  UI atoms
 // ════════════════════════════════════════════════════════════════════
 function Card({ children, style }) {
@@ -1366,13 +1395,13 @@ export default function App() {
             <Center><div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
               No seasons synced for {swimmer.name} yet.<br />Run "Sync to cloud" in the desktop app.</Center>
           )}
-          {hasData && <>
+          {hasData && <TabErrorBoundary key={tab + "-" + swimmerId}>
             {tab === "home" && <HomeTab D={D} swimmer={swimmer} />}
             {tab === "meets" && <MeetsTab D={D} swimmer={swimmer} />}
             {tab === "progress" && <ProgressTab D={D} />}
             {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
             {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
-          </>}
+          </TabErrorBoundary>}
         </>
       )}
       <BottomNav tab={tab} setTab={setTab} />
