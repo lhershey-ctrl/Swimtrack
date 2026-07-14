@@ -574,8 +574,9 @@ export function pointsTrend(D, opts) {
   ar.forEach((r) => {
     const ts = parseDate(r.date);
     if (!ts || !r.points) return;
-    (byEvent[r.event] = byEvent[r.event] || []).push({ x: ts, y: r.points });
-    all.push({ x: ts, y: r.points, event: r.event });
+    const pt = { x: ts, y: r.points, event: r.event, time: r.time, pool: r.pool };
+    (byEvent[r.event] = byEvent[r.event] || []).push(pt);
+    all.push(pt);
   });
   const reg = linReg(all);
   let trend = null;

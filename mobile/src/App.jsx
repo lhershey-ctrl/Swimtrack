@@ -651,7 +651,11 @@ function PointsTrend({ D }) {
                   tickFormatter={(v) => fmtDateShort(v)} tick={{ fill: c.dim, fontSize: 10 }} />
                 <YAxis tick={{ fill: c.dim, fontSize: 10 }} width={36} />
                 <Tooltip contentStyle={tooltipStyle(c)} labelFormatter={(v) => fmtDateShort(v)}
-                  formatter={(v, n) => n === "ty" ? null : [v + " pts", "Points"]} />
+                  formatter={(v, n, p) => {
+                    if (n !== "y") return null;
+                    const d = p.payload;
+                    return [(d.time ? d.time + " · " : "") + v + " pts", d.event || ""];
+                  }} />
                 {tr.trend && <Line dataKey="ty" stroke={c.dim} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />}
                 <Scatter dataKey="y" isAnimationActive={false}>
                   {data.map((p, i) => <Cell key={i} fill={evColor[p.event] || c.blue} />)}

@@ -2077,7 +2077,7 @@ function buildPointsTrend(){
   filtered.forEach(function(r){
     var ts=parseDate(r.date);if(!ts||!r.points)return;
     if(!evGroups[r.event])evGroups[r.event]=[];
-    evGroups[r.event].push({x:ts,y:r.points});
+    evGroups[r.event].push({x:ts,y:r.points,time:r.time,pool:r.pool});
   });
   var datasets=[];
   Object.keys(evGroups).forEach(function(ev,ci){
@@ -2097,9 +2097,12 @@ function buildPointsTrend(){
     type:'scatter',data:{datasets:datasets},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'top',labels:{font:{size:10},boxWidth:12,filter:function(i){return i.text!=='Trend';}}},
-        tooltip:{callbacks:{
+        tooltip:{filter:function(item){return item.dataset.label!=='Trend';},callbacks:{
           title:function(c){return new Date(c[0].parsed.x).toLocaleDateString('he-IL');},
-          label:function(c){return ' '+c.dataset.label+': '+c.parsed.y+' pts';}
+          label:function(c){
+            var raw=c.raw||{};
+            return ' '+c.dataset.label+': '+(raw.time?raw.time+' · ':'')+c.parsed.y+' pts';
+          }
         }}},
       scales:{
         x:{type:'linear',ticks:{color:'#888',font:{size:9},callback:function(v){return new Date(v).toLocaleDateString('he-IL',{month:'short',year:'2-digit'});}},grid:{color:'rgba(0,0,0,.04)'}},
