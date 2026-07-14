@@ -271,8 +271,8 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
 <script>
 (function(){
   var DEFAULT_SWIMMERS=[
-    {name:'Noga',id:'268117',seasonIds:[],heights:[],weights:[],birthdate:''},
-    {name:'Gal',id:'276401',seasonIds:[],heights:[],weights:[],birthdate:''}
+    {name:'Noga',id:'268117',seasonIds:[],heights:[],weights:[],birthdate:'',sex:''},
+    {name:'Gal',id:'276401',seasonIds:[],heights:[],weights:[],birthdate:'',sex:''}
   ];
   var SWIMMERS,activeSwimmer=0;
 
@@ -289,11 +289,12 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
           if(!Array.isArray(sw.weights))sw.weights=[];
           if(!Array.isArray(sw.seasonIds))sw.seasonIds=[];
           if(sw.birthdate===undefined)sw.birthdate='';
+          if(sw.sex===undefined)sw.sex='';
         });
         return;
       }
     }catch(e){}
-    SWIMMERS=DEFAULT_SWIMMERS.map(function(s){return{name:s.name,id:s.id,seasonIds:s.seasonIds.slice(),heights:[],weights:[],birthdate:''};});
+    SWIMMERS=DEFAULT_SWIMMERS.map(function(s){return{name:s.name,id:s.id,seasonIds:s.seasonIds.slice(),heights:[],weights:[],birthdate:'',sex:''};});
   }
   function saveSettings(){try{localStorage.setItem('sw_settings',JSON.stringify(SWIMMERS));}catch(e){}}
 
@@ -420,6 +421,15 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
               +'<input id="set-bd-'+i+'" value="'+(sw.birthdate||'')+'" placeholder="DD/MM/YYYY" '
                 +'style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:monospace;box-sizing:border-box">'
             +'</div>'
+            +'<div style="flex:1;min-width:130px">'
+              +'<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Sex</label>'
+              +'<div style="display:flex;gap:6px">'
+                +'<button onclick="setSwimmerSex('+i+',\'female\')" style="flex:1;padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+                  +(sw.sex==='female'?'background:#185FA5;color:#fff;border:1px solid #185FA5':'background:#fff;color:#374151;border:1px solid #e5e7eb')+'">👧 Female</button>'
+                +'<button onclick="setSwimmerSex('+i+',\'male\')" style="flex:1;padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+                  +(sw.sex==='male'?'background:#185FA5;color:#fff;border:1px solid #185FA5':'background:#fff;color:#374151;border:1px solid #e5e7eb')+'">👦 Male</button>'
+              +'</div>'
+            +'</div>'
           +'</div>'
 
           // Seasons section
@@ -541,7 +551,8 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
       seasonIds:(profile&&Array.isArray(profile.seasonIds))?profile.seasonIds:[],
       heights:(profile&&Array.isArray(profile.heights))?profile.heights:[],
       weights:(profile&&Array.isArray(profile.weights))?profile.weights:[],
-      birthdate:(profile&&profile.birthdate)||''
+      birthdate:(profile&&profile.birthdate)||'',
+      sex:(profile&&profile.sex)||''
     });
     saveSettings();
     renderSwimmerMgmt();
@@ -563,6 +574,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         if(Array.isArray(profile.weights))sw.weights=profile.weights;
         if(Array.isArray(profile.seasonIds)&&profile.seasonIds.length)sw.seasonIds=profile.seasonIds;
         if(profile.birthdate)sw.birthdate=profile.birthdate;
+        if(profile.sex)sw.sex=profile.sex;
         saveSettings();
         if(typeof renderSettingsUI==='function')renderSettingsUI();
         if(typeof renderPhysStats==='function')renderPhysStats();
@@ -594,6 +606,13 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
       var sw=SWIMMERS[i];if(!sw)return;
       sw.seasonIds=(sw.seasonIds||[]).filter(function(s){return s!==sid;});
       saveSettings();renderSettingsUI();
+    };
+
+    window.setSwimmerSex=function(i,val){
+      var sw=SWIMMERS[i];if(!sw)return;
+      sw.sex=(sw.sex===val)?'':val; // click again to clear
+      saveSettings();renderSettingsUI();renderPhysStats();
+      cloudAutoSave(sw);
     };
 
     // Push one swimmer's profile to the cloud if signed in; show a hint if not.
@@ -2397,14 +2416,14 @@ function buildRecords(){
   });
   // Age-group record context (needs published records + swimmer sex/birthdate).
   var prof=window.__recProfile||{}, sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
-  var bd=prof.birthdate||sw.birthdate||'', S=_sexN(prof.sex), myName=prof.recordName||'';
+  var bd=prof.birthdate||sw.birthdate||'', S=_sexN(prof.sex||sw.sex), myName=prof.recordName||'';
   var recs=window.__records||null, age=bd?_recAge(bd):null, cat=_recCat(age);
   var canGap=!!(recs&&S&&cat);
   var eb25=canGap?_bestInGroup('25',bd,cat):{}, eb50=canGap?_bestInGroup('50',bd,cat):{};
   var hint=document.getElementById('recGapHint');
   if(hint){
     if(!recs)hint.innerHTML='Load Israeli records (Extract tab ③) to see the gap to each age-group record.';
-    else if(!S||!cat)hint.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> (phone app Settings) to see age-group record gaps.';
+    else if(!S||!cat)hint.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see age-group record gaps.';
     else hint.innerHTML='Gaps vs <b>'+(cat==='open'?'Open/National':'age '+cat)+'</b> records ('+(S==='F'?'women':'men')+'). Age group uses year-end age; a faster time from a younger group doesn\'t count.';
   }
   function renderRec(store,tbodyId,pool,ebMap){
@@ -3659,6 +3678,7 @@ async function doSync() {
       name: sw.name || ("Swimmer " + sw.id),
       id: String(sw.id),
       birthdate: sw.birthdate || "",
+      sex: sw.sex || "",
       heights: Array.isArray(sw.heights) ? sw.heights : [],
       weights: Array.isArray(sw.weights) ? sw.weights : [],
       seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
@@ -3687,6 +3707,7 @@ async function swimSaveProfile(sw) {
     name: sw.name || ("Swimmer " + sw.id),
     id: String(sw.id),
     birthdate: sw.birthdate || "",
+    sex: sw.sex || "",
     heights: Array.isArray(sw.heights) ? sw.heights : [],
     weights: Array.isArray(sw.weights) ? sw.weights : [],
     seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
