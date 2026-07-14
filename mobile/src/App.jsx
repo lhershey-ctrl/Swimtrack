@@ -651,8 +651,8 @@ function PointsTrend({ D }) {
                   tickFormatter={(v) => fmtDateShort(v)} tick={{ fill: c.dim, fontSize: 10 }} />
                 <YAxis tick={{ fill: c.dim, fontSize: 10 }} width={36} />
                 <Tooltip contentStyle={tooltipStyle(c)} labelFormatter={(v) => fmtDateShort(v)}
-                  formatter={(v, n, p) => {
-                    if (n !== "y") return null;
+                  formatter={(v, _n, p) => {
+                    if (p.dataKey !== "y") return null;
                     const d = p.payload;
                     return [(d.time ? d.time + " · " : "") + v + " pts", d.event || ""];
                   }} />
