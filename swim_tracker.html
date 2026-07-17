@@ -2468,6 +2468,17 @@ function _usaTier(table,course,age,sex,event,seconds){
   }
   return 0;
 }
+// True if the swimmer is past the halfway point toward the next tier up
+// (e.g. solidly in "AA" territory, closer to AAA than to the AA cutoff) — shown as "AA+".
+function _usaTierPlus(table,course,age,sex,event,seconds,tier){
+  if(!tier||tier>=USA_TIERS.length)return false; // no tier reached, or already at the top (AAAA)
+  var S=_sexN(sex),key=_recKey(event);
+  var row=(((table[course]||{})[String(age)]||{})[S]||{})[key];
+  if(!row)return false;
+  var cutoff=row[USA_TIERS[tier-1]],nextCutoff=row[USA_TIERS[tier]];
+  if(cutoff==null||nextCutoff==null||cutoff<=nextCutoff)return false;
+  return(cutoff-seconds)/(cutoff-nextCutoff)>0.5;
+}
 var USA_STROKES=['Free','Back','Breast','Fly','IM'];
 var USA_TIER_LABELS=['—','B','BB','A','AA','AAA','AAAA'];
 function _usaBestByPoolForAge(bd,age){
@@ -2478,7 +2489,7 @@ function _usaRenderTable(tbodyId,rows){
   tbody.innerHTML=rows.slice(0,5).map(function(r){
     return '<tr><td style="padding:4px 6px;color:#444">'+r.event+'</td>'+
       '<td style="padding:4px 6px;color:#888;text-align:right">'+r.time+'</td>'+
-      '<td style="padding:4px 6px;text-align:right;font-weight:700;color:#185FA5">'+USA_TIER_LABELS[r.tier]+'</td></tr>';
+      '<td style="padding:4px 6px;text-align:right;font-weight:700;color:#185FA5">'+USA_TIER_LABELS[r.tier]+(r.plus?'+':'')+'</td></tr>';
   }).join('');
 }
 function _usaRenderForAge(table,sex,bd,age){
@@ -2491,9 +2502,10 @@ function _usaRenderForAge(table,sex,bd,age){
       var stroke=getStroke(ev); if(USA_STROKES.indexOf(stroke)<0)return;
       var dist=extractDist(ev);
       var tier=_usaTier(table,course,age,sex,ev,best[ev].seconds);
+      var plus=_usaTierPlus(table,course,age,sex,ev,best[ev].seconds,tier);
       var bucket=dist<=100?shortTier:longTier;
       if(tier>bucket[stroke])bucket[stroke]=tier;
-      (dist<=100?shortRows:longRows).push({event:ev+' ('+pool+'m)',time:best[ev].time,tier:tier});
+      (dist<=100?shortRows:longRows).push({event:ev+' ('+pool+'m)',time:best[ev].time,tier:tier,plus:plus});
     });
   });
   shortRows.sort(function(a,b){return b.tier-a.tier;});
