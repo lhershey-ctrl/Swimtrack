@@ -21,33 +21,39 @@ Both authenticate with **Google Sign-In** and talk directly to **Firebase Firest
 
 ```
 DESKTOP (swim_tracker.html)                MOBILE (mobile/ — React+Vite)
-  • Extract (console / bookmarklet)          • Google sign-in gate
+  • Extract (bookmarklet / paste HTML)       • Google sign-in gate
   • Analyze + Race                           • Swimmer picker (from cloud)
   • ☁ Sign in / Load / Sync                  • Home/Meets/Progress/Records/
         │  write/read                          Seasons/Settings (recharts)
         ▼                                            ▲ read (live onSnapshot)
-   ┌─────────────────────────────────────────────────────────────┐
-   │  Firebase project: swimtrack-e12c8                            │
-   │  Firestore:                                                   │
-   │    swimmers/{playerId} = {                                    │
-   │      name, id, birthdate,                                     │
-   │      heights:[{date,value}], weights:[...], seasonIds:[...],  │
-   │      seasons:{ "2024-2025": {seasonId,bests[],results[]}, …}, │
-   │      updatedAt                                                │
-   │    }                                                          │
-   │    config/access = { emails:[...] }   ← live allow-list       │
-   │  Auth: Google                                                 │
-   │  Hosting: serves mobile/dist (+ extract.html)                 │
-   └───────────────────────────────────────────────────────────────┘
+   ┌───────────────────────────────────────────────────────────────────┐
+   │  Firebase project: swimtrack-e12c8                                 │
+   │  Firestore:                                                        │
+   │    swimmers/{playerId} = {                                         │
+   │      name, id, birthdate, sex,                                     │
+   │      heights:[{date,value}], weights:[...], seasonIds:[...],       │
+   │      seasons:{ "2024-2025": {seasonId,bests[],results[]}, …},      │
+   │      updatedAt                                                     │
+   │    }                                                               │
+   │    config/access  = { emails:[...] }         ← live allow-list     │
+   │    config/records = { records, segments, count, loadedAt, by }     │
+   │      ← Israeli age-group records (juniors+masters, SC+LC)          │
+   │    config/rudolph = { table, count, loadedAt, by }                 │
+   │      ← Rudolph age-graded 1-20 points table (50m only)             │
+   │  Auth: Google                                                      │
+   │  Hosting: serves mobile/dist (+ extract.html, bm2.js)              │
+   └───────────────────────────────────────────────────────────────────┘
 ```
 
 ### Data ownership (avoids clobbering)
 - **`seasons`** (results/bests) is written by the **desktop** "☁ Sync to cloud" (Analyze tab). Firestore `merge:true` updates season-by-season, so re-syncing one season never wipes the others.
-- **Profile** (`name`, `birthdate`, `heights`, `weights`, `seasonIds`) is editable on **both** desktop Settings (auto-saves to cloud when signed in; "☁ Save to Cloud" button) **and** the mobile Settings tab. All writes use `merge:true` and only touch their own fields.
+- **Profile** (`name`, `birthdate`, `sex`, `heights`, `weights`, `seasonIds`) is editable on **both** desktop Settings (auto-saves to cloud when signed in; "☁ Save to Cloud" button) **and** the mobile Settings tab. All writes use `merge:true` and only touch their own fields.
+- **`config/records`** and **`config/rudolph`** are published **only from the desktop app's Extract tab** (③ Israeli Age Records, ④ Rudolph Age-Score Table) after reviewing a diff vs. the current cloud doc. Both mobile and desktop only ever *read* them for scoring/gap features; they're not touched by the swimmer-sync flow at all.
 
 ### Security rules (`firestore.rules`)
 - **Owners** (hardcoded `ownerEmails()`, currently `lhershey@gmail.com`) always have access and can edit the allow-list.
 - Everyone else must be in **`config/access.emails`** (managed live from the mobile Settings → "Who can access"). `swimmers/*` allows read/write only to owners or allow-listed emails; `config/access` is readable by allow-listed users, writable only by owners.
+- `config/records` and `config/rudolph` follow the same pattern: readable by any allow-listed user, writable only by owners (so only the owner account can publish new records/table data).
 
 ### Desktop ↔ cloud (Analyze tab "☁ Cloud" bar)
 - **☁ Load from cloud** — builds the global `D` from `swimmers/{activeId}.seasons` and renders via `finalize()`.
@@ -57,11 +63,11 @@ DESKTOP (swim_tracker.html)                MOBILE (mobile/ — React+Vite)
 
 ### Mobile app (`mobile/`)
 - Vite + React 19 + recharts; Firebase Web SDK.
-- `src/firebase.js` — init, Google auth (`signInWithPopup`), `fetchSwimmers`, `subscribeSwimmer` (live), profile CRUD, access-list read/write.
-- `src/analysis.js` — pure analysis builders ported from the desktop (`allResults`, `getStroke`, `competitions`, `scLc`, `insights`, `seasonRecap`, `strokeImprovement`, `pointsTrend`, `eventHeatmap`, …).
+- `src/firebase.js` — init, Google auth (`signInWithPopup`), `fetchSwimmers`, `subscribeSwimmer` (live), profile CRUD, access-list read/write, `fetchRecords()`/`fetchRudolph()` (read-only; publishing is desktop-only).
+- `src/analysis.js` — pure analysis builders ported from the desktop (`allResults`, `getStroke`, `competitions`, `scLc`, `insights`, `seasonRecap`, `strokeImprovement`, `pointsTrend`, `eventHeatmap`, `recordGap`/`bestInAgeGroup`/`recordsHeldBy` (Israeli records), `rudolphAgeBracket`/`rudolphScore`/`rudolphTrend` (Rudolph age-graded score), …).
 - `src/theme.jsx` — light/dark palettes + context (`useUI`), persisted to `localStorage`.
-- `src/App.jsx` — auth gate, swimmer picker, 6 tabs (Home, Meets, Progress, Records, Seasons, Settings).
-- Build/deploy: `cd mobile && npm run build` (a `prebuild` copies `../swim_tracker.html` → `public/extract.html`) then `firebase deploy`.
+- `src/App.jsx` — auth gate, swimmer picker, 6 tabs (Home, Meets, Progress, Records, Seasons, Settings). Progress tab shows Points Trend + Rudolph "Age Score" trend (50m only, hidden for swimmers over 20) with a "?" info modal.
+- Build/deploy: `cd mobile && npm run build` (a `prebuild` copies `../swim_tracker.html` → `public/extract.html`; Vite also copies `mobile/public/bm2.js` verbatim into `dist/`) then `firebase deploy`.
 
 ---
 
@@ -192,33 +198,38 @@ Persisted to `localStorage['sw_settings']` as JSON.
 
 ## Data Extraction Mechanism
 
-### Auto Extractor (console script)
+LogLig's swimmer season page (server-rendered, no client-side lazy loading) has 3 table groups, each `<table class="pld-table tablesorter...">`:
+- **#personalbests** — headers מקצוע/אורך הבריכה/תוצאה/תאריך/שם תחרות (no points column) — not used by the app.
+- **#seasonalbests** — same + מיקום במשחה + **ניקוד** (points) — this is the `bests` array (detected via the points column).
+- **#results** — **one `<table>` per event**, each wrapped in `<div class="pld-card"><div class="pld-group-title">EVENT NAME</div>…`, headers תאריך/שם תחרות/**משחה**(event)/קטגוריה/אורך הבריכה/מקצה/מסלול/מיקום במקצה/מיקום במשחה/תוצאה/ניקוד — this is the `results` array (every individual swim). Detected by an event-name column ("משחה") + a competition-name column, with no points column.
 
-`BM` variable holds the full extractor script as a JS string. When the user clicks "Copy Extractor Code":
+Two independent parsing paths must be kept in sync by hand when LogLig's markup changes (confirmed the hard way in 2026-07 — see [[swimtrack-loglig-extraction]] in the assistant's memory / the git history around commit `4052872`):
 
-1. `copyBM1()` prepends `var __manualSids=[...];` (active swimmer's season IDs) then copies to clipboard
-2. User pastes into the browser console on the LogLig swimmer page
-3. Script:
-   - Reads swimmer name from `document.title`
-   - Iterates all season IDs (from DOM or `__manualSids`)
-   - Loads each season page in a hidden `<iframe>`
-   - Parses two table structures: "event detail" view and "bests" view
-   - Uses Hebrew regex to identify column headers (date/תאריך, competition/שם תחרות, pool/אורך, time/תוצאה, points/ניקוד)
-   - Downloads result as `swimming_{name}.json`
+### Manual Bookmarklet (primary method)
 
-### Manual Bookmarklet
+`bmLink2`'s `href` (set directly in the HTML) is a **tiny, permanent loader**:
+```js
+javascript:(function(){var s=document.createElement('script');s.src='https://swimtrack-e12c8.web.app/bm2.js?t='+Date.now();document.body.appendChild(s);})();
+```
+The actual extraction logic lives in `mobile/public/bm2.js` (deployed with `no-cache` headers via `firebase.json`, copied into `dist/` verbatim by Vite's public-dir handling). Clicking the bookmark always fetches and runs whatever is *currently* live — a LogLig markup fix ships via a normal `firebase deploy`; the bookmark itself never needs to be re-dragged again. (Before commit `3b86e57`, the entire script was baked into the bookmark's URL — a frozen snapshot from drag-time that no server-side fix could ever reach. Don't reintroduce that pattern.)
 
-`bmLink2` href = `javascript:` + encoded single-season extractor. Drag to bookmarks bar. Click on any LogLig season page to download that season's JSON.
+### Paste-HTML alternative
+
+`extractFromHtml()` in `swim_tracker.html` (Extract tab → "Alternative: paste page HTML instead") does the same parsing via `DOMParser` on a copy of `document.documentElement.outerHTML` (grabbed via `copy(...)` in the browser console on the LogLig page, then pasted into a textarea). Useful for debugging without needing a working bookmark, and as the primary method if the bookmarklet ever breaks for a reason unrelated to the parsing logic itself.
+
+### Dead code
+
+`BM`/`copyBM1` (the old "Auto Extraction," multi-season, iframe-crawling console script) still exists in the source but isn't wired to any visible button — leave it alone unless specifically asked to revive or remove it.
 
 ---
 
 ## Analysis Functions
 
 ```
-buildAll()               ← called after data load; calls all builders
+buildAll()               ← called after data load; calls all builders in order
 buildCompetitions()      ← ① competition table with PB badges
 buildTop5()              ← ② event progress charts
-buildRecords()           ← ③ personal records table
+buildRecords()           ← ③ personal records table + Israeli age-group gaps
 buildSCLC()              ← ④ SC vs LC comparison
 buildInsights()          ← ⑤ insight cards
 buildBestTimes()         ← ⑥ best times chart (pool + stroke filter)
@@ -226,8 +237,11 @@ buildSeasonRecap()       ← ⑦ collapsible season cards
 buildSeasonComp()        ← ⑦b season comparison table
 buildStrokeBreakdown()   ← ⑧ improvement by stroke (2-season compare)
 buildPointsTrend()       ← ⑨ points trend chart
+buildRudolphTrend()      ← ⑩ Rudolph age score chart (long course only)
 renderSwimmerBanner()    ← swimmer identity card at top of Analyze tab
 ```
+
+**Analyze tab sub-navigation (added with ⑩):** the 11 sections above are grouped into 3 pill sub-tabs — Overview (①⑤), Progress & Trends (②⑥⑨⑩), Records & Comparisons (③④⑦⑦b⑧) — via `.an-grp[data-grp]` wrapper divs and `setAnalyzeGroup(g)` (toggles `display` + fires a resize event so Chart.js re-sizes canvases that were built while hidden). All 11 builders still run unconditionally in `buildAll()` regardless of which group is currently visible — switching groups is pure visibility, not lazy building.
 
 ---
 
@@ -298,12 +312,49 @@ STROKE_COLORS = {
 
 ## Age / Age-Group Logic
 
+**Two genuinely different conventions exist — do not conflate them:**
+
 ```js
-getAgeAt(birthdate, atDate)  // fractional age at a given date
-ageGroupLabel(age)           // 'U12'|'Age 12–15'|'Cadet (16-17)'|'Junior (18-19)'|'Senior (20+)'
+getAgeAt(birthdate, atDate)       // precise fractional age on a literal date
+_recAge(bd, ts) / recordAge(bd, ts)  // "age group": calendar YEAR of ts minus birth year
+```
+
+- **`getAgeAt`** — "how old is this swimmer right now / on this exact day." Correct for: swimmer banner's current age, the Competitions table's per-meet Age column, the adult (>20) cutoff that hides the Rudolph section.
+- **`recordAge`/`_recAge`** — "which age-group table/record applies to this result." Correct for: Israeli age-group records ([[records]]/`buildRecords`), Rudolph age-graded scoring (`buildRudolphTrend`), and season-level age labels (Season Recap header — uses the season's *end* year: `parseInt(season.split('-')[1])`, not the literal meet date's year).
+
+**Why this distinction matters (learned the hard way, twice, same day):** a swimmer already competes in — and LogLig itself categorizes results under — next year's age group before their exact birthday arrives. Using `getAgeAt` (precise age) for "which age-group table applies" picks the wrong, too-lenient younger bracket. Confirmed with real data: Gal's 2:58.12 in 200 IM scored >10 Rudolph points using his exact age (10) instead of ~6.9 using his age group (11, matching LogLig's own "בנים 11" category for that meet). If you're computing "the age that applies to swimmer X for event/season/meet Y," default to the `recordAge` convention unless you've specifically verified `getAgeAt` is what's wanted.
+
+```js
+ageGroupLabel(age)  // 'U12'|'Age 12–15'|'Cadet (16-17)'|'Junior (18-19)'|'Senior (20+)'
 ```
 
 Used in: swimmer banner, competition table Age column, season recap header.
+
+---
+
+## Israeli Age-Group Records (`config/records`)
+
+Published from the desktop Extract tab (③ Israeli Age Records) after uploading the official PDFs from **isr.org.il/records.asp** (juniors + masters, long + short course — 4 separate PDFs, any subset can be uploaded). Parsed entirely client-side (pdf.js text-item extraction, grouped by row/column position), diffed against the current `config/records` doc, then published via a manual "☁ Upload changes to Cloud" button (owner-only, enforced by `firestore.rules`).
+
+`buildRecords()` shows, per pool (25m/50m), the swimmer's best time vs. their current age-group record, using `_recAge()`/`_recCat()`/`_recKey()` (dist+stroke → key) — same helpers reused by the Rudolph feature below.
+
+---
+
+## Rudolph Age-Graded Scoring (`config/rudolph`)
+
+Dr. Klaus Rudolph's German age-graded points table — a swim time maps to **1-20 points**, calibrated separately per sex × age (8 through 18, plus "offen"/open) × event, **long course (50m) only** (25m times are systematically faster — more turns — and would score inflated against a 50m-only table; both apps hard-filter to 50m).
+
+Published from the desktop Extract tab (④ Rudolph Age-Score Table) after uploading the official PDF (source: see the link in that panel — a new "Basis" year gets re-uploaded the same way). Parsed client-side via a row-clustering trick: the PDF renders each row's points-label (leftmost/rightmost column) on a baseline ~1px off from the row's time values, so rows are grouped by y-coordinate with a ~3-unit tolerance (real distinct rows are ~12-13 units apart, so this never merges two different point-rows).
+
+```js
+_rudBracket(age)                          // → "8".."18"|"offen"|null (age<8)
+_rudScore(table, sex, age, event, seconds) // interpolates/extrapolates the 20-row curve
+buildRudolphTrend()                       // ⑩ chart; mirrors buildPointsTrend()'s Chart.js pattern
+```
+
+Age used for scoring is the **age group** (`_recAge`/`recordAge` convention — calendar year of the swim minus birth year), not the swimmer's precise age-in-years on that day — see "Age / Age-Group Logic" above for why. `window.__rudolphTable` caches the published table (set in `refreshRudolphStatus()`, mirroring `window.__records`); the whole "⑩ Age Score (Rudolph)" section hides itself for swimmers whose *current* real age (`getAgeAt`, no date arg) is over 20.
+
+Mobile equivalent: `mobile/src/analysis.js`'s `rudolphAgeBracket()`/`rudolphScore()`/`rudolphTrend()`, rendered by `RudolphTrend` in `mobile/src/App.jsx` (Progress tab, below Points Trend).
 
 ---
 
@@ -351,16 +402,19 @@ var ENG_MONTHS = ['Jan','Feb',...,'Dec'];           // used by fmtDateShort()
 | PB badges never show | `eventList` rows lack `.seconds` field; key never matches | Add `seconds` to the eventList pipeline |
 | `COLORS`/`STROKE_COLORS` undefined in buildAll | These `var` assignments sit past line 587; if called early they're `undefined` | Declared early + safety net in `buildAll()` — do not remove either |
 | Charts blank after tab switch | Chart.js doesn't re-render inside hidden containers | `switchTab('analyze')` and `buildAll()` both fire `window.dispatchEvent(new Event('resize'))` |
+| Charts blank after switching Analyze sub-tab (Overview/Progress/Records) | Same root cause, one level deeper — charts in a non-default `.an-grp` are built while `display:none` | `setAnalyzeGroup()` also fires `window.dispatchEvent(new Event('resize'))` after toggling visibility — don't remove it when adding new sections |
+| New `.an-grp` section stays visible in every sub-tab | Forgot `style="display:none"` on a non-default group's wrapper div (only the *first* mention of a `data-grp` needs to start visible if it's the default "overview" group) | Every `.an-grp[data-grp]` div except the ones meant to show by default must have `style="display:none"` in the HTML itself — `setAnalyzeGroup()` only toggles on click, it doesn't set the initial state |
+| LogLig extraction suddenly returns empty `results` | LogLig changed the season page's table markup (happened 2026-07); `bests` keeps working since it's a different table | Get the raw page HTML (`copy(document.documentElement.outerHTML)` in console, not the app's JSON output) and compare against the current parsing logic in `mobile/public/bm2.js` + `extractFromHtml()` — both must be fixed, they're independent copies |
 
 ---
 
 ## How to Extend
 
 **Add a new analysis section:**
-1. Add HTML container in `#tc-analyze`
+1. Add HTML container in `#tc-analyze`, wrapped in `<div class="an-grp" data-grp="overview|progress|records">` matching whichever sub-tab it belongs to (add `style="display:none"` unless it's going in the default-visible "overview" group)
 2. Write `buildXxx()` function
 3. Call it from `buildAll()`
-4. Add a section-title div with the next ⑩ emoji number
+4. Add a section-title div with the next ⑪ emoji number
 
 **Add a new swimmer field:**
 1. Add to `DEFAULT_SWIMMERS` schema

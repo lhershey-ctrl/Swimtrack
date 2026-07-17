@@ -16,45 +16,41 @@ Helps you use, maintain, and extend **SwimTrack** — a swimming analysis tool w
 
 - **Desktop** (`swim_tracker.html`) — extract + analyze + Race; signs in and **syncs to the cloud**. Hosted at `https://swimtrack-e12c8.web.app/extract.html` (also runs as a local file, but cloud sign-in needs the hosted URL or localhost).
 - **Mobile** (`mobile/`, React+Vite) — Google sign-in, reads from the cloud (live), modern phone UI. Hosted at `https://swimtrack-e12c8.web.app/`. Installable to the home screen (PWA icon).
-- **Cloud:** Firebase Firestore `swimmers/{playerId}` (profile + `seasons` map) and `config/access` (email allow-list). Deploy: `cd mobile && npm run build && cd .. && firebase deploy`.
-- **Access:** owners (`lhershey@gmail.com`) always in; others must be added to the allow-list in the **mobile Settings → Who can access**.
+- **Cloud:** Firebase Firestore `swimmers/{playerId}` (profile + `seasons` map), `config/access` (email allow-list), `config/records` (Israeli age-group records, from isr.org.il/records.asp), and `config/rudolph` (Rudolph age-graded points table). Deploy: `cd mobile && npm run build && cd .. && firebase deploy`.
+- **Access:** owners (`lhershey@gmail.com`) always in; others must be added to the allow-list in the **mobile Settings → Who can access**. `config/records`/`config/rudolph` are readable by anyone allow-listed but only publishable by an owner (desktop Extract tab).
 
 ## Desktop App Overview
 
 A **single HTML file** (`swim_tracker.html`), no build step, CDN scripts at runtime. Open in a browser (use the hosted `/extract.html` to sync).
 
 **Four tabs:**
-1. **Extract Data** — set up swimmers, copy extractor code, run it on LogLig
-2. **Analyze** — load JSON files (or **☁ Load from cloud**), explore all sections, and **☁ Sync to cloud** so the phone app sees it
+1. **Extract Data** — set up swimmers (①), the LogLig extractor bookmarklet (②), Israeli age-group records upload (③, source: isr.org.il/records.asp), Rudolph age-score table upload (④)
+2. **Analyze** — load JSON files (or **☁ Load from cloud**), explore all sections (grouped into Overview / Progress & Trends / Records & Comparisons sub-tabs), and **☁ Sync to cloud** so the phone app sees it
 3. **Race** — split-time race curve chart (PDF upload)
-4. **Settings** — swimmer profiles, seasons, height/weight history (auto-saves to cloud when signed in; **☁ Save to Cloud** button)
+4. **Settings** — swimmer profiles (incl. sex, for records/Rudolph scoring), seasons, height/weight history (auto-saves to cloud when signed in; **☁ Save to Cloud** button)
 
 ## Mobile App Overview
 
-React + Vite + recharts (`mobile/`), reads from Firestore. Tabs: **Home** (banner, KPIs, Growth chart, Insights, recent swims), **Meets** (competitions + PB badges), **Progress** (pool/stroke/distance filtered event charts + Points Trend), **Records** (PBs + SC-vs-LC), **Seasons** (event-coverage heat map, improvement, recap), **Settings** (theme, swimmer CRUD, access list). Theme: light/dark toggle in Settings.
+React + Vite + recharts (`mobile/`), reads from Firestore. Tabs: **Home** (banner, KPIs, Growth chart, Insights, recent swims), **Meets** (competitions + PB badges), **Progress** (pool/stroke/distance filtered event charts, Points Trend, and Rudolph "Age Score" trend — 50m only, hidden for swimmers over 20, with a "?" info button), **Records** (PBs, SC-vs-LC, Israeli age-group record gaps + records-held), **Seasons** (event-coverage heat map, improvement, recap), **Settings** (theme, swimmer CRUD incl. sex, access list). Theme: light/dark toggle in Settings.
 
 ---
 
 ## How to Extract Data from LogLig
 
-### Method A — Auto Extraction (recommended, all seasons at once)
+**Method — bookmarklet (recommended, self-updating)**
 
-1. Open the app → **Extract Data** tab
-2. Select the swimmer whose seasons you want
-3. Click **"📋 Copy Extractor Code"**
-4. Go to **loglig.com/Players/Details/{PlayerID}** (e.g. `268117` for Noga, `276401` for Gal)
-5. Press **F12** → click the **Console** tab
-6. Click in the console input, paste (**Ctrl+V**), press **Enter**
-7. A status box appears on the page — wait ~1 minute
-8. A JSON file downloads automatically: `swimming_Noga.json`
-
-### Method B — Manual Extraction (one season at a time, bookmarklet)
-
-1. Open the app → **Extract Data** tab
-2. **Drag** the green "📄 Extract This Season" button to your browser bookmarks bar (one-time setup)
+1. Open the app → **Extract Data** tab → **② Manual Extraction**
+2. **Drag** the green "📋 Copy Season Page" button to your browser bookmarks bar (one-time setup — this bookmark is a tiny loader that always fetches the *current* extractor code from the server, so future LogLig-format fixes apply automatically; you never need to re-drag it again after the first time)
 3. On LogLig, navigate to a specific season page: `loglig.com/Players/Details/{ID}?seasonId={SID}`
 4. Click the bookmarklet from your bookmarks bar
-5. One JSON file downloads per season
+5. One JSON file downloads per season — load it on the Analyze tab
+
+**Alternative — paste HTML (no bookmark needed, useful for debugging)**
+
+1. On the LogLig season page, open the browser console (F12) and run: `copy(document.documentElement.outerHTML)`
+2. Back in the Extract tab, expand **"Alternative: paste page HTML instead"**, pick the season year, and paste (Ctrl+V) — it extracts automatically
+
+If extraction ever comes back with times but no full meet history (`results` empty while personal bests still work), LogLig likely changed its page markup again — get the raw page HTML (step 1 above) so the parser can be fixed; the app's downloaded JSON alone won't show what changed.
 
 ### Known Season IDs (loglig.com)
 | Season | Season ID |
@@ -71,6 +67,7 @@ React + Vite + recharts (`mobile/`), reads from Firestore. Tabs: **Home** (banne
 |---------|-----------|
 | Noga Har-Shai | 268117 |
 | Gal | 276401 |
+| Liron | 115352 |
 
 ---
 
@@ -80,36 +77,48 @@ React + Vite + recharts (`mobile/`), reads from Firestore. Tabs: **Home** (banne
 2. Click the drop zone (or drag & drop) to load **one or more JSON files**
 3. Files from multiple seasons are **merged automatically**
 4. The swimmer banner appears at top with name, ID, age, total swims
-5. All analysis sections populate automatically
+5. All analysis sections populate automatically, grouped into 3 sub-tabs (see below)
 
 ---
 
 ## Analysis Sections
 
+The Analyze tab groups its sections into 3 sub-tabs (pill buttons right below the swimmer banner) so the page isn't one long scroll — switching sub-tabs doesn't reload or rebuild anything, it's pure show/hide.
+
+**Overview**
 | # | Section | What it shows |
 |---|---------|---------------|
 | ① | Competitions | Per-meet table with PB badges, points, age column |
+| ⑤ | Insights | AI-style observations per event |
+
+**Progress & Trends**
+| # | Section | What it shows |
+|---|---------|---------------|
 | ② | Progress in Key Events | Top events by volume, time-series chart per event |
-| ③ | Personal Records | Best time per event × pool (25m / 50m) |
-| ④ | SC vs LC Analysis | Expected vs actual time difference between pool sizes |
-| ⑤ | SC/LC Insights | AI-style observations per event |
 | ⑥ | Best Times Over Time | Filterable by pool (25m/50m) and stroke |
+| ⑨ | Points Trend | Points over time, colored by event |
+| ⑩ | Age Score (Rudolph) | Every swim scored 1-20 on Dr. Klaus Rudolph's German age-graded table for that swim's age group — long course (50m) only, hidden for swimmers over 20 |
+
+**Records & Comparisons**
+| # | Section | What it shows |
+|---|---------|---------------|
+| ③ | Personal Records | Best time per event × pool (25m / 50m) + gap to the Israeli age-group record |
+| ④ | SC vs LC Analysis | Expected vs actual time difference between pool sizes |
 | ⑦ | Season Recap | Collapsible cards: meets, swims, PBs, top points, most improved |
 | ⑦b | Season Comparison | Side-by-side improvement table, two-season From/To selector |
 | ⑧ | Improvement by Stroke | Grouped bar chart + table comparing two seasons |
-| ⑨ | Points Trend | Points over time, colored by event |
 
 ---
 
 ## Settings Tab
 
 Each swimmer card contains:
-- **Name, Player ID, Date of Birth** (DOB enables age display and age-group labels)
+- **Name, Player ID, Date of Birth, Sex** (DOB + Sex enable age display, age-group labels, Israeli record gaps, and Rudolph age scoring)
 - **Seasons panel** — add/remove season IDs; known seasons shown as chips
 - **Height history** — date + cm entries, show/hide chart
 - **Weight history** — date + kg entries, show/hide chart
 
-Settings are persisted in **localStorage** under key `sw_settings`.
+Settings are persisted in **localStorage** under key `sw_settings`, and auto-save to the cloud when signed in.
 
 ---
 
@@ -140,8 +149,10 @@ Settings are persisted in **localStorage** under key `sw_settings`.
 - **PB badges** (🥇) in the competition table flag swims that were a lifetime best at that date
 - The **Season Recap** cards are collapsible — click the header to expand
 - **Best Times** pool filter (25m/50m) splits SC and LC results so they don't overlap on the chart
-- **Date of birth** in Settings enables the age column in competition table and age-group label in the banner
-- If charts appear blank after loading, switch away from the Analyze tab and back — this triggers a Chart.js resize
+- **Date of birth + sex** in Settings enables the age column in competition table, age-group label in the banner, Israeli record gaps, and Rudolph age scoring
+- If charts appear blank after loading, switch away from the Analyze tab and back (or between its sub-tabs) — this triggers a Chart.js resize
+- The **Rudolph Age Score** section only shows long-course (50m) swims and hides itself entirely for swimmers over 20 — that's intentional, not a bug
+- Both the Israeli Records and Rudolph tables need to be **uploaded once from the desktop app** (Extract tab ③/④, owner account only) before mobile/desktop show any data for them — until then you'll see "not published yet"
 
 ---
 
@@ -150,6 +161,8 @@ Settings are persisted in **localStorage** under key `sw_settings`.
 | Symptom | Likely cause | Action |
 |---------|-------------|--------|
 | `⚠️ competitions: Cannot read properties of undefined` | Old version of app | Reload with Ctrl+F5 |
-| Charts blank (no error) | Tab was hidden when charts built | Click off Analyze tab and back |
+| Charts blank (no error) | Tab was hidden when charts built | Click off Analyze tab and back (or switch its sub-tabs) |
 | "Loaded: …" but no analysis | JSON file not from supported extractor format | Check JSON has `event`, `pool`, `seconds`, `date` fields |
 | Swimmer banner shows wrong name | Wrong swimmer active in Settings | Switch to correct swimmer in Settings tab |
+| Extraction gets `bests` but `results` is empty | LogLig changed its page markup | The bookmarklet self-updates on every click (as of the "Copy Season Page" loader) so a server-side fix should apply automatically — if it's still broken, get a fresh `copy(document.documentElement.outerHTML)` capture from LogLig so the parser can be re-checked |
+| Rudolph score looks way off for the swimmer's age | N/A — this is scored by **age group** (calendar year of the swim minus birth year), not exact age-in-years that day, matching how LogLig itself categorizes meets | Not a bug; a swimmer already competes in next year's age group before their birthday |
