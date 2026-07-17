@@ -2521,8 +2521,7 @@ function buildUsaStandards(){
   var table=window.__usaStandardsTable||null;
   var prof=window.__recProfile||{},sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
   var bd=prof.birthdate||sw.birthdate||'',sex=prof.sex||sw.sex||'';
-  var curAge=bd?getAgeAt(bd):null;
-  var ageInt=curAge!=null?Math.floor(curAge):null;
+  var ageInt=bd?_recAge(bd,null):null; // age GROUP (calendar year − birth year), same convention as Records/Rudolph/Masters WR
   if(ageInt==null||ageInt<10||ageInt>18){section.style.display='none';return;} // standards cover ages 10-18 only
   section.style.display='';
   var hintEl=document.getElementById('usaStdHint'),chartWrap=document.getElementById('usaStdChartWrap'),ageSelEl=document.getElementById('usaStdAgeSelector');
@@ -2601,7 +2600,7 @@ function buildMastersWr(){
   var table=window.__mastersRecordsTable||null;
   var prof=window.__recProfile||{},sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
   var bd=prof.birthdate||sw.birthdate||'',sex=prof.sex||sw.sex||'';
-  var curAge=bd?getAgeAt(bd):null;
+  var curAge=bd?_recAge(bd,null):null; // age GROUP (calendar year − birth year), matching World Aquatics' own convention
   if(curAge==null||curAge<=30){section.style.display='none';return;} // only meaningful for masters-age swimmers
   section.style.display='';
   var hintEl=document.getElementById('wrGapHint'),chartWrap=document.getElementById('wrGapChartWrap');
