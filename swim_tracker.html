@@ -992,10 +992,12 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         <div class="card" style="padding:16px 20px;flex:1;min-width:280px">
           <div style="font-size:12px;color:#888;text-align:center;margin-bottom:6px;font-weight:700">Short (50-100)</div>
           <div style="position:relative;height:260px"><canvas id="usaStdShortChart"></canvas></div>
+          <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px"><tbody id="usaStdShortTable"></tbody></table>
         </div>
         <div class="card" style="padding:16px 20px;flex:1;min-width:280px">
           <div style="font-size:12px;color:#888;text-align:center;margin-bottom:6px;font-weight:700">Long (200+)</div>
           <div style="position:relative;height:260px"><canvas id="usaStdLongChart"></canvas></div>
+          <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px"><tbody id="usaStdLongTable"></tbody></table>
         </div>
       </div>
     </div>
@@ -2435,11 +2437,11 @@ function buildUsaStandards(){
   if(!table){if(hintEl)hintEl.innerHTML='USA standards not published yet — upload below (Extract tab ⑤).';if(chartWrap)chartWrap.style.display='none';return;}
   if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see standards.';if(chartWrap)chartWrap.style.display='none';return;}
   if(hintEl)hintEl.innerHTML='';
-  if(chartWrap)chartWrap.style.display='';
+  if(chartWrap)chartWrap.style.display='flex';
 
   var bestByPool=_bestTimesByPool();
   var STROKES=['Free','Back','Breast','Fly','IM'];
-  var shortTier={},longTier={};
+  var shortTier={},longTier={},shortRows=[],longRows=[];
   STROKES.forEach(function(s){shortTier[s]=0;longTier[s]=0;});
   ['25','50'].forEach(function(pool){
     var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
@@ -2449,10 +2451,23 @@ function buildUsaStandards(){
       var tier=_usaTier(table,course,ageInt,sex,ev,best[ev].seconds);
       var bucket=dist<=100?shortTier:longTier;
       if(tier>bucket[stroke])bucket[stroke]=tier;
+      (dist<=100?shortRows:longRows).push({event:ev+' ('+pool+'m)',time:best[ev].time,tier:tier});
     });
   });
+  shortRows.sort(function(a,b){return b.tier-a.tier;});
+  longRows.sort(function(a,b){return b.tier-a.tier;});
 
   var TIER_LABELS=['—','B','BB','A','AA','AAA','AAAA'];
+  function renderUsaTable(tbodyId,rows){
+    var tbody=document.getElementById(tbodyId);if(!tbody)return;
+    tbody.innerHTML=rows.slice(0,5).map(function(r){
+      return '<tr><td style="padding:4px 6px;color:#444">'+r.event+'</td>'+
+        '<td style="padding:4px 6px;color:#888;text-align:right">'+r.time+'</td>'+
+        '<td style="padding:4px 6px;text-align:right;font-weight:700;color:#185FA5">'+TIER_LABELS[r.tier]+'</td></tr>';
+    }).join('');
+  }
+  renderUsaTable('usaStdShortTable',shortRows);
+  renderUsaTable('usaStdLongTable',longRows);
   var shortCanvas=document.getElementById('usaStdShortChart'),longCanvas=document.getElementById('usaStdLongChart');
   if(!shortCanvas||!longCanvas)return;
   if(usaStdShortChartInst)usaStdShortChartInst.destroy();
@@ -4302,9 +4317,9 @@ function clearRace2(){
     if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
     try{
       const{table}=await wrParsePdf(await f.arrayBuffer());
-      const n=countTable(table);
-      if(!n)throw new Error("0 records — wrong PDF for this slot?");
-      window.__wrSlices[course]=table;
+      if(!table[course])throw new Error("This file has no "+course+" records — wrong slot?");
+      const n=countTable({[course]:table[course]});
+      window.__wrSlices[course]=table[course];
       if(fn){fn.innerHTML="✓ <strong>"+n+"</strong> records — "+f.name;fn.style.color="#1a7a4f";}
       if(lab){lab.style.borderColor="#1D9E75";lab.style.background="#f0faf5";}
     }catch(err){
