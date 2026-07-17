@@ -1261,10 +1261,18 @@ window.extractFromHtml = function(){
     });
     return res;
   };
+  // Per-event "results" history table. LogLig used to render an extra leading
+  // row inside the table with just the event name (so headers were rows[1]);
+  // it now puts the event name in a sibling ".pld-group-title" div OUTSIDE the
+  // table and repeats it per-row in a "משחה" column instead — headers are
+  // rows[0] and every <tr> after that is data. Support both shapes: find the
+  // first row that actually has <th> cells and use whatever follows it.
   var parseEventDetail = function(tbl,evName){
-    var rows=[].slice.call(tbl.querySelectorAll('tr')); if(rows.length<3)return[];
-    var hdrs=[].slice.call(rows[1].querySelectorAll('th')).map(function(h){return h.textContent.trim();});
-    var idx={date:-1,competition:-1,pool:-1,time:-1,points:-1,place:-1};
+    var rows=[].slice.call(tbl.querySelectorAll('tr')); if(rows.length<2)return[];
+    var hdrRowIdx=rows.findIndex(function(r){return r.querySelectorAll('th').length>0;});
+    if(hdrRowIdx===-1)hdrRowIdx=rows.length>2?1:0; // last-resort guess for the old shape
+    var hdrs=[].slice.call(rows[hdrRowIdx].querySelectorAll('th')).map(function(h){return h.textContent.trim();});
+    var idx={date:-1,competition:-1,event:-1,pool:-1,time:-1,points:-1,place:-1};
     hdrs.forEach(function(h,i){
       if(/תאריך|date/i.test(h))idx.date=i;
       else if(/שם תחר|compet|תחרויות/i.test(h))idx.competition=i;
@@ -1272,14 +1280,15 @@ window.extractFromHtml = function(){
       else if(/תוצאה|result|time/i.test(h))idx.time=i;
       else if(/ניקוד|point/i.test(h))idx.points=i;
       else if(/מיקום במשחה/i.test(h))idx.place=i;
+      else if(h==='משחה')idx.event=i; // per-row event name column (new markup)
     });
     if(idx.time===-1)return[];
     var res=[];
-    rows.slice(2).forEach(function(row){
+    rows.slice(hdrRowIdx+1).forEach(function(row){
       var cells=[].slice.call(row.querySelectorAll('td')); if(cells.length<3)return;
       var timeStr=idx.time>=0&&cells[idx.time]?cells[idx.time].textContent.trim():'';
       var sec=pt(timeStr); if(!sec||sec<=0)return;
-      res.push({event:evName,
+      res.push({event:(idx.event>=0&&cells[idx.event]?cells[idx.event].textContent.trim():'')||evName,
         pool:idx.pool>=0&&cells[idx.pool]?cells[idx.pool].textContent.trim().replace(/[^0-9]/g,''):'',
         place:idx.place>=0&&cells[idx.place]?parseInt(cells[idx.place].textContent.trim())||0:0,
         time:timeStr,seconds:sec,
@@ -1295,8 +1304,18 @@ window.extractFromHtml = function(){
   [].slice.call(doc.querySelectorAll('table')).forEach(function(tbl){
     var hdrs=[].slice.call(tbl.querySelectorAll('th')).map(function(h){return h.textContent.trim();});
     if(!hdrs.length)return;
-    var isEvDet=/^\d/.test(hdrs[0])&&hdrs.length>5&&hdrs.some(function(h){return /שם תחר|compet/i.test(h);});
-    if(isEvDet){results=results.concat(parseEventDetail(tbl,hdrs[0]));return;}
+    // Per-event result tables have a "משחה" (event) column and a competition-name
+    // column; the old markup instead led with the event name itself in hdrs[0].
+    // Support both so a future markup revert doesn't silently break this again.
+    var isEvDet=(hdrs.some(function(h){return h==='משחה';})||/^\d/.test(hdrs[0]))
+      &&hdrs.length>5&&hdrs.some(function(h){return /שם תחר|compet/i.test(h);});
+    if(isEvDet){
+      var groupTitle=tbl.closest('.pld-card');
+      groupTitle=groupTitle?groupTitle.querySelector('.pld-group-title'):null;
+      var evName=groupTitle?groupTitle.textContent.trim():hdrs[0];
+      results=results.concat(parseEventDetail(tbl,evName));
+      return;
+    }
     var hasPts=hdrs.some(function(h){return /ניקוד|point/i.test(h);});
     if(hasPts){var pg=parseGeneric(tbl);if(pg.length>bests.length)bests=pg;}
   });
@@ -1357,7 +1376,7 @@ window.extractFromHtmlFile = function(e){
 
 
 // ── Single-season "Extract This Page" bookmarklet ──────────────────
-var BM2=`(function(){var pt=function(s){var m=s.match(/(\d+):(\d{2})[.,](\d+)/);return m?+m[1]*60+parseFloat(m[2]+'.'+m[3]):0;};var sid=new URLSearchParams(location.search).get('seasonId')||'1715';var known={'1715':'2025-2026','1605':'2024-2025','1533':'2023-2024','1450':'2022-2023'};var n=2025-Math.round((1715-sid)/110);var yr=known[sid]||(n+'-'+(n+1));var pid=(location.pathname.match(/\/(\d+)/)||[])[1]||'';var swName=(function(){var els=document.querySelectorAll('h1,h2,[class*=player],[class*=name],[class*=athlete],[class*=title]');for(var i=0;i<els.length;i++){var t=els[i].textContent.trim();if(t&&t.length>1&&t.length<40&&!/^\d/.test(t))return t.replace(/[^a-zA-Z0-9ְ-׿ ]/g,'').trim().replace(/\s+/g,'_');}var tt=document.title.split(/[-|·]/)[0].trim();return tt?tt.replace(/[^a-zA-Z0-9ְ-׿ ]/g,'').trim().replace(/\s+/g,'_'):'swimmer_'+pid;}());var bests=[],results=[];[].slice.call(document.querySelectorAll('table')).forEach(function(t){var hs=[].slice.call(t.querySelectorAll('th')).map(function(h){return h.textContent.trim();});if(!hs.length)return;var rows=[].slice.call(t.querySelectorAll('tr'));var isEv=/^\d/.test(hs[0])&&hs.some(function(h){return/שם|comp/i.test(h);});if(isEv){var hi={t:-1,d:-1,c:-1,p:-1,pl:-1,po:-1};var hh=[].slice.call(rows[1]?rows[1].querySelectorAll('th'):[]).map(function(h){return h.textContent.trim();});hh.forEach(function(h,i){if(/תוצאה|time/i.test(h))hi.t=i;else if(/תאריך|date/i.test(h))hi.d=i;else if(/שם|comp/i.test(h))hi.c=i;else if(/ניקוד|point/i.test(h))hi.p=i;else if(/אורך|pool/i.test(h))hi.po=i;else if(/מיקום/i.test(h))hi.pl=i;});rows.slice(2).forEach(function(r){var cs=[].slice.call(r.querySelectorAll('td'));var ts=hi.t>=0&&cs[hi.t]?cs[hi.t].textContent.trim():'';var sc=pt(ts);if(!sc)return;results.push({event:hs[0],pool:hi.po>=0&&cs[hi.po]?cs[hi.po].textContent.trim().replace(/\D/g,''):'',place:hi.pl>=0&&cs[hi.pl]?parseInt(cs[hi.pl].textContent)||0:0,time:ts,seconds:sc,points:hi.p>=0&&cs[hi.p]?parseInt(cs[hi.p].textContent)||0:0,date:hi.d>=0&&cs[hi.d]?cs[hi.d].textContent.trim():'',competition:hi.c>=0&&cs[hi.c]?cs[hi.c].textContent.trim():''});});return;}var hasPt=hs.some(function(h){return/ניקוד|point/i.test(h);});if(!hasPt)return;var ci={ev:-1,t:-1,d:-1,c:-1,p:-1,pl:-1,po:-1};hs.forEach(function(h,i){if(/מקצ|event/i.test(h))ci.ev=i;else if(/תוצאה|time/i.test(h))ci.t=i;else if(/תאריך|date/i.test(h))ci.d=i;else if(/שם|comp/i.test(h))ci.c=i;else if(/ניקוד|point/i.test(h))ci.p=i;else if(/אורך|pool/i.test(h))ci.po=i;else if(/מיקום/i.test(h))ci.pl=i;});var arr=[];rows.slice(1).forEach(function(r){var cs=[].slice.call(r.querySelectorAll('td'));var ts=ci.t>=0&&cs[ci.t]?cs[ci.t].textContent.trim():'';var sc=pt(ts);if(!sc)return;var ev=ci.ev>=0&&cs[ci.ev]?cs[ci.ev].textContent.trim():'';if(!ev)return;arr.push({event:ev,pool:ci.po>=0&&cs[ci.po]?cs[ci.po].textContent.trim().replace(/\D/g,''):'',place:ci.pl>=0&&cs[ci.pl]?parseInt(cs[ci.pl].textContent)||0:0,time:ts,seconds:sc,points:ci.p>=0&&cs[ci.p]?parseInt(cs[ci.p].textContent)||0:0,date:ci.d>=0&&cs[ci.d]?cs[ci.d].textContent.trim():'',competition:ci.c>=0&&cs[ci.c]?cs[ci.c].textContent.trim():''});});if(arr.length>bests.length)bests=arr;});var data={};data[yr]={seasonId:String(sid),bests:bests,results:results};if(pid)data._swimmerId=pid;if(swName)data._swimmerName=swName;var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='swimming_'+swName+'_'+yr+'.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);var d=document.createElement('div');d.style.cssText='position:fixed;top:16px;right:16px;background:#1D9E75;color:#fff;padding:12px 18px;border-radius:8px;font:700 14px sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';d.textContent=swName+' '+yr+': '+bests.length+' bests, '+results.length+' results';document.body.appendChild(d);setTimeout(function(){d.remove();},5000);})();`
+var BM2=`(function(){var pt=function(s){var m=s.match(/(\d+):(\d{2})[.,](\d+)/);return m?+m[1]*60+parseFloat(m[2]+'.'+m[3]):0;};var sid=new URLSearchParams(location.search).get('seasonId')||'1715';var known={'1715':'2025-2026','1605':'2024-2025','1533':'2023-2024','1450':'2022-2023'};var n=2025-Math.round((1715-sid)/110);var yr=known[sid]||(n+'-'+(n+1));var pid=(location.pathname.match(/\/(\d+)/)||[])[1]||'';var swName=(function(){var els=document.querySelectorAll('h1,h2,[class*=player],[class*=name],[class*=athlete],[class*=title]');for(var i=0;i<els.length;i++){var t=els[i].textContent.trim();if(t&&t.length>1&&t.length<40&&!/^\d/.test(t))return t.replace(/[^a-zA-Z0-9ְ-׿ ]/g,'').trim().replace(/\s+/g,'_');}var tt=document.title.split(/[-|·]/)[0].trim();return tt?tt.replace(/[^a-zA-Z0-9ְ-׿ ]/g,'').trim().replace(/\s+/g,'_'):'swimmer_'+pid;}());var bests=[],results=[];[].slice.call(document.querySelectorAll('table')).forEach(function(t){var hs=[].slice.call(t.querySelectorAll('th')).map(function(h){return h.textContent.trim();});if(!hs.length)return;var rows=[].slice.call(t.querySelectorAll('tr'));var isEv=(hs.some(function(h){return h==='משחה';})||/^\d/.test(hs[0]))&&hs.some(function(h){return/שם|comp/i.test(h);});if(isEv){var hri=rows.findIndex(function(r){return r.querySelectorAll('th').length>0;});if(hri===-1)hri=rows.length>2?1:0;var hi={t:-1,d:-1,c:-1,p:-1,pl:-1,po:-1,ev:-1};var hh=[].slice.call(rows[hri].querySelectorAll('th')).map(function(h){return h.textContent.trim();});hh.forEach(function(h,i){if(/תוצאה|time/i.test(h))hi.t=i;else if(/תאריך|date/i.test(h))hi.d=i;else if(/שם|comp/i.test(h))hi.c=i;else if(/ניקוד|point/i.test(h))hi.p=i;else if(/אורך|pool/i.test(h))hi.po=i;else if(/מיקום במשחה/i.test(h))hi.pl=i;else if(h==='משחה')hi.ev=i;});var gt=t.closest?t.closest('.pld-card'):null;gt=gt?gt.querySelector('.pld-group-title'):null;var evName=gt?gt.textContent.trim():hs[0];rows.slice(hri+1).forEach(function(r){var cs=[].slice.call(r.querySelectorAll('td'));var ts=hi.t>=0&&cs[hi.t]?cs[hi.t].textContent.trim():'';var sc=pt(ts);if(!sc)return;results.push({event:(hi.ev>=0&&cs[hi.ev]?cs[hi.ev].textContent.trim():'')||evName,pool:hi.po>=0&&cs[hi.po]?cs[hi.po].textContent.trim().replace(/\D/g,''):'',place:hi.pl>=0&&cs[hi.pl]?parseInt(cs[hi.pl].textContent)||0:0,time:ts,seconds:sc,points:hi.p>=0&&cs[hi.p]?parseInt(cs[hi.p].textContent)||0:0,date:hi.d>=0&&cs[hi.d]?cs[hi.d].textContent.trim():'',competition:hi.c>=0&&cs[hi.c]?cs[hi.c].textContent.trim():''});});return;}var hasPt=hs.some(function(h){return/ניקוד|point/i.test(h);});if(!hasPt)return;var ci={ev:-1,t:-1,d:-1,c:-1,p:-1,pl:-1,po:-1};hs.forEach(function(h,i){if(/מקצ|event/i.test(h))ci.ev=i;else if(/תוצאה|time/i.test(h))ci.t=i;else if(/תאריך|date/i.test(h))ci.d=i;else if(/שם|comp/i.test(h))ci.c=i;else if(/ניקוד|point/i.test(h))ci.p=i;else if(/אורך|pool/i.test(h))ci.po=i;else if(/מיקום/i.test(h))ci.pl=i;});var arr=[];rows.slice(1).forEach(function(r){var cs=[].slice.call(r.querySelectorAll('td'));var ts=ci.t>=0&&cs[ci.t]?cs[ci.t].textContent.trim():'';var sc=pt(ts);if(!sc)return;var ev=ci.ev>=0&&cs[ci.ev]?cs[ci.ev].textContent.trim():'';if(!ev)return;arr.push({event:ev,pool:ci.po>=0&&cs[ci.po]?cs[ci.po].textContent.trim().replace(/\D/g,''):'',place:ci.pl>=0&&cs[ci.pl]?parseInt(cs[ci.pl].textContent)||0:0,time:ts,seconds:sc,points:ci.p>=0&&cs[ci.p]?parseInt(cs[ci.p].textContent)||0:0,date:ci.d>=0&&cs[ci.d]?cs[ci.d].textContent.trim():'',competition:ci.c>=0&&cs[ci.c]?cs[ci.c].textContent.trim():''});});if(arr.length>bests.length)bests=arr;});var data={};data[yr]={seasonId:String(sid),bests:bests,results:results};if(pid)data._swimmerId=pid;if(swName)data._swimmerName=swName;var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download='swimming_'+swName+'_'+yr+'.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);var d=document.createElement('div');d.style.cssText='position:fixed;top:16px;right:16px;background:#1D9E75;color:#fff;padding:12px 18px;border-radius:8px;font:700 14px sans-serif;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.3)';d.textContent=swName+' '+yr+': '+bests.length+' bests, '+results.length+' results';document.body.appendChild(d);setTimeout(function(){d.remove();},5000);})();`
 
 
 // Wire bookmarklet href
