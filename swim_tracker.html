@@ -221,7 +221,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   </div>
 
   <div class="section-title">③ Israeli Age Records</div>
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Official Israeli records (juniors + masters, long &amp; short course). Upload whichever PDF(s) changed — <strong>you don't need all four</strong>. Each file is parsed the moment you pick it and shows its own record count. Then <strong>Review changes vs cloud</strong> to see exactly what's new/updated, and upload only those.</p>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Official Israeli records (juniors + masters, long &amp; short course). Upload whichever PDF(s) changed — <strong>you don't need all four</strong>. Each file is parsed the moment you pick it and shows its own record count. Then <strong>Review changes vs cloud</strong> to see exactly what's new/updated, and upload only those.<br><span style="color:#9aa6b5">Source: the juniors, open and masters records are downloaded from <a href="https://isr.org.il/records.asp" target="_blank" rel="noopener" style="color:#185FA5">isr.org.il/records.asp</a>.</span></p>
   <div class="card" style="padding:16px 20px">
     <div id="recStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
 
@@ -270,7 +270,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     ④ Rudolph Age-Score Table
     <button onclick="rudShowInfo()" title="What is the Rudolph table?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
   </div>
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Dr. Klaus Rudolph's German age-graded points table (8 Jahre through 18+/offen, both sexes). Turns any swim time into a 1-20 score <strong>for that specific age</strong>, so progress stays comparable across age-group jumps. Upload the official PDF whenever a new "Basis" year is published — it's parsed entirely in the browser.</p>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Dr. Klaus Rudolph's German age-graded points table (8 Jahre through 18+/offen, both sexes). Turns any swim time into a 1-20 score <strong>for that specific age</strong>, so progress stays comparable across age-group jumps. Upload the official PDF whenever a new "Basis" year is published — it's parsed entirely in the browser.<br><span style="color:#9aa6b5">Source: the Rudolph table PDF was taken from <a href="https://share.google/HwtrWRPRZz1l11t5r" target="_blank" rel="noopener" style="color:#185FA5">this link</a>.</span></p>
   <div class="card" style="padding:16px 20px">
     <div id="rudStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published Rudolph table.</div>
 
@@ -802,32 +802,41 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
 
   <div id="analysis" style="display:none">
 
+    <!-- Sub-tab nav: groups the sections below so the page isn't one long scroll -->
+    <div id="analyzeGroupNav" class="ev-selector" style="margin-bottom:20px">
+      <button class="ev-btn active" data-grp="overview" onclick="setAnalyzeGroup('overview')">Overview</button>
+      <button class="ev-btn" data-grp="progress" onclick="setAnalyzeGroup('progress')">Progress &amp; Trends</button>
+      <button class="ev-btn" data-grp="records" onclick="setAnalyzeGroup('records')">Records &amp; Comparisons</button>
+    </div>
 
+    <div class="an-grp" data-grp="overview">
     <!-- ① COMPETITIONS ──────────────────── -->
     <div class="section-title">① Competitions</div>
     <div class="ev-selector" id="compSeasonSelector" style="margin-bottom:14px"></div>
     <div class="metrics" id="compMetrics"></div>
     <div id="compTable"></div>
+    </div>
 
+    <div class="an-grp" data-grp="progress" style="display:none">
     <!-- ② TOP-5 EVENTS PROGRESS ────────── -->
     <div class="section-title">② Progress in Key Events</div>
     <p style="font-size:12px;color:#888;margin-bottom:10px">Top events by result count. Click to add/remove.</p>
     <div class="ev-selector" id="top5Selector"></div>
     <div id="evCardsContainer" style="margin-bottom:16px"></div>
+    </div>
 
+    <div class="an-grp" data-grp="records" style="display:none">
     <!-- ③ RECORDS ───────────────────────── -->
     <div class="section-title">③ Personal Records</div>
     <div id="recGapHint" style="font-size:12px;color:#888;margin-bottom:10px"></div>
     <button onclick="openRecordsBrowser()" style="background:#185FA5;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:12px">📖 Browse all Israeli records</button>
-    <div class="tbl-2col">
-      <div class="tbl-card">
-        <table><thead><tr><th>🏊 25m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
-        <tbody id="rec25"></tbody></table>
-      </div>
-      <div class="tbl-card">
-        <table><thead><tr><th>🏊 50m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
-        <tbody id="rec50"></tbody></table>
-      </div>
+    <div class="tbl-card">
+      <table><thead><tr><th>🏊 25m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
+      <tbody id="rec25"></tbody></table>
+    </div>
+    <div class="tbl-card">
+      <table><thead><tr><th>🏊 50m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
+      <tbody id="rec50"></tbody></table>
     </div>
 
     <!-- ④ 25m vs 50m ANALYSIS ───────────── -->
@@ -837,13 +846,16 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
       <thead><tr><th>Event</th><th>SC Best (25m)</th><th>LC Best (50m)</th><th>Actual Δ</th><th>Expected Δ</th><th>Gap</th><th>Note</th></tr></thead>
       <tbody id="scLcBody"></tbody>
     </table></div>
+    </div>
 
+    <div class="an-grp" data-grp="overview">
     <!-- ⑤ INSIGHTS ───────────────────────── -->
     <div class="section-title">⑤ Insights</div>
     <div id="insightsSeason" style="margin-bottom:10px"></div>
     <div class="insights-grid" id="insightsGrid"></div>
+    </div>
 
-
+    <div class="an-grp" data-grp="progress" style="display:none">
     <!-- ⑥ BEST TIMES CHART ─────────────────── -->
     <div class="section-title" style="margin-top:8px">⑥ Best Times Over Time</div>
     <p style="font-size:12px;color:#888;margin-bottom:8px">All results by date per event — lower = faster. Filter by pool then select events.</p>
@@ -853,7 +865,9 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     <div class="card" style="padding:16px 20px;margin-bottom:16px">
       <div style="position:relative;height:280px"><canvas id="bestTimesChart"></canvas></div>
     </div>
+    </div>
 
+    <div class="an-grp" data-grp="records" style="display:none">
     <!-- ⑦ SEASON RECAP (collapsible) ──────────── -->
     <div class="section-title">⑦ Season Recap</div>
     <p style="font-size:12px;color:#888;margin-bottom:12px">Click a season to expand its recap card.</p>
@@ -876,7 +890,9 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         <div id="strokeTable" style="font-size:12px"></div>
       </div>
     </div>
+    </div>
 
+    <div class="an-grp" data-grp="progress" style="display:none">
     <!-- ⑨ POINTS TREND ──────────────────────── -->
     <div class="section-title">⑨ Points Trend</div>
     <p style="font-size:12px;color:#888;margin-bottom:10px">Every swim by date, coloured by event. Trend line across all events.</p>
@@ -899,6 +915,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
           <div style="position:relative;height:280px"><canvas id="rudChart"></canvas></div>
         </div>
       </div>
+    </div>
     </div>
   </div>
 
@@ -1399,6 +1416,18 @@ function switchTab(n){
   if(n==='race') initRaceTab();
   if(n==='analyze') setTimeout(function(){window.dispatchEvent(new Event('resize'));},50);
 }
+
+// Analyze-tab sub-navigation: groups the (many) sections into Overview /
+// Progress & Trends / Records & Comparisons so it isn't one long scroll.
+// All sections still get built by buildAll() regardless of which group is
+// showing; switching groups just toggles visibility + fires a resize so
+// Chart.js correctly sizes canvases that were hidden when first drawn.
+function setAnalyzeGroup(g){
+  document.querySelectorAll('.an-grp').forEach(function(el){el.style.display=(el.dataset.grp===g)?'':'none';});
+  document.querySelectorAll('#analyzeGroupNav .ev-btn').forEach(function(b){b.classList.toggle('active',b.dataset.grp===g);});
+  setTimeout(function(){window.dispatchEvent(new Event('resize'));},60);
+}
+window.setAnalyzeGroup=setAnalyzeGroup;
 
 // ═══════════════════════════════════════════════════════════════════
 //  DATA LOADING
