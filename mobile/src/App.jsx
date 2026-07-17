@@ -490,7 +490,7 @@ function MeetsTab({ D, swimmer }) {
   const { metrics, list } = useMemo(() => competitions(D), [D]);
   const pbKeys = useMemo(() => computePBTimeline(D), [D]);
   const ss = seasons(D);
-  const [season, setSeason] = useState("all");
+  const [season, setSeason] = useState(() => ss[ss.length - 1] || "all");
   const shown = season === "all" ? list : list.filter((m) => m.season === season);
 
   return (
@@ -553,7 +553,7 @@ function ProgressTab({ D, swimmer, rudolphDoc }) {
   const catalog = useMemo(() => eventCatalog(D), [D]);
   const dists = useMemo(() => Array.from(new Set(catalog.map((e) => e.dist))).filter(Boolean).sort((a, b) => a - b), [catalog]);
 
-  const [pool, setPool] = useState("all");
+  const [pool, setPool] = useState("25");
   const [stroke, setStroke] = useState("all");
   const [dist, setDist] = useState("all");
 
@@ -623,7 +623,7 @@ function ProgressTab({ D, swimmer, rudolphDoc }) {
 
 function PointsTrend({ D }) {
   const { c, s } = useUI();
-  const [pool, setPool] = useState("all");
+  const [pool, setPool] = useState("25");
   const [event, setEvent] = useState("all");
   const tr = useMemo(() => pointsTrend(D, { pool: pool === "all" ? null : pool, event: event === "all" ? null : event }), [D, pool, event]);
   const evColor = {}; tr.events.forEach((e, i) => (evColor[e] = COLORS[i % COLORS.length]));
@@ -677,12 +677,13 @@ function PointsTrend({ D }) {
 // age-group jumps (unlike the absolute FINA-style points above).
 function RudolphTrend({ D, swimmer, rudolphDoc }) {
   const { c, s } = useUI();
-  const [pool, setPool] = useState("all");
+  const [pool, setPool] = useState("25");
   const [event, setEvent] = useState("all");
   const [showInfo, setShowInfo] = useState(false);
   const table = rudolphDoc && rudolphDoc.table;
   const sex = swimmer && swimmer.sex;
   const birthdate = swimmer && swimmer.birthdate;
+  const currentAge = birthdate ? getAgeAt(birthdate) : null;
   const tr = useMemo(
     () => (table && birthdate ? rudolphTrend(D, table, sex, birthdate, { pool: pool === "all" ? null : pool, event: event === "all" ? null : event }) : { points: [], byEvent: {}, trend: null, events: [] }),
     [D, table, sex, birthdate, pool, event]
@@ -695,12 +696,15 @@ function RudolphTrend({ D, swimmer, rudolphDoc }) {
     return { ...p, ty };
   });
 
+  // The table is aimed at youth development — not meaningful for adult swimmers.
+  if (currentAge != null && currentAge > 20) return null;
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div style={s.h2}>Age Score (Rudolph)</div>
         <button onClick={() => setShowInfo(true)} title="What is the Rudolph score?"
-          style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${c.line}`, background: c.card2, color: c.dim, fontSize: 11, fontWeight: 800, lineHeight: "16px", padding: 0, cursor: "pointer" }}>?</button>
+          style={{ width: 26, height: 26, borderRadius: 999, border: `1px solid ${c.line}`, background: c.card2, color: c.dim, fontSize: 15, fontWeight: 800, lineHeight: "24px", padding: 0, cursor: "pointer" }}>?</button>
       </div>
       {showInfo && (
         <InfoModal title="What is the Rudolph score?" onClose={() => setShowInfo(false)}>

@@ -520,8 +520,14 @@ export function seasonRecap(D, swimmer) {
     });
     let impEv = null, impPct = 0;
     Object.keys(firstIn).forEach((k) => { const pct = (firstIn[k] - bestIn[k]) / firstIn[k] * 100; if (pct > impPct) { impPct = pct; impEv = k; } });
-    const age = swimmer && swimmer.birthdate ? getAgeAt(swimmer.birthdate, "01/09/" + parseInt(sk)) : null;
-    return { season: sk, ageLabel: age ? "Age " + Math.floor(age) + " · " + ageGroupLabel(Math.floor(age)) : "",
+    // Age-group convention (matches seasonEventReport): the age used for a whole
+    // season is the swimmer's age at the END year of that season (e.g. "2025-2026"
+    // → 2026), not the calendar year the season starts in — a swimmer competes in
+    // next year's age group for most of a season that started the year before.
+    const endYear = parseInt(String(sk).split("-")[1]) || parseInt(sk);
+    const by = swimmer && swimmer.birthdate ? birthYear(swimmer.birthdate) : null;
+    const age = by && endYear ? endYear - by : null;
+    return { season: sk, ageLabel: age != null ? "Age " + age + " · " + ageGroupLabel(age) : "",
       nMeets, nSwims: res.length, nPBs, pbEvs, bestPts, impEv: impEv ? impEv.replace("|", " ") : null, impPct };
   });
 }

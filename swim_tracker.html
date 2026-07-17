@@ -268,7 +268,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
 
   <div class="section-title" style="display:flex;align-items:center;gap:8px">
     ④ Rudolph Age-Score Table
-    <button onclick="rudShowInfo()" title="What is the Rudolph table?" style="width:18px;height:18px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:11px;font-weight:800;line-height:16px;padding:0;cursor:pointer">?</button>
+    <button onclick="rudShowInfo()" title="What is the Rudolph table?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
   </div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Dr. Klaus Rudolph's German age-graded points table (8 Jahre through 18+/offen, both sexes). Turns any swim time into a 1-20 score <strong>for that specific age</strong>, so progress stays comparable across age-group jumps. Upload the official PDF whenever a new "Basis" year is published — it's parsed entirely in the browser.</p>
   <div class="card" style="padding:16px 20px">
@@ -1886,10 +1886,13 @@ function buildSeasonRecap(){
       if(pct>bestImpPct){bestImpPct=pct;bestImpEv=k;}
     });
 
-    // Age at season start (Sept 1)
-    var seasonYear=parseInt(sk);
-    var ageAtStart=sw&&sw.birthdate?getAgeAt(sw.birthdate,'01/09/'+seasonYear):null;
-    var ageLabel=ageAtStart?(' · Age '+Math.floor(ageAtStart)+' · '+ageGroupLabel(Math.floor(ageAtStart))):'';
+    // Age-group convention: a swimmer's age for a whole season is their age at the
+    // season's END year (e.g. "2025-2026" -> 2026), not the start year — for most
+    // of a season they're already competing in next year's age group.
+    var endYear=parseInt(String(sk).split('-')[1])||parseInt(sk);
+    var bdTs=sw&&sw.birthdate?parseDate(sw.birthdate):null;
+    var seasonAge=(bdTs&&endYear)?(endYear-new Date(bdTs).getFullYear()):null;
+    var ageLabel=(seasonAge!=null)?(' · Age '+seasonAge+' · '+ageGroupLabel(seasonAge)):'';
 
     var id='recap-'+sk.replace(/[^a-z0-9]/gi,'_');
     var html='<div style="border:1px solid #e5e7eb;border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)">'
