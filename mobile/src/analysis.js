@@ -587,6 +587,71 @@ export function pointsTrend(D, opts) {
   return { points: all, byEvent, trend, events: Object.keys(byEvent).sort() };
 }
 
+// ⑩ Rudolph age-graded points (config/rudolph) ───────────────────────────
+// Published from the desktop app (Extract tab) after uploading Dr. Klaus
+// Rudolph's German age-graded points PDF. Shape:
+//   { table: { "F"|"M": { "8".."18"|"offen": { "dist|stroke": [{pts,sec}, …20] } } },
+//     count, loadedAt, by }
+// Unlike the Israeli age-group records (absolute times), this maps a time to
+// 1-20 points FOR THAT AGE, so swimmers of different ages can be compared on
+// one scale. Age bracket uses the swimmer's actual age ON THE SWIM DATE (not
+// year-end age like the Israeli records) — that's how the table is meant to
+// be read: "how good was this swim for how old they were that day."
+export function rudolphAgeBracket(age) {
+  if (age == null) return null;
+  const a = Math.floor(age);
+  if (a < 8) return null;   // table starts at 8
+  if (a >= 19) return "offen";
+  return String(a);
+}
+// Interpolates (or extrapolates beyond the printed 1/20 rows, using the
+// nearest segment's slope — uncapped, matching how these tables are read)
+// a swim time to Rudolph points for a given sex/age/event.
+export function rudolphScore(table, sex, age, event, seconds) {
+  const S = sexNorm(sex), br = rudolphAgeBracket(age), key = recordKey(event);
+  if (!table || !S || !br || !key || !seconds) return null;
+  const rows = ((table[S] || {})[br] || {})[key];
+  if (!rows || rows.length < 2) return null;
+  const n = rows.length; // sorted pts 20→1, i.e. seconds ascending (fastest→slowest)
+  const seg = (a, b) => a.pts + (b.pts - a.pts) * ((seconds - a.sec) / (b.sec - a.sec));
+  if (seconds <= rows[0].sec) return +seg(rows[0], rows[1]).toFixed(2);
+  if (seconds >= rows[n - 1].sec) return +seg(rows[n - 2], rows[n - 1]).toFixed(2);
+  for (let i = 0; i < n - 1; i++) {
+    if (seconds >= rows[i].sec && seconds <= rows[i + 1].sec) return +seg(rows[i], rows[i + 1]).toFixed(2);
+  }
+  return null;
+}
+// Rudolph score trend (all swims by date, optional pool/event filter) +
+// regression line — mirrors pointsTrend() but scores against the age-graded
+// table using the swimmer's age on each individual swim date.
+export function rudolphTrend(D, table, sex, birthdate, opts) {
+  opts = opts || {};
+  const ar = allResults(D).filter((r) => {
+    if (opts.event && r.event !== opts.event) return false;
+    if (opts.pool) { const p = poolNorm(r.pool); if (p && p !== opts.pool) return false; }
+    return true;
+  });
+  const byEvent = {};
+  const all = [];
+  ar.forEach((r) => {
+    const ts = parseDate(r.date);
+    if (!ts || !r.seconds) return;
+    const age = getAgeAt(birthdate, r.date);
+    const score = rudolphScore(table, sex, age, r.event, r.seconds);
+    if (score == null) return;
+    const pt = { x: ts, y: score, event: r.event, time: r.time, pool: r.pool, age: age != null ? +age.toFixed(1) : null };
+    (byEvent[r.event] = byEvent[r.event] || []).push(pt);
+    all.push(pt);
+  });
+  const reg = linReg(all);
+  let trend = null;
+  if (reg && all.length >= 3) {
+    const xs = all.map((p) => p.x), mn = Math.min(...xs), mx = Math.max(...xs);
+    trend = [{ x: mn, y: reg.m * mn + reg.b }, { x: mx, y: reg.m * mx + reg.b }];
+  }
+  return { points: all, byEvent, trend, events: Object.keys(byEvent).sort() };
+}
+
 // Event-coverage heat map for one season: stroke (rows) × distance (cols),
 // value = number of swims. Used to see which events were raced and how often.
 export function eventHeatmap(D, seasonKey) {

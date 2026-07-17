@@ -266,6 +266,28 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     </details>
   </div>
 
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ④ Rudolph Age-Score Table
+    <button onclick="rudShowInfo()" title="What is the Rudolph table?" style="width:18px;height:18px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:11px;font-weight:800;line-height:16px;padding:0;cursor:pointer">?</button>
+  </div>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Dr. Klaus Rudolph's German age-graded points table (8 Jahre through 18+/offen, both sexes). Turns any swim time into a 1-20 score <strong>for that specific age</strong>, so progress stays comparable across age-group jumps. Upload the official PDF whenever a new "Basis" year is published — it's parsed entirely in the browser.</p>
+  <div class="card" style="padding:16px 20px">
+    <div id="rudStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published Rudolph table.</div>
+
+    <label class="rud-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
+      <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Rudolph points PDF (weiblich + männlich)</span>
+      <span id="rudFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+      <input type="file" accept=".pdf" style="display:none" onchange="rudPickPdf(event)">
+    </label>
+
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
+      <button id="rudReviewBtn" onclick="rudReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="rudPublishBtn" onclick="rudPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="rudPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="rudPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+  </div>
+
 </div>
 
 <script>
@@ -3492,6 +3514,153 @@ function clearRace2(){
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════
+     📈 RUDOLPH AGE-SCORE TABLE — in-browser PDF parser
+     Uploads Dr. Klaus Rudolph's German age-graded points PDF (weiblich +
+     männlich, ages 8..18 + offen) and hands the result to rudPublish()
+     (Firebase module) via config/rudolph. Validated against the real PDF's
+     text-item layout with a throwaway Node script before porting here:
+     each page is one sex×age table; rows cluster into 20 points-rows (20→1)
+     of 17 time columns each (Free 50-1500, Breast/Fly/Back 50-200, IM 200/400).
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  const EVENTS=["50|Free","100|Free","200|Free","400|Free","800|Free","1500|Free",
+    "50|Breast","100|Breast","200|Breast","50|Fly","100|Fly","200|Fly",
+    "50|Back","100|Back","200|Back","200|IM","400|IM"];
+  const TIME_RE=/^(\d{1,2}):(\d{2}),(\d{2})$/, AGE_RE=/^(\d{1,2})\s*Jahre$/;
+  const parseTime=(s)=>{const m=s.match(TIME_RE);return m?(+m[1]*60+ +m[2]+ +m[3]/100):null;};
+
+  function clusterRows(items){
+    // Real rows are ~12-13 units apart; a row's points-label sometimes renders
+    // ~1px off the time row's baseline — cluster anything within 3 units.
+    const sorted=items.slice().sort((a,b)=>b.y-a.y);
+    const rows=[];
+    for(const it of sorted){
+      const last=rows[rows.length-1];
+      if(last&&Math.abs(last.y-it.y)<=3){last.items.push(it);last.y=(last.y+it.y)/2;}
+      else rows.push({y:it.y,items:[it]});
+    }
+    return rows;
+  }
+
+  async function parsePdf(buf){
+    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const table={F:{},M:{}};
+    const issues=[];
+    let lastSex=null; // fallback for the one page missing its "weiblich"/"männlich" label
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p), tc=await page.getTextContent();
+      const items=tc.items.filter((it)=>it.str.trim()).map((it)=>({x:it.transform[4],y:it.transform[5],s:it.str.trim()}));
+
+      let sex=items.some((it)=>it.s==="weiblich")?"F":items.some((it)=>it.s==="männlich")?"M":null;
+      if(!sex&&lastSex)sex=lastSex;
+      lastSex=sex||lastSex;
+      let age=null;
+      for(const it of items){
+        if(it.s==="offen"){age="offen";break;}
+        const m=it.s.match(AGE_RE); if(m){age=m[1];break;}
+      }
+      if(!sex||!age){issues.push("page "+p+": couldn't detect sex/age");continue;}
+
+      const rows=clusterRows(items).map((r)=>{
+        const times=r.items.filter((it)=>TIME_RE.test(it.s)).sort((a,b)=>a.x-b.x);
+        const ptsTok=r.items.find((it)=>/^\d{1,2}$/.test(it.s)&&+it.s>=1&&+it.s<=20);
+        return {times,pts:ptsTok?+ptsTok.s:null};
+      }).filter((r)=>r.times.length===17);
+      if(rows.length!==20){issues.push("page "+p+" ("+sex+" "+age+"): expected 20 rows, got "+rows.length);continue;}
+      rows.forEach((r,i)=>{if(r.pts==null)r.pts=20-i;});
+
+      const bySex=table[sex]=table[sex]||{}, byAge=bySex[age]=bySex[age]||{};
+      EVENTS.forEach((ev,ci)=>{
+        byAge[ev]=rows.map((r)=>{const sec=parseTime(r.times[ci].s);return{pts:r.pts,sec:sec==null?null:+sec.toFixed(2)};}).sort((a,b)=>b.pts-a.pts);
+      });
+    }
+    return {table,issues};
+  }
+
+  function countTable(t){let n=0;for(const s in t)for(const a in t[s])for(const e in t[s][a])n+=t[s][a][e].length;return n;}
+  function diffTable(oldT,newT){
+    let added=0,changed=0; const changes=[];
+    oldT=oldT||{};
+    for(const sex in newT)for(const age in newT[sex])for(const ev in newT[sex][age]){
+      const nv=JSON.stringify(newT[sex][age][ev]);
+      const ov=(((oldT[sex]||{})[age]||{})[ev])?JSON.stringify((oldT[sex]||{})[age][ev]):null;
+      if(ov==null){added++;changes.push("➕ "+sex+" "+age+"y "+ev);}
+      else if(ov!==nv){changed++;changes.push("✎ "+sex+" "+age+"y "+ev);}
+    }
+    return {added,changed,changes};
+  }
+
+  const $=(id)=>document.getElementById(id);
+  let parsedTable=null, mergedTable=null;
+
+  function resetPublish(){ mergedTable=null; const pb=$("rudPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("rudPreview"); if(pv)pv.style.display="none"; }
+
+  window.rudShowInfo=function(){
+    alert("The Rudolph table (Dr. Klaus Rudolph) turns a swim time into a 1-20 point score, calibrated separately for every age (8 through 18+) and event.\n\nUnlike an absolute points scale, it answers \"how good was this swim for how old they were that day?\" — so progress stays comparable as a swimmer moves through age groups, and swimmers of different ages can be compared fairly.\n\nUpload the official PDF below whenever a new \"Basis\" year is published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
+  };
+
+  window.rudPickPdf=async function(e){
+    const f=e.target.files&&e.target.files[0]; if(!f)return;
+    const fn=$("rudFname"), lab=e.target.closest(".rud-slot");
+    if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
+    resetPublish();
+    try{
+      const {table,issues}=await parsePdf(await f.arrayBuffer());
+      const n=countTable(table);
+      if(!n)throw new Error("0 entries parsed — wrong PDF?");
+      parsedTable=table;
+      if(fn){fn.innerHTML="✓ <strong>"+n+"</strong> time entries — "+f.name+(issues.length?" ⚠ "+issues.length+" page issue(s)":"");fn.style.color=issues.length?"#9a6b00":"#1a7a4f";}
+      if(lab){lab.style.borderColor=issues.length?"#e5a05a":"#1D9E75";lab.style.background=issues.length?"#fef6ee":"#f0faf5";}
+      if(issues.length)console.warn("Rudolph parse issues:",issues);
+      const rb=$("rudReviewBtn"); if(rb){rb.disabled=false;rb.style.opacity="1";}
+    }catch(err){
+      parsedTable=null;
+      if(fn){fn.textContent="⚠ "+err.message;fn.style.color="#c0392b";}
+      if(lab){lab.style.borderColor="#e5a05a";lab.style.background="#fef6ee";}
+      const rb=$("rudReviewBtn"); if(rb){rb.disabled=true;rb.style.opacity=".5";}
+    }
+  };
+
+  window.rudReview=async function(){
+    const st=$("rudPublishStatus"), pv=$("rudPreview"), pubBtn=$("rudPublishBtn");
+    if(!parsedTable){ if(st){st.style.color="#c0392b";st.textContent="Parse a PDF first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Signing in / reading current cloud table…";}
+    if(!(await window.swimEnsureSignIn())){ if(st){st.style.color="#c0392b";st.textContent="Sign-in needed to compare with the cloud.";} return; }
+    try{
+      const cloud=await window.swimFetchRudolph();
+      const base=cloud&&cloud.table?cloud.table:{};
+      const merged=JSON.parse(JSON.stringify(base));
+      for(const sex in parsedTable)for(const age in parsedTable[sex]){merged[sex]=merged[sex]||{};merged[sex][age]=parsedTable[sex][age];}
+      const {added,changed,changes}=diffTable(base,parsedTable);
+      mergedTable=merged;
+      const total=added+changed;
+      const body=total?("Changes to upload: "+added+" new, "+changed+" updated (event×age tables).\n\n"+changes.slice(0,60).join("\n")+(changes.length>60?("\n… +"+(changes.length-60)+" more"):"")):"No changes — the cloud already matches this file.";
+      if(pv){pv.style.display="";pv.textContent=body;}
+      if(pubBtn){pubBtn.disabled=!total;pubBtn.style.opacity=total?"1":".5";pubBtn.textContent="☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud";}
+      if(st){st.style.color=total?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):"Nothing to upload — already up to date.";}
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Not allowed — your email isn't on the access list.":"Compare failed: "+err.message;} }
+  };
+
+  window.rudPublish=async function(){
+    const st=$("rudPublishStatus");
+    if(!mergedTable){ if(st){st.style.color="#c0392b";st.textContent="Click “Review changes vs cloud” first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Uploading…";}
+    try{
+      await window.swimPublishRudolph(mergedTable);
+      if(st){st.style.color="#1a7a4f";st.textContent="✅ Uploaded. Cloud table now has "+countTable(mergedTable)+" time entries total.";}
+      parsedTable=null; resetPublish();
+      const rb=$("rudReviewBtn"); if(rb){rb.disabled=true;rb.style.opacity=".5";}
+      if(window.swimRefreshRudolphStatus)window.swimRefreshRudolphStatus();
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish the Rudolph table.":"Upload failed: "+err.message;} }
+  };
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
      ☁ FIREBASE CLOUD SYNC  (project: swimtrack-e12c8)
      Signs in with Google and pushes the loaded data to Firestore so the
      mobile app can read it. Extraction stays 100% on the desktop.
@@ -3787,6 +3956,32 @@ async function refreshRecordsStatus() {
 }
 window.swimRefreshRecordsStatus = refreshRecordsStatus;
 
+// ── Rudolph age-graded points table (config/rudolph) ────────────────────
+// Shape: { table:{ "F"|"M":{ "8".."18"|"offen":{ "dist|stroke":[{pts,sec},…20] } } },
+//          count, loadedAt, by }.
+function countRudolph(t) { let n = 0; for (const s in t) for (const a in t[s]) for (const e in t[s][a]) n += t[s][a][e].length; return n; }
+window.swimFetchRudolph = async () => { const s = await getDoc(doc(db, "config", "rudolph")); return s.exists() ? s.data() : null; };
+window.swimPublishRudolph = async (table) => {
+  await setDoc(doc(db, "config", "rudolph"), {
+    table, count: countRudolph(table), loadedAt: Date.now(), by: currentUser ? currentUser.email : "",
+  });
+};
+async function refreshRudolphStatus() {
+  const el = $("rudStatus"); if (!el) return;
+  if (!currentUser) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published Rudolph table."; return; }
+  try {
+    const d = await window.swimFetchRudolph();
+    if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No Rudolph table published yet — upload the PDF below."; return; }
+    el.style.color = "#1a7a4f";
+    el.innerHTML = "<strong>" + (d.count || countRudolph(d.table || {})) + "</strong> time entries published" +
+      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "");
+  } catch (e) {
+    el.style.color = "#c0392b";
+    el.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Couldn't read Rudolph table: " + e.message;
+  }
+}
+window.swimRefreshRudolphStatus = refreshRudolphStatus;
+
 // Clear the loaded analysis view (defined here so it's always available,
 // independent of the main script's execution order).
 window.clearLoadedData = function () {
@@ -3822,6 +4017,7 @@ onAuthStateChanged(auth, (u) => {
   if (u) { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); } else { cloudSwimmers = []; }
   render();
   refreshRecordsStatus();
+  refreshRudolphStatus();
 });
 // Re-render the sync button label when the active swimmer changes.
 window.addEventListener("focus", render);

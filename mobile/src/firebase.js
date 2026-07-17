@@ -96,6 +96,15 @@ export async function fetchRecords() {
   return snap.exists() ? snap.data() : null;
 }
 
+// ── Rudolph age-graded points table (config/rudolph) ────────────────
+// Published from the desktop app after uploading the official Rudolph PDF.
+// Shape: { table: { "F"|"M": { "8".."18"|"offen": { "dist|stroke": [{pts,sec}, …20] } } },
+//          count, loadedAt, by }
+export async function fetchRudolph() {
+  const snap = await getDoc(doc(db, "config", "rudolph"));
+  return snap.exists() ? snap.data() : null;
+}
+
 export async function saveAccessList(emails) {
   await setDoc(doc(db, "config", "access"), { emails });
 }

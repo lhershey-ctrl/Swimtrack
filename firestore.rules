@@ -48,5 +48,12 @@ service cloud.firestore {
       allow read: if isAllowed();
       allow write: if isOwner();
     }
+
+    // Rudolph age-graded points table: everyone allowed can read; only owners
+    // can publish (loaded from the official Rudolph PDF via the desktop app).
+    match /config/rudolph {
+      allow read: if isAllowed();
+      allow write: if isOwner();
+    }
   }
 }

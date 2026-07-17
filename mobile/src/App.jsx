@@ -7,7 +7,7 @@ import { useUI, GRAD } from "./theme.jsx";
 import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
-  fetchRecords,
+  fetchRecords, fetchRudolph,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -16,7 +16,7 @@ import {
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
   lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
-  recordKey,
+  recordKey, rudolphTrend,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -548,7 +548,7 @@ function MeetsTab({ D, swimmer }) {
 // ════════════════════════════════════════════════════════════════════
 //  PROGRESS (filtered event picker + line chart + points trend)
 // ════════════════════════════════════════════════════════════════════
-function ProgressTab({ D }) {
+function ProgressTab({ D, swimmer, rudolphDoc }) {
   const { c, s } = useUI();
   const catalog = useMemo(() => eventCatalog(D), [D]);
   const dists = useMemo(() => Array.from(new Set(catalog.map((e) => e.dist))).filter(Boolean).sort((a, b) => a - b), [catalog]);
@@ -616,6 +616,7 @@ function ProgressTab({ D }) {
       </Card>
 
       <PointsTrend D={D} />
+      <RudolphTrend D={D} swimmer={swimmer} rudolphDoc={rudolphDoc} />
     </div>
   );
 }
@@ -667,6 +668,113 @@ function PointsTrend({ D }) {
         <div style={{ fontSize: 11, color: c.dim, textAlign: "center", marginTop: 6 }}>Each dot = one swim · dashed line = overall trend</div>
       </Card>
     </>
+  );
+}
+
+// Rudolph age-graded score trend — same shape as Points Trend, but each swim
+// is scored 1-20 against Dr. Klaus Rudolph's German age-graded table for the
+// swimmer's actual age on that swim date, so progress is comparable across
+// age-group jumps (unlike the absolute FINA-style points above).
+function RudolphTrend({ D, swimmer, rudolphDoc }) {
+  const { c, s } = useUI();
+  const [pool, setPool] = useState("all");
+  const [event, setEvent] = useState("all");
+  const [showInfo, setShowInfo] = useState(false);
+  const table = rudolphDoc && rudolphDoc.table;
+  const sex = swimmer && swimmer.sex;
+  const birthdate = swimmer && swimmer.birthdate;
+  const tr = useMemo(
+    () => (table && birthdate ? rudolphTrend(D, table, sex, birthdate, { pool: pool === "all" ? null : pool, event: event === "all" ? null : event }) : { points: [], byEvent: {}, trend: null, events: [] }),
+    [D, table, sex, birthdate, pool, event]
+  );
+  const evColor = {}; tr.events.forEach((e, i) => (evColor[e] = COLORS[i % COLORS.length]));
+
+  const data = tr.points.slice().sort((a, b) => a.x - b.x).map((p) => {
+    let ty = null;
+    if (tr.trend) { const [a, b] = tr.trend; ty = a.y + (b.y - a.y) * ((p.x - a.x) / (b.x - a.x || 1)); }
+    return { ...p, ty };
+  });
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={s.h2}>Age Score (Rudolph)</div>
+        <button onClick={() => setShowInfo(true)} title="What is the Rudolph score?"
+          style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${c.line}`, background: c.card2, color: c.dim, fontSize: 11, fontWeight: 800, lineHeight: "16px", padding: 0, cursor: "pointer" }}>?</button>
+      </div>
+      {showInfo && (
+        <InfoModal title="What is the Rudolph score?" onClose={() => setShowInfo(false)}>
+          <p style={{ margin: "0 0 10px" }}>
+            The <strong>Rudolph table</strong> is a German age-graded scoring system (Dr. Klaus Rudolph) that turns a
+            swim time into a <strong>1-20 point score</strong> — separately calibrated for every age (8 through 18+)
+            and event.
+          </p>
+          <p style={{ margin: "0 0 10px" }}>
+            Unlike the regular Points Trend above (which is an absolute scale, so a 10-year-old can never score as
+            high as a 16-year-old), the Rudolph score asks <em>"how good was this swim for how old they were that
+            day?"</em> — so it stays meaningful as a swimmer moves through age groups, and lets swimmers of different
+            ages be compared fairly.
+          </p>
+          <p style={{ margin: 0 }}>
+            Each dot below is one swim, scored against the table for the swimmer's exact age on that swim date. The
+            dashed line is the overall trend.
+          </p>
+        </InfoModal>
+      )}
+      {!table ? (
+        <Card><Center>Rudolph table not published yet — load it from the desktop app's Extract tab.</Center></Card>
+      ) : !birthdate || !sex ? (
+        <Card><Center>Set birthdate and sex in Settings to see the age score.</Center></Card>
+      ) : (
+        <>
+          <PillRow label="Pool" active={pool} onPick={setPool}
+            items={[{ key: "all", label: "All" }, { key: "25", label: "25m" }, { key: "50", label: "50m" }]} />
+          <PillRow label="Event" active={event} onPick={setEvent}
+            items={[{ key: "all", label: "All" }, ...tr.events.map((e) => ({ key: e, label: e }))]} />
+          <Card>
+            <div style={{ height: 250 }}>
+              {data.length < 2 ? <Center>Not enough data to score against the Rudolph table.</Center> : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={data} margin={{ top: 6, right: 10, bottom: 0, left: -12 }}>
+                    <CartesianGrid stroke={c.line} vertical={false} />
+                    <XAxis dataKey="x" type="number" domain={["dataMin", "dataMax"]} scale="time"
+                      tickFormatter={(v) => fmtDateShort(v)} tick={{ fill: c.dim, fontSize: 10 }} />
+                    <YAxis tick={{ fill: c.dim, fontSize: 10 }} width={36} />
+                    <Tooltip contentStyle={tooltipStyle(c)} labelFormatter={(v) => fmtDateShort(v)}
+                      formatter={(v, _n, p) => {
+                        if (p.dataKey !== "y") return null;
+                        const d = p.payload;
+                        return [(d.time ? d.time + " · " : "") + v + " score" + (d.age ? " · age " + d.age : ""), d.event || ""];
+                      }} />
+                    {tr.trend && <Line dataKey="ty" stroke={c.dim} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />}
+                    <Scatter dataKey="y" isAnimationActive={false}>
+                      {data.map((p, i) => <Cell key={i} fill={evColor[p.event] || c.blue} />)}
+                    </Scatter>
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: c.dim, textAlign: "center", marginTop: 6 }}>1-20 scale, age-adjusted — how good each swim was for the swimmer's age that day</div>
+          </Card>
+        </>
+      )}
+    </>
+  );
+}
+
+// Small centered modal for short explanatory text (used by the "?" info buttons).
+function InfoModal({ title, children, onClose }) {
+  const { c } = useUI();
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div style={{ background: c.card, borderRadius: 14, padding: "18px 20px", maxWidth: 420, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, fontWeight: 800, fontSize: 16, color: c.text }}>{title}</div>
+          <button onClick={onClose} style={{ background: c.card2, border: `1px solid ${c.line}`, color: c.text, borderRadius: 999, width: 30, height: 30, fontSize: 14, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ fontSize: 13, lineHeight: 1.6, color: c.text }}>{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -1351,10 +1459,12 @@ export default function App() {
   const [loadErr, setLoadErr] = useState("");
   const [tab, setTab] = useState("home");
   const [recordsDoc, setRecordsDoc] = useState(null);
+  const [rudolphDoc, setRudolphDoc] = useState(null);
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
   useEffect(() => { if (user) fetchRecords().then(setRecordsDoc).catch(() => setRecordsDoc(null)); }, [user]);
+  useEffect(() => { if (user) fetchRudolph().then(setRudolphDoc).catch(() => setRudolphDoc(null)); }, [user]);
 
   function loadSwimmers() {
     return fetchSwimmers()
@@ -1403,7 +1513,7 @@ export default function App() {
           {hasData && <TabErrorBoundary key={tab + "-" + swimmerId}>
             {tab === "home" && <HomeTab D={D} swimmer={swimmer} />}
             {tab === "meets" && <MeetsTab D={D} swimmer={swimmer} />}
-            {tab === "progress" && <ProgressTab D={D} />}
+            {tab === "progress" && <ProgressTab D={D} swimmer={swimmer} rudolphDoc={rudolphDoc} />}
             {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
             {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
           </TabErrorBoundary>}
