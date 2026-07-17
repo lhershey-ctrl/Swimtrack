@@ -884,6 +884,22 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     <div class="card" style="padding:16px 20px;margin-bottom:16px">
       <div style="position:relative;height:280px"><canvas id="ptChart"></canvas></div>
     </div>
+
+    <!-- ⑩ RUDOLPH AGE SCORE ──────────────────── -->
+    <div id="rudolphSection">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px">
+        ⑩ Age Score (Rudolph)
+        <button onclick="rudShowInfo()" title="What is the Rudolph score?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+      </div>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Every swim scored 1-20 against Dr. Klaus Rudolph's German age-graded table, using the swimmer's exact age on each swim date — comparable across age-group jumps, unlike the absolute Points Trend above.</p>
+      <div id="rudolphHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
+      <div id="rudolphChartWrap">
+        <div class="ev-selector" id="rudEvSel" style="margin-bottom:10px"></div>
+        <div class="card" style="padding:16px 20px;margin-bottom:16px">
+          <div style="position:relative;height:280px"><canvas id="rudChart"></canvas></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="ph2" class="ph"><div class="ico">📊</div><p>Load your <strong>swimming_data.json</strong> to start</p></div>
@@ -1602,6 +1618,8 @@ function buildAll(){
   safe('strokeBreakdown',buildStrokeBreakdown);
   ptFilter=null;
   safe('pointsTrend',buildPointsTrend);
+  rudFilter=null;
+  safe('rudolphTrend',buildRudolphTrend);
   if(errs.length){
     var st=document.getElementById('loadStatus');
     if(st)st.innerText+=' ⚠️ '+errs.join(' · ');
@@ -2146,6 +2164,113 @@ function buildPointsTrend(){
 }
 function setPtFilter(ev){ptFilter=ev;buildPointsTrend();};
 function setPtPool(p){window._ptPool=p;buildPointsTrend();};
+
+// ── ⑩ RUDOLPH AGE SCORE ──────────────────────────────────────────────
+// Dr. Klaus Rudolph's German age-graded points table: a time maps to 1-20
+// points, calibrated separately per age (8..18, plus "offen"/open) and per
+// event — unlike Points Trend above (absolute scale), this stays meaningful
+// as a swimmer moves through age groups. Age bracket uses the swimmer's
+// actual age ON THE SWIM DATE (not year-end age like the Israeli records).
+var rudChartInst=null,rudFilter=null;
+function _rudBracket(age){
+  if(age==null)return null;
+  var a=Math.floor(age);
+  if(a<8)return null;
+  if(a>=19)return'offen';
+  return String(a);
+}
+function _rudScore(table,sex,age,event,seconds){
+  var S=_sexN(sex),br=_rudBracket(age),key=_recKey(event);
+  if(!table||!S||!br||!key||!seconds)return null;
+  var rows=((table[S]||{})[br]||{})[key];
+  if(!rows||rows.length<2)return null;
+  var n=rows.length; // sorted pts 20→1, i.e. seconds ascending (fastest→slowest)
+  function seg(a,b){return a.pts+(b.pts-a.pts)*((seconds-a.sec)/(b.sec-a.sec));}
+  if(seconds<=rows[0].sec)return+seg(rows[0],rows[1]).toFixed(2);
+  if(seconds>=rows[n-1].sec)return+seg(rows[n-2],rows[n-1]).toFixed(2);
+  for(var i=0;i<n-1;i++){if(seconds>=rows[i].sec&&seconds<=rows[i+1].sec)return+seg(rows[i],rows[i+1]).toFixed(2);}
+  return null;
+}
+function buildRudolphTrend(pool){
+  var section=document.getElementById('rudolphSection');if(!section)return;
+  var table=window.__rudolphTable||null;
+  var prof=window.__recProfile||{},sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
+  var bd=prof.birthdate||sw.birthdate||'',sex=prof.sex||sw.sex||'';
+  var curAge=bd?getAgeAt(bd):null;
+  if(curAge!=null&&curAge>20){section.style.display='none';return;} // not meaningful for adults
+  section.style.display='';
+  var hintEl=document.getElementById('rudolphHint'),chartWrap=document.getElementById('rudolphChartWrap');
+  if(!table){if(hintEl)hintEl.innerHTML='Rudolph table not published yet — upload it below (Extract tab ④).';if(chartWrap)chartWrap.style.display='none';return;}
+  if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see the age score.';if(chartWrap)chartWrap.style.display='none';return;}
+  if(hintEl)hintEl.innerHTML='';
+  if(chartWrap)chartWrap.style.display='';
+
+  if(pool!==undefined)window._rudPool=pool;
+  var rudPool=window._rudPool!==undefined?window._rudPool:'25'; // default 25m, matching other charts
+
+  var ar=allResults();
+  var evs=Array.from(new Set(ar.map(function(r){return r.event;}))).sort();
+  var sel=document.getElementById('rudEvSel');
+  if(sel){
+    var poolBtns='<span style="font-size:11px;color:#aaa;margin-right:6px">Pool:</span>'+
+      '<button class="ev-btn'+(rudPool==='25'?' active':'')+'" onclick="setRudPool(\'25\')" style="font-size:11px">25m (SC)</button>'+
+      '<button class="ev-btn'+(rudPool==='50'?' active':'')+'" onclick="setRudPool(\'50\')" style="font-size:11px">50m (LC)</button>'+
+      '<button class="ev-btn'+(!rudPool?' active':'')+'" onclick="setRudPool(null)" style="font-size:11px">All</button>'+
+      '<span style="margin:0 10px;color:#e0ddd6">|</span><span style="font-size:11px;color:#aaa;margin-right:6px">Event:</span>'+
+      '<button class="ev-btn'+(rudFilter===null?' active':'')+'" onclick="setRudFilter(null)" style="font-size:11px">All</button>'+
+      evs.map(function(ev){return '<button class="ev-btn'+(rudFilter===ev?' active':'')+'" onclick="setRudFilter(\''+ev.replace(/'/g,"\\'")+'\')">'+ev+'</button>';}).join('');
+    sel.innerHTML=poolBtns;
+  }
+  var filtered=ar.filter(function(r){
+    if(rudFilter&&r.event!==rudFilter)return false;
+    if(rudPool){var p=poolNorm(r.pool);if(p&&p!==rudPool)return false;}
+    return true;
+  });
+  var evGroups={};
+  filtered.forEach(function(r){
+    var ts=parseDate(r.date);if(!ts||!r.seconds)return;
+    var age=getAgeAt(bd,r.date);
+    var score=_rudScore(table,sex,age,r.event,r.seconds);
+    if(score==null)return;
+    if(!evGroups[r.event])evGroups[r.event]=[];
+    evGroups[r.event].push({x:ts,y:score,time:r.time,pool:r.pool,age:age!=null?+age.toFixed(1):null});
+  });
+  var datasets=[];
+  Object.keys(evGroups).forEach(function(ev,ci){
+    datasets.push({label:ev,data:evGroups[ev],backgroundColor:COLORS[ci%COLORS.length],pointRadius:4,pointHoverRadius:6,showLine:false,type:'scatter'});
+  });
+  var allPts=[];Object.values(evGroups).forEach(function(g){allPts=allPts.concat(g);});
+  var reg=linReg(allPts);
+  if(reg&&allPts.length>=3){
+    var xs=allPts.map(function(p){return p.x;});
+    var mn=Math.min.apply(null,xs),mx=Math.max.apply(null,xs);
+    datasets.push({label:'Trend',data:[{x:mn,y:reg.m*mn+reg.b},{x:mx,y:reg.m*mx+reg.b}],
+      borderColor:'rgba(0,0,0,0.25)',backgroundColor:'transparent',borderWidth:2,borderDash:[6,4],
+      pointRadius:0,showLine:true,type:'line',order:0});
+  }
+  var canvasEl=document.getElementById('rudChart');if(!canvasEl)return;
+  if(rudChartInst)rudChartInst.destroy();
+  rudChartInst=new Chart(canvasEl.getContext('2d'),{
+    type:'scatter',data:{datasets:datasets},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{font:{size:10},boxWidth:12,filter:function(i){return i.text!=='Trend';}}},
+        tooltip:{filter:function(item){return item.dataset.label!=='Trend';},callbacks:{
+          title:function(c){return new Date(c[0].parsed.x).toLocaleDateString('he-IL');},
+          label:function(c){
+            var raw=c.raw||{};
+            return ' '+c.dataset.label+': '+(raw.time?raw.time+' · ':'')+c.parsed.y+' score'+(raw.age?' · age '+raw.age:'');
+          }
+        }}},
+      scales:{
+        x:{type:'linear',ticks:{color:'#888',font:{size:9},callback:function(v){return new Date(v).toLocaleDateString('he-IL',{month:'short',year:'2-digit'});}},grid:{color:'rgba(0,0,0,.04)'}},
+        y:{ticks:{color:'#888',font:{size:10}},grid:{color:'rgba(0,0,0,.04)'},title:{display:true,text:'Age Score (1-20)',color:'#aaa',font:{size:9}}}
+      }
+    }
+  });
+}
+function setRudFilter(ev){rudFilter=ev;buildRudolphTrend();};
+function setRudPool(p){buildRudolphTrend(p);};
+window.buildRudolphTrend=buildRudolphTrend;
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3978,15 +4103,20 @@ window.swimPublishRudolph = async (table) => {
   });
 };
 async function refreshRudolphStatus() {
-  const el = $("rudStatus"); if (!el) return;
-  if (!currentUser) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published Rudolph table."; return; }
+  const el = $("rudStatus");
+  if (!currentUser) { if (el) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published Rudolph table."; } return; }
   try {
     const d = await window.swimFetchRudolph();
+    // Cache the table for the Analyze-tab Rudolph chart; re-render if a swimmer is loaded.
+    window.__rudolphTable = d && d.table ? d.table : null;
+    if (window.buildRudolphTrend && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildRudolphTrend();
+    if (!el) return;
     if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No Rudolph table published yet — upload the PDF below."; return; }
     el.style.color = "#1a7a4f";
     el.innerHTML = "<strong>" + (d.count || countRudolph(d.table || {})) + "</strong> time entries published" +
       (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "");
   } catch (e) {
+    if (!el) return;
     el.style.color = "#c0392b";
     el.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Couldn't read Rudolph table: " + e.message;
   }
