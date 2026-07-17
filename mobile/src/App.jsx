@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   BarChart, Bar, Cell, ComposedChart, Scatter,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from "recharts";
 import { useUI, GRAD } from "./theme.jsx";
 import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
-  fetchRecords, fetchRudolph,
+  fetchRecords, fetchRudolph, fetchUsaStandards,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -16,7 +17,7 @@ import {
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
   lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
-  recordKey, rudolphTrend,
+  recordKey, rudolphTrend, usaStandardsForAge, USA_TIERS, USA_STROKES,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -548,7 +549,7 @@ function MeetsTab({ D, swimmer }) {
 // ════════════════════════════════════════════════════════════════════
 //  PROGRESS (filtered event picker + line chart + points trend)
 // ════════════════════════════════════════════════════════════════════
-function ProgressTab({ D, swimmer, rudolphDoc }) {
+function ProgressTab({ D, swimmer, rudolphDoc, usaStandardsDoc }) {
   const { c, s } = useUI();
   const catalog = useMemo(() => eventCatalog(D), [D]);
   const dists = useMemo(() => Array.from(new Set(catalog.map((e) => e.dist))).filter(Boolean).sort((a, b) => a - b), [catalog]);
@@ -617,6 +618,7 @@ function ProgressTab({ D, swimmer, rudolphDoc }) {
 
       <PointsTrend D={D} />
       <RudolphTrend D={D} swimmer={swimmer} rudolphDoc={rudolphDoc} />
+      <UsaStandardsPanel D={D} swimmer={swimmer} usaStandardsDoc={usaStandardsDoc} />
     </div>
   );
 }
@@ -775,6 +777,113 @@ function RudolphTrend({ D, swimmer, rudolphDoc }) {
             </div>
             <div style={{ fontSize: 11, color: c.dim, textAlign: "center", marginTop: 6 }}>1-20 scale, age-adjusted — how good each swim was for the swimmer's age that day</div>
           </Card>
+        </>
+      )}
+    </>
+  );
+}
+
+const USA_TIER_LABELS = ["—", ...USA_TIERS];
+
+function UsaTierTable({ rows, c }) {
+  if (!rows.length) return null;
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10, fontSize: 12 }}>
+      <tbody>
+        {rows.slice(0, 5).map((r, i) => (
+          <tr key={i}>
+            <td style={{ padding: "4px 6px", color: c.text }}>{r.event}</td>
+            <td style={{ padding: "4px 6px", color: c.dim, textAlign: "right" }}>{r.time}</td>
+            <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: c.blue }}>
+              {USA_TIER_LABELS[r.tier]}{r.plus ? "+" : ""}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function UsaRadarCard({ title, tierMap, rows, color, c }) {
+  const data = USA_STROKES.map((s) => ({ stroke: s, tier: tierMap[s] || 0 }));
+  return (
+    <Card>
+      <div style={{ fontSize: 12, color: c.dim, textAlign: "center", marginBottom: 6, fontWeight: 700 }}>{title}</div>
+      <div style={{ height: 220 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RadarChart data={data} outerRadius="70%">
+            <PolarGrid stroke={c.line} />
+            <PolarAngleAxis dataKey="stroke" tick={{ fill: c.text, fontSize: 11 }} />
+            <PolarRadiusAxis domain={[0, 6]} tickCount={7} tick={{ fill: c.dim, fontSize: 9 }}
+              tickFormatter={(v) => USA_TIER_LABELS[v] || ""} />
+            <Radar dataKey="tier" stroke={color} fill={color} fillOpacity={0.25} isAnimationActive={false} />
+            <Tooltip contentStyle={tooltipStyle(c)} formatter={(v) => USA_TIER_LABELS[v] || "—"} />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+      <UsaTierTable rows={rows} c={c} />
+    </Card>
+  );
+}
+
+function UsaStandardsPanel({ D, swimmer, usaStandardsDoc }) {
+  const { c, s } = useUI();
+  const [showInfo, setShowInfo] = useState(false);
+  const [selAge, setSelAge] = useState(null);
+  const table = usaStandardsDoc && usaStandardsDoc.table;
+  const sex = swimmer && swimmer.sex;
+  const birthdate = swimmer && swimmer.birthdate;
+  // Age GROUP (calendar year − birth year) — same convention as Records/Rudolph,
+  // not exact birthday age, since USA age-group standards are organised by age
+  // group (a swimmer already in age-13 competition still shows "Age 13" here
+  // even before their birthday).
+  const ageInt = birthdate ? Math.floor(recordAge(birthdate, null)) : null;
+  const ages = ageInt != null ? Array.from({ length: Math.max(0, ageInt - 10 + 1) }, (_, i) => 10 + i) : [];
+  const activeAge = selAge != null && ages.includes(selAge) ? selAge : ageInt;
+
+  const data = useMemo(
+    () => (table && birthdate && activeAge != null ? usaStandardsForAge(D, table, sex, birthdate, activeAge) : null),
+    [D, table, sex, birthdate, activeAge]
+  );
+
+  if (ageInt == null || ageInt < 10 || ageInt > 18) return null; // standards cover ages 10-18 only
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <div style={s.h2}>USA Age Group Standards</div>
+        <button onClick={() => setShowInfo(true)} title="What are the USA Motivational Standards?"
+          style={{ width: 26, height: 26, borderRadius: 999, border: `1px solid ${c.line}`, background: c.card2, color: c.dim, fontSize: 15, fontWeight: 800, lineHeight: "24px", padding: 0, cursor: "pointer" }}>?</button>
+      </div>
+      {showInfo && (
+        <InfoModal title="USA Motivational Standards" onClose={() => setShowInfo(false)}>
+          <p style={{ margin: "0 0 10px" }}>
+            USA Swimming's junior age-group tiers — <strong>B / BB / A / AA / AAA / AAAA</strong> — rank a time
+            against swimmers of the same age and sex nationally: roughly <strong>B</strong> top 55%,{" "}
+            <strong>BB</strong> top 35%, <strong>A</strong> top 15%, <strong>AA</strong> top 8%,{" "}
+            <strong>AAA</strong> top 6%, <strong>AAAA</strong> top 2%.
+          </p>
+          <p style={{ margin: 0 }}>
+            Pick an age below to see progress over time, using the best time actually swum while in that age group
+            (same age-group convention used elsewhere in the app). Each event is judged against its own course
+            (25m → SCM table, 50m → LCM table). A "+" after a tier means the time is well inside that tier's range,
+            closer to the next one up.
+          </p>
+          <p style={{ margin: "10px 0 0", fontSize: 12, color: c.dim }}>
+            Source: <a href="https://www.usaswimming.org/times/time-standards" target="_blank" rel="noopener" style={{ color: c.blue }}>usaswimming.org/times/time-standards</a>
+          </p>
+        </InfoModal>
+      )}
+      {!table ? (
+        <Card><Center>USA standards not published yet — load them from the desktop app's Extract tab.</Center></Card>
+      ) : !birthdate || !sex ? (
+        <Card><Center>Set birthdate and sex in Settings to see standards.</Center></Card>
+      ) : (
+        <>
+          <PillRow label="Age" active={activeAge} onPick={setSelAge}
+            items={ages.map((a) => ({ key: a, label: "Age " + a }))} />
+          <UsaRadarCard title="Short (50-100)" tierMap={data.shortTier} rows={data.shortRows} color={c.blue} c={c} />
+          <UsaRadarCard title="Long (200+)" tierMap={data.longTier} rows={data.longRows} color={c.green} c={c} />
         </>
       )}
     </>
@@ -1479,11 +1588,13 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [recordsDoc, setRecordsDoc] = useState(null);
   const [rudolphDoc, setRudolphDoc] = useState(null);
+  const [usaStandardsDoc, setUsaStandardsDoc] = useState(null);
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
   useEffect(() => { if (user) fetchRecords().then(setRecordsDoc).catch(() => setRecordsDoc(null)); }, [user]);
   useEffect(() => { if (user) fetchRudolph().then(setRudolphDoc).catch(() => setRudolphDoc(null)); }, [user]);
+  useEffect(() => { if (user) fetchUsaStandards().then(setUsaStandardsDoc).catch(() => setUsaStandardsDoc(null)); }, [user]);
 
   function loadSwimmers() {
     return fetchSwimmers()
@@ -1532,7 +1643,7 @@ export default function App() {
           {hasData && <TabErrorBoundary key={tab + "-" + swimmerId}>
             {tab === "home" && <HomeTab D={D} swimmer={swimmer} />}
             {tab === "meets" && <MeetsTab D={D} swimmer={swimmer} />}
-            {tab === "progress" && <ProgressTab D={D} swimmer={swimmer} rudolphDoc={rudolphDoc} />}
+            {tab === "progress" && <ProgressTab D={D} swimmer={swimmer} rudolphDoc={rudolphDoc} usaStandardsDoc={usaStandardsDoc} />}
             {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
             {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
           </TabErrorBoundary>}

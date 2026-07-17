@@ -665,6 +665,67 @@ export function rudolphTrend(D, table, sex, birthdate, opts) {
   return { points: all, byEvent, trend, events: Object.keys(byEvent).sort() };
 }
 
+// ⑪ USA Motivational Standards, junior ages 10-18 (config/usaStandards) ──
+// Published from the desktop app (Extract tab) after uploading USA
+// Swimming's single-age motivational standards PDF. Shape:
+//   { table: { "SCM"|"LCM": { "10".."18": { "F"|"M": { "dist|stroke": {B,BB,A,AA,AAA,AAAA} } } } },
+//     count, loadedAt, by }
+// Cutoffs are in seconds (lower = harder). Uses the swimmer's AGE GROUP
+// (recordAge() convention — calendar year minus birth year), same as
+// Israeli records/Rudolph, and the same age-restricted best-time lookup
+// (bestInAgeGroup) so each age selected shows the best time actually swum
+// while in that age group.
+export const USA_TIERS = ["B", "BB", "A", "AA", "AAA", "AAAA"]; // easiest→hardest; tier level = index+1
+export const USA_STROKES = ["Free", "Back", "Breast", "Fly", "IM"];
+// Highest tier (0 = none, 1..6 = B..AAAA) a time qualifies for.
+export function usaTier(table, course, age, sex, event, seconds) {
+  const S = sexNorm(sex), key = recordKey(event);
+  if (!table || !course || age == null || !S || !key || !seconds) return 0;
+  const row = (((table[course] || {})[String(age)] || {})[S] || {})[key];
+  if (!row) return 0;
+  for (let i = USA_TIERS.length - 1; i >= 0; i--) {
+    const cutoff = row[USA_TIERS[i]];
+    if (cutoff != null && seconds <= cutoff) return i + 1;
+  }
+  return 0;
+}
+// True once past the halfway point toward the next tier up (e.g. solidly in
+// "AA" territory, closer to AAA than to the AA cutoff) — shown as "AA+".
+export function usaTierPlus(table, course, age, sex, event, seconds, tier) {
+  if (!tier || tier >= USA_TIERS.length) return false; // no tier reached, or already at the top (AAAA)
+  const S = sexNorm(sex), key = recordKey(event);
+  const row = (((table[course] || {})[String(age)] || {})[S] || {})[key];
+  if (!row) return false;
+  const cutoff = row[USA_TIERS[tier - 1]], nextCutoff = row[USA_TIERS[tier]];
+  if (cutoff == null || nextCutoff == null || cutoff <= nextCutoff) return false;
+  return (cutoff - seconds) / (cutoff - nextCutoff) > 0.5;
+}
+// For a given age group, every event with a best time in that group, tiered
+// and bucketed into short (<=100m) / long (>=200m) distance bands per
+// stroke — mirrors desktop's _usaRenderForAge(). Returns
+//   { shortTier: {Free..IM: 0-6}, longTier: {...}, shortRows: [...], longRows: [...] }
+// where each row is { event, time, tier, plus } sorted best-tier-first.
+export function usaStandardsForAge(D, table, sex, birthdate, age) {
+  const shortTier = {}, longTier = {}, shortRows = [], longRows = [];
+  USA_STROKES.forEach((s) => { shortTier[s] = 0; longTier[s] = 0; });
+  [["25", "SCM"], ["50", "LCM"]].forEach(([pool, course]) => {
+    const best = bestInAgeGroup(D, pool, birthdate, String(age));
+    Object.keys(best).forEach((ev) => {
+      const stroke = getStroke(ev);
+      if (USA_STROKES.indexOf(stroke) < 0) return;
+      const dist = extractDist(ev);
+      const tier = usaTier(table, course, age, sex, ev, best[ev].seconds);
+      const plus = usaTierPlus(table, course, age, sex, ev, best[ev].seconds, tier);
+      const bucket = dist <= 100 ? shortTier : longTier;
+      if (tier > bucket[stroke]) bucket[stroke] = tier;
+      (dist <= 100 ? shortRows : longRows).push({ event: `${ev} (${pool}m)`, time: best[ev].time, tier, plus });
+    });
+  });
+  shortRows.sort((a, b) => b.tier - a.tier);
+  longRows.sort((a, b) => b.tier - a.tier);
+  return { shortTier, longTier, shortRows, longRows };
+}
+
 // Event-coverage heat map for one season: stroke (rows) × distance (cols),
 // value = number of swims. Used to see which events were raced and how often.
 export function eventHeatmap(D, seasonKey) {

@@ -230,7 +230,10 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     </details>
   </div>
 
-  <div class="section-title">③ Israeli Age Records</div>
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ③ Israeli Age Records
+    <button onclick="recShowInfo()" title="Where do these records come from?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
   <details class="extract-panel">
     <summary>
       <div>
@@ -3949,6 +3952,10 @@ function clearRace2(){
   function resetPublish(){ mergedPayload=null; const pb=$("recPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("recPreview"); if(pv)pv.style.display="none"; }
   function updateReviewBtn(){ const any=Object.keys(window.__recSlices).length>0; const b=$("recReviewBtn"); if(b){b.disabled=!any;b.style.opacity=any?"1":".5";} resetPublish(); }
 
+  window.recShowInfo=function(){
+    alert("Official Israeli age-group records (juniors + masters, long & short course) — the fastest-ever time by age group / category, both sexes.\n\nThe app compares a swimmer's best time in each event against the record for their current age group, so you can see the gap to beat.\n\nUpload the official PDF(s) below whenever new records are set; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.\n\nSource: https://isr.org.il/records.asp");
+  };
+
   // Parse ONE file the moment it's chosen, and show that file's own count.
   window.recPickPdf=async function(e,slot){
     const f=e.target.files&&e.target.files[0]; if(!f)return;
@@ -4123,7 +4130,7 @@ function clearRace2(){
   function resetPublish(){ mergedTable=null; const pb=$("rudPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("rudPreview"); if(pv)pv.style.display="none"; }
 
   window.rudShowInfo=function(){
-    alert("The Rudolph table (Dr. Klaus Rudolph) turns a swim time into a 1-20 point score, calibrated separately for every age (8 through 18+) and event — long course (50m) only.\n\nUnlike an absolute points scale, it answers \"how good was this swim for this swimmer's age group?\" — so progress stays comparable as a swimmer moves through age groups, and swimmers of different ages can be compared fairly. The age group is the calendar year of the swim minus birth year (same convention used elsewhere in the app), not exact age-in-years on that day.\n\nUpload the official PDF below whenever a new \"Basis\" year is published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
+    alert("The Rudolph table (Dr. Klaus Rudolph) turns a swim time into a 1-20 point score, calibrated separately for every age (8 through 18+) and event — long course (50m) only.\n\nUnlike an absolute points scale, it answers \"how good was this swim for this swimmer's age group?\" — so progress stays comparable as a swimmer moves through age groups, and swimmers of different ages can be compared fairly. The age group is the calendar year of the swim minus birth year (same convention used elsewhere in the app), not exact age-in-years on that day.\n\nUpload the official PDF below whenever a new \"Basis\" year is published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.\n\nSource: https://share.google/HwtrWRPRZz1l11t5r");
   };
 
   window.rudPickPdf=async function(e){
@@ -4271,7 +4278,7 @@ function clearRace2(){
   function resetPublish(){ mergedTable=null; const pb=$("usaPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("usaPreview"); if(pv)pv.style.display="none"; }
 
   window.usaShowInfo=function(){
-    alert("USA Swimming's Motivational Standards rate a swim time against six tiers — B, BB, A, AA, AAA, AAAA (progressively faster) — separately for each age (10-18) and event, long course (LCM) and short course meters (SCM) only (the yards/SCY tables in the source PDF aren't used since this app is metric).\n\nRoughly: B = top 55% (a strong opening benchmark, above average) · BB = top 35% · A = top 15% (a strong competitive swimmer) · AA = top 8% (often the level needed for larger regional championships) · AAA = top 6% · AAAA = top 2% (national elite level).\n\nUpload the official PDF below whenever new standards are published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
+    alert("USA Swimming's Motivational Standards rate a swim time against six tiers — B, BB, A, AA, AAA, AAAA (progressively faster) — separately for each age (10-18) and event, long course (LCM) and short course meters (SCM) only (the yards/SCY tables in the source PDF aren't used since this app is metric).\n\nRoughly: B = top 55% (a strong opening benchmark, above average) · BB = top 35% · A = top 15% (a strong competitive swimmer) · AA = top 8% (often the level needed for larger regional championships) · AAA = top 6% · AAAA = top 2% (national elite level).\n\nUpload the official PDF below whenever new standards are published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.\n\nSource: https://www.usaswimming.org/times/time-standards");
   };
 
   window.usaPickPdf=async function(e){
@@ -4426,7 +4433,7 @@ function clearRace2(){
   function updateReviewBtn(){ const any=Object.keys(window.__wrSlices).length>0; const b=$("wrReviewBtn"); if(b){b.disabled=!any;b.style.opacity=any?"1":".5";} resetPublish(); }
 
   window.wrShowInfo=function(){
-    alert("World Aquatics Masters World Records — the fastest-ever time by 5-year age bracket (25-29 through 100+), both sexes, long course (LCM) and short course meters (SCM).\n\nThe app compares a swimmer's best time in each event against the world record for their current age bracket, so you can see how close the fastest people on Earth are for someone their age.\n\nUpload the official PDF(s) below whenever new records are set; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
+    alert("World Aquatics Masters World Records — the fastest-ever time by 5-year age bracket (25-29 through 100+), both sexes, long course (LCM) and short course meters (SCM).\n\nThe app compares a swimmer's best time in each event against the world record for their current age bracket, so you can see how close the fastest people on Earth are for someone their age.\n\nUpload the official PDF(s) below whenever new records are set; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.\n\nSource: https://www.worldaquatics.com/masters/records");
   };
 
   window.wrPickPdf=async function(e,course){

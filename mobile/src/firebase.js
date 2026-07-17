@@ -105,6 +105,16 @@ export async function fetchRudolph() {
   return snap.exists() ? snap.data() : null;
 }
 
+// ── USA Motivational Standards, junior ages 10-18 (config/usaStandards) ──
+// Published from the desktop app after uploading USA Swimming's single-age
+// motivational standards PDF. Shape:
+//   { table: { "SCM"|"LCM": { "10".."18": { "F"|"M": { "dist|stroke": {B,BB,A,AA,AAA,AAAA} } } } },
+//     count, loadedAt, by }
+export async function fetchUsaStandards() {
+  const snap = await getDoc(doc(db, "config", "usaStandards"));
+  return snap.exists() ? snap.data() : null;
+}
+
 export async function saveAccessList(emails) {
   await setDoc(doc(db, "config", "access"), { emails });
 }
