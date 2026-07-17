@@ -41,6 +41,16 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
 .card h3{font-size:14px;font-weight:700;margin-bottom:4px}
 .card .sub{font-size:12px;color:var(--gray-500);margin-bottom:12px}
 
+/* ── collapsible extract panels ── */
+details.extract-panel{margin-bottom:16px}
+details.extract-panel>summary{list-style:none;cursor:pointer;padding:14px 18px;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);display:flex;align-items:center;justify-content:space-between;gap:12px}
+details.extract-panel>summary::-webkit-details-marker{display:none}
+details.extract-panel>summary .ep-chev{color:#aaa;font-size:11px;white-space:nowrap;flex-shrink:0}
+details.extract-panel>summary .ep-arrow{display:inline-block;transition:transform .15s}
+details.extract-panel[open]>summary{border-radius:var(--radius-lg) var(--radius-lg) 0 0;border-bottom:none}
+details.extract-panel[open]>summary .ep-arrow{transform:rotate(180deg)}
+details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:none;border-radius:0 0 var(--radius-lg) var(--radius-lg);padding:16px 20px}
+
 /* ── steps ── */
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
 .step{background:#fff;border-radius:var(--radius-lg);padding:20px;border:1px solid var(--gray-200);box-shadow:var(--shadow-sm);transition:box-shadow .2s}
@@ -221,10 +231,16 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
   </div>
 
   <div class="section-title">③ Israeli Age Records</div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">🏊 Israeli Age Records</div>
+        <div id="recStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Official Israeli records (juniors + masters, long &amp; short course). Upload whichever PDF(s) changed — <strong>you don't need all four</strong>. Each file is parsed the moment you pick it and shows its own record count. Then <strong>Review changes vs cloud</strong> to see exactly what's new/updated, and upload only those.<br><span style="color:#9aa6b5">Source: the juniors, open and masters records are downloaded from <a href="https://isr.org.il/records.asp" target="_blank" rel="noopener" style="color:#185FA5">isr.org.il/records.asp</a>.</span></p>
-  <div class="card" style="padding:16px 20px">
-    <div id="recStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
-
     <div style="font-weight:700;color:#374151;font-size:13px;margin-bottom:8px">Upload record PDFs (any subset)</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
       <label class="rec-slot" data-slot="lcJ" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
@@ -264,16 +280,23 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         </label>
       </div>
     </details>
-  </div>
+    </div>
+  </details>
 
   <div class="section-title" style="display:flex;align-items:center;gap:8px">
     ④ Rudolph Age-Score Table
     <button onclick="rudShowInfo()" title="What is the Rudolph table?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
   </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">📄 Rudolph Age-Score Table</div>
+        <div id="rudStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published Rudolph table.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Dr. Klaus Rudolph's German age-graded points table (8 Jahre through 18+/offen, both sexes). Turns any swim time into a 1-20 score <strong>for that specific age</strong>, so progress stays comparable across age-group jumps. Upload the official PDF whenever a new "Basis" year is published — it's parsed entirely in the browser.<br><span style="color:#9aa6b5">Source: the Rudolph table PDF was taken from <a href="https://share.google/HwtrWRPRZz1l11t5r" target="_blank" rel="noopener" style="color:#185FA5">this link</a>.</span></p>
-  <div class="card" style="padding:16px 20px">
-    <div id="rudStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published Rudolph table.</div>
-
     <label class="rud-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
       <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Rudolph points PDF (weiblich + männlich)</span>
       <span id="rudFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
@@ -286,16 +309,23 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     </div>
     <div id="rudPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
     <pre id="rudPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
-  </div>
+    </div>
+  </details>
 
   <div class="section-title" style="display:flex;align-items:center;gap:8px">
     ⑤ USA Motivational Standards
     <button onclick="usaShowInfo()" title="What are the USA Motivational Standards?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
   </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">📄 USA Motivational Standards</div>
+        <div id="usaStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published standards.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">USA Swimming's junior age-group tiers (B / BB / A / AA / AAA / AAAA), ages 10-18, both sexes. Only the metric tables (SCM/LCM) are used — the source PDF's yards (SCY) tables are skipped since this app tracks meters only. Upload whenever new standards are published.<br><span style="color:#9aa6b5">Source: <a href="https://www.usaswimming.org/times/time-standards" target="_blank" rel="noopener" style="color:#185FA5">usaswimming.org/times/time-standards</a>.</span></p>
-  <div class="card" style="padding:16px 20px">
-    <div id="usaStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published standards.</div>
-
     <label class="usa-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
       <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Motivational Standards PDF (single age)</span>
       <span id="usaFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
@@ -308,16 +338,23 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     </div>
     <div id="usaPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
     <pre id="usaPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
-  </div>
+    </div>
+  </details>
 
   <div class="section-title" style="display:flex;align-items:center;gap:8px">
     ⑥ Masters World Records
     <button onclick="wrShowInfo()" title="What are the Masters World Records?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
   </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">🏅 Masters World Records</div>
+        <div id="wrStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">World Aquatics Masters world records by 5-year age bracket (25-29 through 100+), both sexes, long &amp; short course meters. Upload whichever file changed — you don't need both.<br><span style="color:#9aa6b5">Source: <a href="https://www.worldaquatics.com/masters/records" target="_blank" rel="noopener" style="color:#185FA5">worldaquatics.com/masters/records</a>.</span></p>
-  <div class="card" style="padding:16px 20px">
-    <div id="wrStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
-
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
       <label class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
         <span style="font-size:13px;font-weight:700;color:#185FA5">🏅 Long course (LCM)</span>
@@ -336,7 +373,8 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     </div>
     <div id="wrPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
     <pre id="wrPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
-  </div>
+    </div>
+  </details>
 
 </div>
 
@@ -950,7 +988,12 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
       <p style="font-size:12px;color:#888;margin-bottom:10px">Best-ever time per event vs. the World Aquatics Masters world record for the swimmer's current 5-year age bracket — each event judged against its own course (25m → SCM, 50m → LCM). Shown for swimmers over 30.</p>
       <div id="wrGapHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
       <div id="wrGapChartWrap" class="card" style="padding:16px 20px;margin-bottom:16px">
-        <div style="position:relative;height:340px"><canvas id="wrGapChart"></canvas></div>
+        <div id="wrGapAgeLabel" style="font-size:12px;color:#666;font-weight:700;margin-bottom:8px"></div>
+        <div style="position:relative;height:280px"><canvas id="wrGapChart"></canvas></div>
+        <details id="wrGapPrevDetails" style="margin-top:14px;display:none">
+          <summary id="wrGapPrevSummary" style="cursor:pointer;font-size:12px;color:#185FA5;font-weight:700">Compare to previous age group</summary>
+          <div style="position:relative;height:280px;margin-top:10px"><canvas id="wrGapPrevChart"></canvas></div>
+        </details>
       </div>
     </div>
     </div>
@@ -986,8 +1029,9 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         ⑪ USA Age Group Standards
         <button onclick="usaShowInfo()" title="What are the USA Motivational Standards?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
       </div>
-      <p style="font-size:12px;color:#888;margin-bottom:10px">Best-ever time per event vs. USA Swimming's B/BB/A/AA/AAA/AAAA tiers for the swimmer's current age (ages 10-18 only) — each event judged against its own course (25m → SCM table, 50m → LCM table).</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Best time per event (at the selected age) vs. USA Swimming's B/BB/A/AA/AAA/AAAA tiers (ages 10-18 only) — each event judged against its own course (25m → SCM table, 50m → LCM table). Pick an age below to see progress over time.</p>
       <div id="usaStdHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
+      <div id="usaStdAgeSelector" class="ev-selector" style="margin-bottom:12px"></div>
       <div id="usaStdChartWrap" style="display:flex;gap:16px;flex-wrap:wrap">
         <div class="card" style="padding:16px 20px;flex:1;min-width:280px">
           <div style="font-size:12px;color:#888;text-align:center;margin-bottom:6px;font-weight:700">Short (50-100)</div>
@@ -2424,6 +2468,54 @@ function _usaTier(table,course,age,sex,event,seconds){
   }
   return 0;
 }
+var USA_STROKES=['Free','Back','Breast','Fly','IM'];
+var USA_TIER_LABELS=['—','B','BB','A','AA','AAA','AAAA'];
+function _usaBestByPoolForAge(bd,age){
+  return{'25':_bestInGroup('25',bd,String(age)),'50':_bestInGroup('50',bd,String(age))};
+}
+function _usaRenderTable(tbodyId,rows){
+  var tbody=document.getElementById(tbodyId);if(!tbody)return;
+  tbody.innerHTML=rows.slice(0,5).map(function(r){
+    return '<tr><td style="padding:4px 6px;color:#444">'+r.event+'</td>'+
+      '<td style="padding:4px 6px;color:#888;text-align:right">'+r.time+'</td>'+
+      '<td style="padding:4px 6px;text-align:right;font-weight:700;color:#185FA5">'+USA_TIER_LABELS[r.tier]+'</td></tr>';
+  }).join('');
+}
+function _usaRenderForAge(table,sex,bd,age){
+  var bestByPool=_usaBestByPoolForAge(bd,age);
+  var shortTier={},longTier={},shortRows=[],longRows=[];
+  USA_STROKES.forEach(function(s){shortTier[s]=0;longTier[s]=0;});
+  ['25','50'].forEach(function(pool){
+    var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
+    Object.keys(best).forEach(function(ev){
+      var stroke=getStroke(ev); if(USA_STROKES.indexOf(stroke)<0)return;
+      var dist=extractDist(ev);
+      var tier=_usaTier(table,course,age,sex,ev,best[ev].seconds);
+      var bucket=dist<=100?shortTier:longTier;
+      if(tier>bucket[stroke])bucket[stroke]=tier;
+      (dist<=100?shortRows:longRows).push({event:ev+' ('+pool+'m)',time:best[ev].time,tier:tier});
+    });
+  });
+  shortRows.sort(function(a,b){return b.tier-a.tier;});
+  longRows.sort(function(a,b){return b.tier-a.tier;});
+  _usaRenderTable('usaStdShortTable',shortRows);
+  _usaRenderTable('usaStdLongTable',longRows);
+
+  var shortCanvas=document.getElementById('usaStdShortChart'),longCanvas=document.getElementById('usaStdLongChart');
+  if(!shortCanvas||!longCanvas)return;
+  if(usaStdShortChartInst)usaStdShortChartInst.destroy();
+  if(usaStdLongChartInst)usaStdLongChartInst.destroy();
+  var radarOpts={responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return USA_TIER_LABELS[c.raw]||'—';}}}},
+    scales:{r:{min:0,max:6,ticks:{stepSize:1,callback:function(v){return USA_TIER_LABELS[v];},color:'#888',font:{size:9},backdropColor:'transparent'},pointLabels:{font:{size:11}},grid:{color:'rgba(0,0,0,.06)'}}}
+  };
+  usaStdShortChartInst=new Chart(shortCanvas.getContext('2d'),{type:'radar',
+    data:{labels:USA_STROKES,datasets:[{label:'Tier',data:USA_STROKES.map(function(s){return shortTier[s];}),backgroundColor:'rgba(24,95,165,.2)',borderColor:'#185FA5',pointBackgroundColor:'#185FA5'}]},
+    options:radarOpts});
+  usaStdLongChartInst=new Chart(longCanvas.getContext('2d'),{type:'radar',
+    data:{labels:USA_STROKES,datasets:[{label:'Tier',data:USA_STROKES.map(function(s){return longTier[s];}),backgroundColor:'rgba(29,158,117,.2)',borderColor:'#1D9E75',pointBackgroundColor:'#1D9E75'}]},
+    options:radarOpts});
+}
 function buildUsaStandards(){
   var section=document.getElementById('usaStdSection');if(!section)return;
   var table=window.__usaStandardsTable||null;
@@ -2433,64 +2525,76 @@ function buildUsaStandards(){
   var ageInt=curAge!=null?Math.floor(curAge):null;
   if(ageInt==null||ageInt<10||ageInt>18){section.style.display='none';return;} // standards cover ages 10-18 only
   section.style.display='';
-  var hintEl=document.getElementById('usaStdHint'),chartWrap=document.getElementById('usaStdChartWrap');
-  if(!table){if(hintEl)hintEl.innerHTML='USA standards not published yet — upload below (Extract tab ⑤).';if(chartWrap)chartWrap.style.display='none';return;}
-  if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see standards.';if(chartWrap)chartWrap.style.display='none';return;}
+  var hintEl=document.getElementById('usaStdHint'),chartWrap=document.getElementById('usaStdChartWrap'),ageSelEl=document.getElementById('usaStdAgeSelector');
+  if(!table){if(hintEl)hintEl.innerHTML='USA standards not published yet — upload below (Extract tab ⑤).';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
+  if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see standards.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
   if(hintEl)hintEl.innerHTML='';
   if(chartWrap)chartWrap.style.display='flex';
 
-  var bestByPool=_bestTimesByPool();
-  var STROKES=['Free','Back','Breast','Fly','IM'];
-  var shortTier={},longTier={},shortRows=[],longRows=[];
-  STROKES.forEach(function(s){shortTier[s]=0;longTier[s]=0;});
-  ['25','50'].forEach(function(pool){
-    var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
-    Object.keys(best).forEach(function(ev){
-      var stroke=getStroke(ev); if(STROKES.indexOf(stroke)<0)return;
-      var dist=extractDist(ev);
-      var tier=_usaTier(table,course,ageInt,sex,ev,best[ev].seconds);
-      var bucket=dist<=100?shortTier:longTier;
-      if(tier>bucket[stroke])bucket[stroke]=tier;
-      (dist<=100?shortRows:longRows).push({event:ev+' ('+pool+'m)',time:best[ev].time,tier:tier});
-    });
-  });
-  shortRows.sort(function(a,b){return b.tier-a.tier;});
-  longRows.sort(function(a,b){return b.tier-a.tier;});
-
-  var TIER_LABELS=['—','B','BB','A','AA','AAA','AAAA'];
-  function renderUsaTable(tbodyId,rows){
-    var tbody=document.getElementById(tbodyId);if(!tbody)return;
-    tbody.innerHTML=rows.slice(0,5).map(function(r){
-      return '<tr><td style="padding:4px 6px;color:#444">'+r.event+'</td>'+
-        '<td style="padding:4px 6px;color:#888;text-align:right">'+r.time+'</td>'+
-        '<td style="padding:4px 6px;text-align:right;font-weight:700;color:#185FA5">'+TIER_LABELS[r.tier]+'</td></tr>';
-    }).join('');
+  if(ageSelEl){
+    ageSelEl.innerHTML='';
+    for(var a=10;a<=ageInt;a++){
+      (function(age){
+        var btn=document.createElement('button');
+        btn.className='ev-btn'+(age===ageInt?' active':'');
+        btn.textContent='Age '+age;
+        btn.onclick=function(){
+          ageSelEl.querySelectorAll('button').forEach(function(b){b.classList.remove('active');});
+          btn.classList.add('active');
+          _usaRenderForAge(table,sex,bd,age);
+        };
+        ageSelEl.appendChild(btn);
+      })(a);
+    }
   }
-  renderUsaTable('usaStdShortTable',shortRows);
-  renderUsaTable('usaStdLongTable',longRows);
-  var shortCanvas=document.getElementById('usaStdShortChart'),longCanvas=document.getElementById('usaStdLongChart');
-  if(!shortCanvas||!longCanvas)return;
-  if(usaStdShortChartInst)usaStdShortChartInst.destroy();
-  if(usaStdLongChartInst)usaStdLongChartInst.destroy();
-  var radarOpts={responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return TIER_LABELS[c.raw]||'—';}}}},
-    scales:{r:{min:0,max:6,ticks:{stepSize:1,callback:function(v){return TIER_LABELS[v];},color:'#888',font:{size:9},backdropColor:'transparent'},pointLabels:{font:{size:11}},grid:{color:'rgba(0,0,0,.06)'}}}
-  };
-  usaStdShortChartInst=new Chart(shortCanvas.getContext('2d'),{type:'radar',
-    data:{labels:STROKES,datasets:[{label:'Tier',data:STROKES.map(function(s){return shortTier[s];}),backgroundColor:'rgba(24,95,165,.2)',borderColor:'#185FA5',pointBackgroundColor:'#185FA5'}]},
-    options:radarOpts});
-  usaStdLongChartInst=new Chart(longCanvas.getContext('2d'),{type:'radar',
-    data:{labels:STROKES,datasets:[{label:'Tier',data:STROKES.map(function(s){return longTier[s];}),backgroundColor:'rgba(29,158,117,.2)',borderColor:'#1D9E75',pointBackgroundColor:'#1D9E75'}]},
-    options:radarOpts});
+  _usaRenderForAge(table,sex,bd,ageInt);
 }
 window.buildUsaStandards=buildUsaStandards;
 
 // ── ⑫ MASTERS WORLD RECORD GAP (age > 30) ─────────────────────────────
-var wrGapChartInst=null;
+var wrGapChartInst=null,wrGapPrevChartInst=null;
 function _wrAgeGroup(age){
   if(age==null||age<25)return null;
   var base=25+Math.floor((age-25)/5)*5;
   return base+'-'+(base+4);
+}
+function _wrPrevAgeGroup(ageGroup){
+  var m=(ageGroup||'').match(/^(\d+)-(\d+)$/);if(!m)return null;
+  var base=+m[1];if(base<=25)return null;
+  var prevBase=base-5;return prevBase+'-'+(prevBase+4);
+}
+function _wrGapColor(pct){
+  if(pct<=5)return'#1D9E75';   // green
+  if(pct<=8)return'#e0b400';   // yellow
+  if(pct<=10)return'#e07b00';  // orange
+  if(pct<=15)return'#d9362e';  // red
+  return'#111';                // black
+}
+function _wrGapRows(table,S,ageGroup,bestByPool){
+  var rows=[];
+  ['25','50'].forEach(function(pool){
+    var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
+    var recTable=((table[course]||{})[S]||{})[ageGroup]||{};
+    Object.keys(best).forEach(function(ev){
+      var key=_recKey(ev);if(!key)return;
+      var wr=recTable[key];if(!wr||!wr.seconds)return;
+      var pct=(best[ev].seconds-wr.seconds)/wr.seconds*100;
+      rows.push({event:ev+' ('+pool+'m)',pct:pct,mine:best[ev].time,wrTime:secsToStr(wr.seconds),athlete:wr.athlete});
+    });
+  });
+  rows.sort(function(a,b){return a.pct-b.pct;});
+  return rows.slice(0,5);
+}
+function _wrGapChartOpts(rows){
+  return{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{
+      label:function(c){var r=rows[c.dataIndex];return' '+r.mine+' vs WR '+r.wrTime+' ('+r.athlete+') · +'+c.parsed.x+'%';}
+    }}},
+    scales:{
+      x:{ticks:{color:'#888',font:{size:9},callback:function(v){return'+'+v+'%';}},grid:{color:'rgba(0,0,0,.04)'},title:{display:true,text:'% slower than world record',color:'#aaa',font:{size:9}}},
+      y:{ticks:{color:'#666',font:{size:10}}}
+    }
+  };
 }
 function buildMastersWr(){
   var section=document.getElementById('wrGapSection');if(!section)return;
@@ -2509,34 +2613,37 @@ function buildMastersWr(){
   if(chartWrap)chartWrap.style.display='';
 
   var bestByPool=_bestTimesByPool();
-  var rows=[];
-  ['25','50'].forEach(function(pool){
-    var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
-    var recTable=((table[course]||{})[S]||{})[ageGroup]||{};
-    Object.keys(best).forEach(function(ev){
-      var key=_recKey(ev);if(!key)return;
-      var wr=recTable[key];if(!wr||!wr.seconds)return;
-      var pct=(best[ev].seconds-wr.seconds)/wr.seconds*100;
-      rows.push({event:ev+' ('+pool+'m)',pct:pct,mine:best[ev].time,wrTime:secsToStr(wr.seconds),athlete:wr.athlete});
-    });
-  });
-  rows.sort(function(a,b){return a.pct-b.pct;});
+  var ageLabelEl=document.getElementById('wrGapAgeLabel');
+  if(ageLabelEl)ageLabelEl.textContent='Current age group: '+ageGroup;
 
+  var rows=_wrGapRows(table,S,ageGroup,bestByPool);
   var canvasEl=document.getElementById('wrGapChart');if(!canvasEl)return;
   if(wrGapChartInst)wrGapChartInst.destroy();
   wrGapChartInst=new Chart(canvasEl.getContext('2d'),{
     type:'bar',
-    data:{labels:rows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:rows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:'#185FA5'}]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{
-        label:function(c){var r=rows[c.dataIndex];return' '+r.mine+' vs WR '+r.wrTime+' ('+r.athlete+') · +'+c.parsed.x+'%';}
-      }}},
-      scales:{
-        x:{ticks:{color:'#888',font:{size:9},callback:function(v){return'+'+v+'%';}},grid:{color:'rgba(0,0,0,.04)'},title:{display:true,text:'% slower than world record',color:'#aaa',font:{size:9}}},
-        y:{ticks:{color:'#666',font:{size:10}}}
-      }
-    }
+    data:{labels:rows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:rows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:rows.map(function(r){return _wrGapColor(r.pct);})}]},
+    options:_wrGapChartOpts(rows)
   });
+
+  var prevGroup=_wrPrevAgeGroup(ageGroup);
+  var prevRows=prevGroup?_wrGapRows(table,S,prevGroup,bestByPool):[];
+  var detailsEl=document.getElementById('wrGapPrevDetails'),summaryEl=document.getElementById('wrGapPrevSummary');
+  if(!prevGroup||!prevRows.length){
+    if(detailsEl)detailsEl.style.display='none';
+    if(wrGapPrevChartInst){wrGapPrevChartInst.destroy();wrGapPrevChartInst=null;}
+  }else{
+    if(detailsEl)detailsEl.style.display='';
+    if(summaryEl)summaryEl.textContent='Compare to previous age group ('+prevGroup+')';
+    var prevCanvas=document.getElementById('wrGapPrevChart');
+    if(prevCanvas){
+      if(wrGapPrevChartInst)wrGapPrevChartInst.destroy();
+      wrGapPrevChartInst=new Chart(prevCanvas.getContext('2d'),{
+        type:'bar',
+        data:{labels:prevRows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:prevRows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:prevRows.map(function(r){return _wrGapColor(r.pct);})}]},
+        options:_wrGapChartOpts(prevRows)
+      });
+    }
+  }
 }
 window.buildMastersWr=buildMastersWr;
 
@@ -2802,7 +2909,7 @@ function renderEvCards(){
     }
     addSeasonBtn('All',null);
     availSeasons.forEach(function(s){addSeasonBtn(s,s);});
-    renderCardData(availSeasons[availSeasons.length-1]||null); // default: latest season with data
+    renderCardData(null); // default: all seasons
   });
 }
 
