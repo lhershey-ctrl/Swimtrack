@@ -651,11 +651,17 @@ function PointsTrend({ D }) {
                 <XAxis dataKey="x" type="number" domain={["dataMin", "dataMax"]} scale="time"
                   tickFormatter={(v) => fmtDateShort(v)} tick={{ fill: c.dim, fontSize: 10 }} />
                 <YAxis tick={{ fill: c.dim, fontSize: 10 }} width={36} />
-                <Tooltip contentStyle={tooltipStyle(c)} labelFormatter={(v) => fmtDateShort(v)}
+                <Tooltip contentStyle={tooltipStyle(c)} cursor={{ stroke: c.dim, strokeDasharray: "3 3", strokeWidth: 1, fill: "none" }}
+                  labelFormatter={(v) => fmtDateShort(v)}
                   formatter={(v, _n, p) => {
                     if (p.dataKey !== "y") return null;
                     const d = p.payload;
-                    return [(d.time ? d.time + " · " : "") + v + " pts", d.event || ""];
+                    return [
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 999, background: evColor[d.event] || c.blue, flex: "none" }} />
+                        {d.event || ""}{d.time ? " · " + d.time : ""} · {v} pts
+                      </span>,
+                    ];
                   }} />
                 {tr.trend && <Line dataKey="ty" stroke={c.dim} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />}
                 <Scatter dataKey="y" isAnimationActive={false}>
@@ -747,11 +753,17 @@ function RudolphTrend({ D, swimmer, rudolphDoc }) {
                     <XAxis dataKey="x" type="number" domain={["dataMin", "dataMax"]} scale="time"
                       tickFormatter={(v) => fmtDateShort(v)} tick={{ fill: c.dim, fontSize: 10 }} />
                     <YAxis tick={{ fill: c.dim, fontSize: 10 }} width={36} />
-                    <Tooltip contentStyle={tooltipStyle(c)} labelFormatter={(v) => fmtDateShort(v)}
+                    <Tooltip contentStyle={tooltipStyle(c)} cursor={{ stroke: c.dim, strokeDasharray: "3 3", strokeWidth: 1, fill: "none" }}
+                      labelFormatter={(v) => fmtDateShort(v)}
                       formatter={(v, _n, p) => {
                         if (p.dataKey !== "y") return null;
                         const d = p.payload;
-                        return [(d.time ? d.time + " · " : "") + v + " score" + (d.age ? " · age " + d.age : ""), d.event || ""];
+                        return [
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: 999, background: evColor[d.event] || c.blue, flex: "none" }} />
+                            {d.event || ""}{d.time ? " · " + d.time : ""} · {v} score{d.age ? " · age " + d.age : ""}
+                          </span>,
+                        ];
                       }} />
                     {tr.trend && <Line dataKey="ty" stroke={c.dim} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />}
                     <Scatter dataKey="y" isAnimationActive={false}>

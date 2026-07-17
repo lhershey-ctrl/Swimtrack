@@ -798,7 +798,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     <span id="cloudActions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
   </div>
 
-  <div id="swimmerBanner" style="display:none;margin:14px 0 2px"></div>
+  <div id="swimmerBanner" style="display:none;margin:14px 0 20px"></div>
 
   <div id="analysis" style="display:none">
 
@@ -2018,8 +2018,11 @@ var strokeChartInst=null;
 function buildStrokeBreakdown(){
   var ss=seasons();
   var selEl=document.getElementById('strokeSeasonSel');
-  var _sA=window._strokeSeasonA||null; // "from" season (null = earliest)
-  var _sB=window._strokeSeasonB||null; // "to" season (null = latest)
+  // Default (until the user explicitly picks a pill): previous season → current season.
+  // window._strokeSeasonA/B stay `undefined` until setStrokeA/B runs, so an explicit
+  // "Earliest"/"Latest" click (which passes null) is distinguishable from "never touched".
+  var _sA=window._strokeSeasonA!==undefined?window._strokeSeasonA:(ss.length>=2?ss[ss.length-2]:null); // "from" season (null = earliest-ever)
+  var _sB=window._strokeSeasonB!==undefined?window._strokeSeasonB:(ss[ss.length-1]||null); // "to" season (null = latest-ever)
 
   // Build two-row selector: Season A (from) | Season B (to)
   if(selEl){
@@ -2306,11 +2309,12 @@ window.buildRudolphTrend=buildRudolphTrend;
 // ═══════════════════════════════════════════════════════════════════
 //  ① COMPETITIONS
 // ═══════════════════════════════════════════════════════════════════
-var compActiveSeason=null;
+var compActiveSeason; // undefined = not yet chosen (defaults to latest season below); null = user explicitly picked "All Seasons"
 
 function buildCompetitions(filterSeason){
   var ss=seasons();
   if(filterSeason!==undefined)compActiveSeason=filterSeason;
+  else if(compActiveSeason===undefined)compActiveSeason=ss[ss.length-1]||null;
 
   // Build season selector
   var selEl=document.getElementById('compSeasonSelector');
@@ -2563,7 +2567,7 @@ function renderEvCards(){
     }
     addSeasonBtn('All',null);
     availSeasons.forEach(function(s){addSeasonBtn(s,s);});
-    renderCardData(null);
+    renderCardData(availSeasons[availSeasons.length-1]||null); // default: latest season with data
   });
 }
 
