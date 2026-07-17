@@ -600,9 +600,10 @@ export function pointsTrend(D, opts) {
 //     count, loadedAt, by }
 // Unlike the Israeli age-group records (absolute times), this maps a time to
 // 1-20 points FOR THAT AGE, so swimmers of different ages can be compared on
-// one scale. Age bracket uses the swimmer's actual age ON THE SWIM DATE (not
-// year-end age like the Israeli records) — that's how the table is meant to
-// be read: "how good was this swim for how old they were that day."
+// one scale. Age bracket uses the swimmer's AGE GROUP for that swim — same
+// recordAge() convention as the Israeli records (calendar year of the swim
+// minus birth year) — not their precise age-in-years on that exact day; see
+// rudolphTrend() for why.
 export function rudolphAgeBracket(age) {
   if (age == null) return null;
   const a = Math.floor(age);
@@ -629,7 +630,13 @@ export function rudolphScore(table, sex, age, event, seconds) {
 }
 // Rudolph score trend (all swims by date, optional pool/event filter) +
 // regression line — mirrors pointsTrend() but scores against the age-graded
-// table using the swimmer's age on each individual swim date.
+// table using the swimmer's AGE GROUP for that swim (calendar year of the
+// swim date minus birth year — recordAge()'s convention, same as the
+// Israeli-records feature), not their precise age-in-years on that exact
+// day. Real meets confirm this: a swimmer born in a year that makes them
+// "still 10" by exact age already competes (and is labelled by LogLig) in
+// the age-11 category once the calendar reaches their age-group year —
+// scoring by exact age would use the wrong (younger, more lenient) table.
 export function rudolphTrend(D, table, sex, birthdate, opts) {
   opts = opts || {};
   const ar = allResults(D).filter((r) => {
@@ -642,10 +649,10 @@ export function rudolphTrend(D, table, sex, birthdate, opts) {
   ar.forEach((r) => {
     const ts = parseDate(r.date);
     if (!ts || !r.seconds) return;
-    const age = getAgeAt(birthdate, r.date);
+    const age = recordAge(birthdate, ts);
     const score = rudolphScore(table, sex, age, r.event, r.seconds);
     if (score == null) return;
-    const pt = { x: ts, y: score, event: r.event, time: r.time, pool: r.pool, age: age != null ? +age.toFixed(1) : null };
+    const pt = { x: ts, y: score, event: r.event, time: r.time, pool: r.pool, age };
     (byEvent[r.event] = byEvent[r.event] || []).push(pt);
     all.push(pt);
   });

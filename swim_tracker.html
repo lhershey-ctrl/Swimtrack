@@ -891,7 +891,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         ⑩ Age Score (Rudolph)
         <button onclick="rudShowInfo()" title="What is the Rudolph score?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
       </div>
-      <p style="font-size:12px;color:#888;margin-bottom:10px">Every swim scored 1-20 against Dr. Klaus Rudolph's German age-graded table, using the swimmer's exact age on each swim date — comparable across age-group jumps, unlike the absolute Points Trend above.</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Every swim scored 1-20 against Dr. Klaus Rudolph's German age-graded table, using the swimmer's age group for that swim (calendar year of the swim minus birth year, matching the age-group convention used elsewhere in the app) — comparable across age-group jumps, unlike the absolute Points Trend above. Long course (50m) only.</p>
       <div id="rudolphHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
       <div id="rudolphChartWrap">
         <div class="ev-selector" id="rudEvSel" style="margin-bottom:10px"></div>
@@ -2191,7 +2191,7 @@ function _rudScore(table,sex,age,event,seconds){
   for(var i=0;i<n-1;i++){if(seconds>=rows[i].sec&&seconds<=rows[i+1].sec)return+seg(rows[i],rows[i+1]).toFixed(2);}
   return null;
 }
-function buildRudolphTrend(pool){
+function buildRudolphTrend(){
   var section=document.getElementById('rudolphSection');if(!section)return;
   var table=window.__rudolphTable||null;
   var prof=window.__recProfile||{},sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
@@ -2205,35 +2205,37 @@ function buildRudolphTrend(pool){
   if(hintEl)hintEl.innerHTML='';
   if(chartWrap)chartWrap.style.display='';
 
-  if(pool!==undefined)window._rudPool=pool;
-  var rudPool=window._rudPool!==undefined?window._rudPool:'25'; // default 25m, matching other charts
+  // Rudolph's table is calibrated for long course (50m) only — 25m times are
+  // systematically faster (more turns) and would score inflated/wrong here.
+  var rudPool='50';
 
   var ar=allResults();
-  var evs=Array.from(new Set(ar.map(function(r){return r.event;}))).sort();
+  var evs=Array.from(new Set(ar.filter(function(r){return poolNorm(r.pool)===rudPool;}).map(function(r){return r.event;}))).sort();
   var sel=document.getElementById('rudEvSel');
   if(sel){
-    var poolBtns='<span style="font-size:11px;color:#aaa;margin-right:6px">Pool:</span>'+
-      '<button class="ev-btn'+(rudPool==='25'?' active':'')+'" onclick="setRudPool(\'25\')" style="font-size:11px">25m (SC)</button>'+
-      '<button class="ev-btn'+(rudPool==='50'?' active':'')+'" onclick="setRudPool(\'50\')" style="font-size:11px">50m (LC)</button>'+
-      '<button class="ev-btn'+(!rudPool?' active':'')+'" onclick="setRudPool(null)" style="font-size:11px">All</button>'+
-      '<span style="margin:0 10px;color:#e0ddd6">|</span><span style="font-size:11px;color:#aaa;margin-right:6px">Event:</span>'+
+    var poolBtns='<span style="font-size:11px;color:#aaa;margin-right:6px">Long course (50m) only · Event:</span>'+
       '<button class="ev-btn'+(rudFilter===null?' active':'')+'" onclick="setRudFilter(null)" style="font-size:11px">All</button>'+
       evs.map(function(ev){return '<button class="ev-btn'+(rudFilter===ev?' active':'')+'" onclick="setRudFilter(\''+ev.replace(/'/g,"\\'")+'\')">'+ev+'</button>';}).join('');
     sel.innerHTML=poolBtns;
   }
   var filtered=ar.filter(function(r){
     if(rudFilter&&r.event!==rudFilter)return false;
-    if(rudPool){var p=poolNorm(r.pool);if(p&&p!==rudPool)return false;}
+    if(poolNorm(r.pool)!==rudPool)return false;
     return true;
   });
   var evGroups={};
   filtered.forEach(function(r){
     var ts=parseDate(r.date);if(!ts||!r.seconds)return;
-    var age=getAgeAt(bd,r.date);
+    // Age GROUP for that swim (calendar year of the swim minus birth year —
+    // same _recAge() convention as the Israeli records), not exact age-in-years
+    // on that day: a swimmer already competes (and is categorized by LogLig)
+    // in next year's age group before their birthday, so exact age would
+    // score against the wrong (younger, too-lenient) table.
+    var age=_recAge(bd,ts);
     var score=_rudScore(table,sex,age,r.event,r.seconds);
     if(score==null)return;
     if(!evGroups[r.event])evGroups[r.event]=[];
-    evGroups[r.event].push({x:ts,y:score,time:r.time,pool:r.pool,age:age!=null?+age.toFixed(1):null});
+    evGroups[r.event].push({x:ts,y:score,time:r.time,pool:r.pool,age:age});
   });
   var datasets=[];
   Object.keys(evGroups).forEach(function(ev,ci){
@@ -2269,7 +2271,6 @@ function buildRudolphTrend(pool){
   });
 }
 function setRudFilter(ev){rudFilter=ev;buildRudolphTrend();};
-function setRudPool(p){buildRudolphTrend(p);};
 window.buildRudolphTrend=buildRudolphTrend;
 
 
@@ -3736,7 +3737,7 @@ function clearRace2(){
   function resetPublish(){ mergedTable=null; const pb=$("rudPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("rudPreview"); if(pv)pv.style.display="none"; }
 
   window.rudShowInfo=function(){
-    alert("The Rudolph table (Dr. Klaus Rudolph) turns a swim time into a 1-20 point score, calibrated separately for every age (8 through 18+) and event.\n\nUnlike an absolute points scale, it answers \"how good was this swim for how old they were that day?\" — so progress stays comparable as a swimmer moves through age groups, and swimmers of different ages can be compared fairly.\n\nUpload the official PDF below whenever a new \"Basis\" year is published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
+    alert("The Rudolph table (Dr. Klaus Rudolph) turns a swim time into a 1-20 point score, calibrated separately for every age (8 through 18+) and event — long course (50m) only.\n\nUnlike an absolute points scale, it answers \"how good was this swim for this swimmer's age group?\" — so progress stays comparable as a swimmer moves through age groups, and swimmers of different ages can be compared fairly. The age group is the calendar year of the swim minus birth year (same convention used elsewhere in the app), not exact age-in-years on that day.\n\nUpload the official PDF below whenever a new \"Basis\" year is published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
   };
 
   window.rudPickPdf=async function(e){

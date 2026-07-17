@@ -677,16 +677,17 @@ function PointsTrend({ D }) {
 // age-group jumps (unlike the absolute FINA-style points above).
 function RudolphTrend({ D, swimmer, rudolphDoc }) {
   const { c, s } = useUI();
-  const [pool, setPool] = useState("25");
   const [event, setEvent] = useState("all");
   const [showInfo, setShowInfo] = useState(false);
   const table = rudolphDoc && rudolphDoc.table;
   const sex = swimmer && swimmer.sex;
   const birthdate = swimmer && swimmer.birthdate;
   const currentAge = birthdate ? getAgeAt(birthdate) : null;
+  // Rudolph's table is calibrated for long course (50m) only — 25m times are
+  // systematically faster (more turns) and would score inflated/wrong here.
   const tr = useMemo(
-    () => (table && birthdate ? rudolphTrend(D, table, sex, birthdate, { pool: pool === "all" ? null : pool, event: event === "all" ? null : event }) : { points: [], byEvent: {}, trend: null, events: [] }),
-    [D, table, sex, birthdate, pool, event]
+    () => (table && birthdate ? rudolphTrend(D, table, sex, birthdate, { pool: "50", event: event === "all" ? null : event }) : { points: [], byEvent: {}, trend: null, events: [] }),
+    [D, table, sex, birthdate, event]
   );
   const evColor = {}; tr.events.forEach((e, i) => (evColor[e] = COLORS[i % COLORS.length]));
 
@@ -715,13 +716,16 @@ function RudolphTrend({ D, swimmer, rudolphDoc }) {
           </p>
           <p style={{ margin: "0 0 10px" }}>
             Unlike the regular Points Trend above (which is an absolute scale, so a 10-year-old can never score as
-            high as a 16-year-old), the Rudolph score asks <em>"how good was this swim for how old they were that
-            day?"</em> — so it stays meaningful as a swimmer moves through age groups, and lets swimmers of different
-            ages be compared fairly.
+            high as a 16-year-old), the Rudolph score asks <em>"how good was this swim for this swimmer's age
+            group?"</em> — so it stays meaningful as a swimmer moves through age groups, and lets swimmers of
+            different ages be compared fairly.
           </p>
           <p style={{ margin: 0 }}>
-            Each dot below is one swim, scored against the table for the swimmer's exact age on that swim date. The
-            dashed line is the overall trend.
+            Each dot below is one swim, scored against the table for the swimmer's age group that swim counted
+            toward (same age-group convention as elsewhere in the app — the calendar year of the swim minus birth
+            year), not their exact age-in-years on that specific day. The dashed line is the overall trend. The
+            table is only calibrated for <strong>long course (50m)</strong> — short course (25m) times aren't shown
+            here since they'd score inflated against a 50m table.
           </p>
         </InfoModal>
       )}
@@ -731,8 +735,7 @@ function RudolphTrend({ D, swimmer, rudolphDoc }) {
         <Card><Center>Set birthdate and sex in Settings to see the age score.</Center></Card>
       ) : (
         <>
-          <PillRow label="Pool" active={pool} onPick={setPool}
-            items={[{ key: "all", label: "All" }, { key: "25", label: "25m" }, { key: "50", label: "50m" }]} />
+          <div style={{ fontSize: 11, color: c.dim, margin: "0 4px 6px" }}>Long course (50m) only</div>
           <PillRow label="Event" active={event} onPick={setEvent}
             items={[{ key: "all", label: "All" }, ...tr.events.map((e) => ({ key: e, label: e }))]} />
           <Card>
