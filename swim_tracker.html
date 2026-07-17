@@ -288,6 +288,56 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
     <pre id="rudPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
   </div>
 
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ⑤ USA Motivational Standards
+    <button onclick="usaShowInfo()" title="What are the USA Motivational Standards?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">USA Swimming's junior age-group tiers (B / BB / A / AA / AAA / AAAA), ages 10-18, both sexes. Only the metric tables (SCM/LCM) are used — the source PDF's yards (SCY) tables are skipped since this app tracks meters only. Upload whenever new standards are published.<br><span style="color:#9aa6b5">Source: <a href="https://www.usaswimming.org/times/time-standards" target="_blank" rel="noopener" style="color:#185FA5">usaswimming.org/times/time-standards</a>.</span></p>
+  <div class="card" style="padding:16px 20px">
+    <div id="usaStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published standards.</div>
+
+    <label class="usa-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
+      <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Motivational Standards PDF (single age)</span>
+      <span id="usaFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+      <input type="file" accept=".pdf" style="display:none" onchange="usaPickPdf(event)">
+    </label>
+
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
+      <button id="usaReviewBtn" onclick="usaReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="usaPublishBtn" onclick="usaPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="usaPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="usaPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ⑥ Masters World Records
+    <button onclick="wrShowInfo()" title="What are the Masters World Records?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">World Aquatics Masters world records by 5-year age bracket (25-29 through 100+), both sexes, long &amp; short course meters. Upload whichever file changed — you don't need both.<br><span style="color:#9aa6b5">Source: <a href="https://www.worldaquatics.com/masters/records" target="_blank" rel="noopener" style="color:#185FA5">worldaquatics.com/masters/records</a>.</span></p>
+  <div class="card" style="padding:16px 20px">
+    <div id="wrStatus" style="font-size:13px;margin-bottom:14px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
+      <label class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#185FA5">🏅 Long course (LCM)</span>
+        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="wrPickPdf(event,'LCM')">
+      </label>
+      <label class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Short course (SCM)</span>
+        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="wrPickPdf(event,'SCM')">
+      </label>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button id="wrReviewBtn" onclick="wrReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="wrPublishBtn" onclick="wrPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="wrPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="wrPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+  </div>
+
 </div>
 
 <script>
@@ -890,6 +940,19 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         <div id="strokeTable" style="font-size:12px"></div>
       </div>
     </div>
+
+    <!-- ⑫ DISTANCE TO WORLD RECORD (Masters) ──── -->
+    <div id="wrGapSection">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px">
+        ⑫ Distance to World Record
+        <button onclick="wrShowInfo()" title="What are the Masters World Records?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+      </div>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Best-ever time per event vs. the World Aquatics Masters world record for the swimmer's current 5-year age bracket — each event judged against its own course (25m → SCM, 50m → LCM). Shown for swimmers over 30.</p>
+      <div id="wrGapHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
+      <div id="wrGapChartWrap" class="card" style="padding:16px 20px;margin-bottom:16px">
+        <div style="position:relative;height:340px"><canvas id="wrGapChart"></canvas></div>
+      </div>
+    </div>
     </div>
 
     <div class="an-grp" data-grp="progress" style="display:none">
@@ -913,6 +976,26 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f1f4f8;color:
         <div class="ev-selector" id="rudEvSel" style="margin-bottom:10px"></div>
         <div class="card" style="padding:16px 20px;margin-bottom:16px">
           <div style="position:relative;height:280px"><canvas id="rudChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑪ USA AGE GROUP STANDARDS ──────────────── -->
+    <div id="usaStdSection">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px">
+        ⑪ USA Age Group Standards
+        <button onclick="usaShowInfo()" title="What are the USA Motivational Standards?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+      </div>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Best-ever time per event vs. USA Swimming's B/BB/A/AA/AAA/AAAA tiers for the swimmer's current age (ages 10-18 only) — each event judged against its own course (25m → SCM table, 50m → LCM table).</p>
+      <div id="usaStdHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
+      <div id="usaStdChartWrap" style="display:flex;gap:16px;flex-wrap:wrap">
+        <div class="card" style="padding:16px 20px;flex:1;min-width:280px">
+          <div style="font-size:12px;color:#888;text-align:center;margin-bottom:6px;font-weight:700">Short (50-100)</div>
+          <div style="position:relative;height:260px"><canvas id="usaStdShortChart"></canvas></div>
+        </div>
+        <div class="card" style="padding:16px 20px;flex:1;min-width:280px">
+          <div style="font-size:12px;color:#888;text-align:center;margin-bottom:6px;font-weight:700">Long (200+)</div>
+          <div style="position:relative;height:260px"><canvas id="usaStdLongChart"></canvas></div>
         </div>
       </div>
     </div>
@@ -1649,6 +1732,8 @@ function buildAll(){
   safe('pointsTrend',buildPointsTrend);
   rudFilter=null;
   safe('rudolphTrend',buildRudolphTrend);
+  safe('usaStandards',buildUsaStandards);
+  safe('mastersWr',buildMastersWr);
   if(errs.length){
     var st=document.getElementById('loadStatus');
     if(st)st.innerText+=' ⚠️ '+errs.join(' · ');
@@ -2304,6 +2389,141 @@ function buildRudolphTrend(){
 }
 function setRudFilter(ev){rudFilter=ev;buildRudolphTrend();};
 window.buildRudolphTrend=buildRudolphTrend;
+
+// Best-ever time per event, split by pool — same aggregation buildRecords()
+// uses for Personal Records, reused here so both new sections compare
+// against the swimmer's CURRENT age using their best-ever time (not the
+// age-graded per-swim convention Rudolph uses above).
+function _bestTimesByPool(){
+  var ss=seasons();
+  var out={'25':{},'50':{}};
+  ss.forEach(function(s){
+    (D[s].bests||[]).forEach(function(b){
+      if(!b.event||!b.seconds||isRelay(b.event))return;
+      var pool=poolNorm(b.pool),store=out[pool];
+      if(!store)return;
+      if(!store[b.event]||b.seconds<store[b.event].seconds)store[b.event]={seconds:b.seconds,time:b.time};
+    });
+  });
+  return out;
+}
+
+// ── ⑪ USA MOTIVATIONAL STANDARDS (junior, ages 10-18) ─────────────────
+var usaStdShortChartInst=null,usaStdLongChartInst=null;
+var USA_TIERS=['B','BB','A','AA','AAA','AAAA']; // easiest→hardest; tier level = index+1
+function _usaTier(table,course,age,sex,event,seconds){
+  var S=_sexN(sex),key=_recKey(event);
+  if(!table||!course||age==null||!S||!key||!seconds)return 0;
+  var row=(((table[course]||{})[String(age)]||{})[S]||{})[key];
+  if(!row)return 0;
+  for(var i=USA_TIERS.length-1;i>=0;i--){
+    var cutoff=row[USA_TIERS[i]];
+    if(cutoff!=null&&seconds<=cutoff)return i+1;
+  }
+  return 0;
+}
+function buildUsaStandards(){
+  var section=document.getElementById('usaStdSection');if(!section)return;
+  var table=window.__usaStandardsTable||null;
+  var prof=window.__recProfile||{},sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
+  var bd=prof.birthdate||sw.birthdate||'',sex=prof.sex||sw.sex||'';
+  var curAge=bd?getAgeAt(bd):null;
+  var ageInt=curAge!=null?Math.floor(curAge):null;
+  if(ageInt==null||ageInt<10||ageInt>18){section.style.display='none';return;} // standards cover ages 10-18 only
+  section.style.display='';
+  var hintEl=document.getElementById('usaStdHint'),chartWrap=document.getElementById('usaStdChartWrap');
+  if(!table){if(hintEl)hintEl.innerHTML='USA standards not published yet — upload below (Extract tab ⑤).';if(chartWrap)chartWrap.style.display='none';return;}
+  if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see standards.';if(chartWrap)chartWrap.style.display='none';return;}
+  if(hintEl)hintEl.innerHTML='';
+  if(chartWrap)chartWrap.style.display='';
+
+  var bestByPool=_bestTimesByPool();
+  var STROKES=['Free','Back','Breast','Fly','IM'];
+  var shortTier={},longTier={};
+  STROKES.forEach(function(s){shortTier[s]=0;longTier[s]=0;});
+  ['25','50'].forEach(function(pool){
+    var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
+    Object.keys(best).forEach(function(ev){
+      var stroke=getStroke(ev); if(STROKES.indexOf(stroke)<0)return;
+      var dist=extractDist(ev);
+      var tier=_usaTier(table,course,ageInt,sex,ev,best[ev].seconds);
+      var bucket=dist<=100?shortTier:longTier;
+      if(tier>bucket[stroke])bucket[stroke]=tier;
+    });
+  });
+
+  var TIER_LABELS=['—','B','BB','A','AA','AAA','AAAA'];
+  var shortCanvas=document.getElementById('usaStdShortChart'),longCanvas=document.getElementById('usaStdLongChart');
+  if(!shortCanvas||!longCanvas)return;
+  if(usaStdShortChartInst)usaStdShortChartInst.destroy();
+  if(usaStdLongChartInst)usaStdLongChartInst.destroy();
+  var radarOpts={responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return TIER_LABELS[c.raw]||'—';}}}},
+    scales:{r:{min:0,max:6,ticks:{stepSize:1,callback:function(v){return TIER_LABELS[v];},color:'#888',font:{size:9},backdropColor:'transparent'},pointLabels:{font:{size:11}},grid:{color:'rgba(0,0,0,.06)'}}}
+  };
+  usaStdShortChartInst=new Chart(shortCanvas.getContext('2d'),{type:'radar',
+    data:{labels:STROKES,datasets:[{label:'Tier',data:STROKES.map(function(s){return shortTier[s];}),backgroundColor:'rgba(24,95,165,.2)',borderColor:'#185FA5',pointBackgroundColor:'#185FA5'}]},
+    options:radarOpts});
+  usaStdLongChartInst=new Chart(longCanvas.getContext('2d'),{type:'radar',
+    data:{labels:STROKES,datasets:[{label:'Tier',data:STROKES.map(function(s){return longTier[s];}),backgroundColor:'rgba(29,158,117,.2)',borderColor:'#1D9E75',pointBackgroundColor:'#1D9E75'}]},
+    options:radarOpts});
+}
+window.buildUsaStandards=buildUsaStandards;
+
+// ── ⑫ MASTERS WORLD RECORD GAP (age > 30) ─────────────────────────────
+var wrGapChartInst=null;
+function _wrAgeGroup(age){
+  if(age==null||age<25)return null;
+  var base=25+Math.floor((age-25)/5)*5;
+  return base+'-'+(base+4);
+}
+function buildMastersWr(){
+  var section=document.getElementById('wrGapSection');if(!section)return;
+  var table=window.__mastersRecordsTable||null;
+  var prof=window.__recProfile||{},sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
+  var bd=prof.birthdate||sw.birthdate||'',sex=prof.sex||sw.sex||'';
+  var curAge=bd?getAgeAt(bd):null;
+  if(curAge==null||curAge<=30){section.style.display='none';return;} // only meaningful for masters-age swimmers
+  section.style.display='';
+  var hintEl=document.getElementById('wrGapHint'),chartWrap=document.getElementById('wrGapChartWrap');
+  if(!table){if(hintEl)hintEl.innerHTML='Masters world records not published yet — upload below (Extract tab ⑥).';if(chartWrap)chartWrap.style.display='none';return;}
+  if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see the gap.';if(chartWrap)chartWrap.style.display='none';return;}
+  var S=_sexN(sex),ageGroup=_wrAgeGroup(curAge);
+  if(!S||!ageGroup){if(hintEl)hintEl.innerHTML='Couldn\'t determine this swimmer\'s age bracket.';if(chartWrap)chartWrap.style.display='none';return;}
+  if(hintEl)hintEl.innerHTML='';
+  if(chartWrap)chartWrap.style.display='';
+
+  var bestByPool=_bestTimesByPool();
+  var rows=[];
+  ['25','50'].forEach(function(pool){
+    var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
+    var recTable=((table[course]||{})[S]||{})[ageGroup]||{};
+    Object.keys(best).forEach(function(ev){
+      var key=_recKey(ev);if(!key)return;
+      var wr=recTable[key];if(!wr||!wr.seconds)return;
+      var pct=(best[ev].seconds-wr.seconds)/wr.seconds*100;
+      rows.push({event:ev+' ('+pool+'m)',pct:pct,mine:best[ev].time,wrTime:secsToStr(wr.seconds),athlete:wr.athlete});
+    });
+  });
+  rows.sort(function(a,b){return a.pct-b.pct;});
+
+  var canvasEl=document.getElementById('wrGapChart');if(!canvasEl)return;
+  if(wrGapChartInst)wrGapChartInst.destroy();
+  wrGapChartInst=new Chart(canvasEl.getContext('2d'),{
+    type:'bar',
+    data:{labels:rows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:rows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:'#185FA5'}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        label:function(c){var r=rows[c.dataIndex];return' '+r.mine+' vs WR '+r.wrTime+' ('+r.athlete+') · +'+c.parsed.x+'%';}
+      }}},
+      scales:{
+        x:{ticks:{color:'#888',font:{size:9},callback:function(v){return'+'+v+'%';}},grid:{color:'rgba(0,0,0,.04)'},title:{display:true,text:'% slower than world record',color:'#aaa',font:{size:9}}},
+        y:{ticks:{color:'#666',font:{size:10}}}
+      }
+    }
+  });
+}
+window.buildMastersWr=buildMastersWr;
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3831,6 +4051,311 @@ function clearRace2(){
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════
+     🇺🇸 USA MOTIVATIONAL STANDARDS — in-browser PDF parser
+     The source PDF interleaves SCY/SCM/LCM tables, but every event label
+     carries its own course suffix ("50 FR SCM"), so course filtering is a
+     plain string check rather than a page-boundary problem. Each age block
+     is two 6-column tables side by side (Girls left, Boys right) sharing
+     one "Event" middle column — pdf.js already returns one clean text item
+     per cell here (no coordinate-clustering needed, unlike Rudolph), so
+     this parser just walks the flat token stream with a small state machine.
+     Validated against the real PDF with a throwaway Node script before
+     porting here (297 SCM+LCM rows parsed, 150 SCY rows correctly skipped).
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  const TIME_RE=/^\d{1,2}(:\d{2})?\.\d{2}\s*\*?$/;
+  const EVENT_RE=/^(\d+)\s+([A-Z]{2,3})\s+(SCY|SCM|LCM)$/;
+  const AGE_RE=/^(\d+)\s+Girls$/;
+  const GIRL_HDR=["B","BB","A","AA","AAA","AAAA"], BOY_HDR=["AAAA","AAA","AA","A","BB","B"];
+  const HDR_JOIN=GIRL_HDR.concat(BOY_HDR).join("|");
+  // Map the PDF's own 2-letter stroke labels to the full names getStroke()/
+  // _recKey() use everywhere else in this app (Rudolph's table does the same).
+  const STROKE_MAP={FR:"Free",BK:"Back",BR:"Breast",FL:"Fly",IM:"IM"};
+  const parseTime=(s)=>{
+    s=s.replace(/\*/g,"").trim();
+    const m=s.match(/^(?:(\d+):)?(\d{1,2})\.(\d{2})$/); if(!m)return null;
+    return(m[1]?+m[1]*60:0)+ +m[2]+ +m[3]/100;
+  };
+
+  async function usaParsePdf(buf){
+    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const toks=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p), tc=await page.getTextContent();
+      tc.items.forEach((it)=>{const s=it.str.trim();if(s)toks.push(s);});
+    }
+    const table={};
+    let age=null, i=0, rows=0;
+    while(i<toks.length){
+      const t=toks[i];
+      const ageM=t.match(AGE_RE);
+      if(ageM){age=+ageM[1];i+=3;continue;} // "N Girls","Event","N Boys"
+      if(toks.slice(i,i+12).join("|")===HDR_JOIN){i+=12;continue;} // repeated tier-header row
+      if(TIME_RE.test(t)){
+        const girls=toks.slice(i,i+6), evTok=toks[i+6], boys=toks.slice(i+7,i+13);
+        const evM=evTok&&evTok.match(EVENT_RE);
+        if(evM&&girls.every((g)=>TIME_RE.test(g))&&boys.every((b)=>TIME_RE.test(b))){
+          const[,dist,strokeAbbr,course]=evM;
+          i+=13;
+          if(course==="SCY"||age==null)continue; // metric-only app; skip yards
+          const stroke=STROKE_MAP[strokeAbbr]; if(!stroke)continue;
+          const key=dist+"|"+stroke;
+          table[course]=table[course]||{};
+          table[course][age]=table[course][age]||{F:{},M:{}};
+          const gRow={},bRow={};
+          GIRL_HDR.forEach((tier,idx)=>gRow[tier]=parseTime(girls[idx]));
+          BOY_HDR.forEach((tier,idx)=>bRow[tier]=parseTime(boys[idx]));
+          table[course][age].F[key]=gRow;
+          table[course][age].M[key]=bRow;
+          rows++;
+          continue;
+        }
+      }
+      i++;
+    }
+    if(!rows)throw new Error("0 rows parsed — wrong PDF?");
+    return{table};
+  }
+
+  function countTable(t){let n=0;for(const c in t)for(const a in t[c])for(const sx of["F","M"])for(const k in(t[c][a][sx]||{}))n++;return n;}
+  function diffTable(oldT,newT){
+    let added=0,changed=0; const changes=[]; oldT=oldT||{};
+    for(const course in newT)for(const age in newT[course])for(const sx of["F","M"])for(const key in(newT[course][age][sx]||{})){
+      const nv=JSON.stringify(newT[course][age][sx][key]);
+      const ov=((((oldT[course]||{})[age]||{})[sx]||{})[key])?JSON.stringify(oldT[course][age][sx][key]):null;
+      if(ov==null){added++;changes.push("➕ "+course+" age "+age+" "+sx+" "+key);}
+      else if(ov!==nv){changed++;changes.push("✎ "+course+" age "+age+" "+sx+" "+key);}
+    }
+    return{added,changed,changes};
+  }
+
+  const $=(id)=>document.getElementById(id);
+  let parsedTable=null, mergedTable=null;
+  function resetPublish(){ mergedTable=null; const pb=$("usaPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("usaPreview"); if(pv)pv.style.display="none"; }
+
+  window.usaShowInfo=function(){
+    alert("USA Swimming's Motivational Standards rate a swim time against six tiers — B, BB, A, AA, AAA, AAAA (progressively faster) — separately for each age (10-18) and event, long course (LCM) and short course meters (SCM) only (the yards/SCY tables in the source PDF aren't used since this app is metric).\n\nRoughly: B = top 55% (a strong opening benchmark, above average) · BB = top 35% · A = top 15% (a strong competitive swimmer) · AA = top 8% (often the level needed for larger regional championships) · AAA = top 6% · AAAA = top 2% (national elite level).\n\nUpload the official PDF below whenever new standards are published; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
+  };
+
+  window.usaPickPdf=async function(e){
+    const f=e.target.files&&e.target.files[0]; if(!f)return;
+    const fn=$("usaFname"), lab=e.target.closest(".usa-slot");
+    if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
+    resetPublish();
+    try{
+      const{table}=await usaParsePdf(await f.arrayBuffer());
+      const n=countTable(table);
+      if(!n)throw new Error("0 entries parsed — wrong PDF?");
+      parsedTable=table;
+      if(fn){fn.innerHTML="✓ <strong>"+n+"</strong> time entries — "+f.name;fn.style.color="#1a7a4f";}
+      if(lab){lab.style.borderColor="#1D9E75";lab.style.background="#f0faf5";}
+      const rb=$("usaReviewBtn"); if(rb){rb.disabled=false;rb.style.opacity="1";}
+    }catch(err){
+      parsedTable=null;
+      if(fn){fn.textContent="⚠ "+err.message;fn.style.color="#c0392b";}
+      if(lab){lab.style.borderColor="#e5a05a";lab.style.background="#fef6ee";}
+      const rb=$("usaReviewBtn"); if(rb){rb.disabled=true;rb.style.opacity=".5";}
+    }
+  };
+
+  window.usaReview=async function(){
+    const st=$("usaPublishStatus"), pv=$("usaPreview"), pubBtn=$("usaPublishBtn");
+    if(!parsedTable){ if(st){st.style.color="#c0392b";st.textContent="Parse a PDF first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Signing in / reading current cloud table…";}
+    if(!(await window.swimEnsureSignIn())){ if(st){st.style.color="#c0392b";st.textContent="Sign-in needed to compare with the cloud.";} return; }
+    try{
+      const cloud=await window.swimFetchUsaStandards();
+      const base=cloud&&cloud.table?cloud.table:{};
+      const merged=JSON.parse(JSON.stringify(base));
+      for(const course in parsedTable)for(const age in parsedTable[course]){merged[course]=merged[course]||{};merged[course][age]=parsedTable[course][age];}
+      const{added,changed,changes}=diffTable(base,parsedTable);
+      mergedTable=merged;
+      const total=added+changed;
+      const body=total?("Changes to upload: "+added+" new, "+changed+" updated.\n\n"+changes.slice(0,60).join("\n")+(changes.length>60?("\n… +"+(changes.length-60)+" more"):"")):"No changes — the cloud already matches this file.";
+      if(pv){pv.style.display="";pv.textContent=body;}
+      if(pubBtn){pubBtn.disabled=!total;pubBtn.style.opacity=total?"1":".5";pubBtn.textContent="☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud";}
+      if(st){st.style.color=total?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):"Nothing to upload — already up to date.";}
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Not allowed — your email isn't on the access list.":"Compare failed: "+err.message;} }
+  };
+
+  window.usaPublish=async function(){
+    const st=$("usaPublishStatus");
+    if(!mergedTable){ if(st){st.style.color="#c0392b";st.textContent="Click “Review changes vs cloud” first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Uploading…";}
+    try{
+      await window.swimPublishUsaStandards(mergedTable);
+      if(st){st.style.color="#1a7a4f";st.textContent="✅ Uploaded. Cloud table now has "+countTable(mergedTable)+" time entries total.";}
+      parsedTable=null; resetPublish();
+      const rb=$("usaReviewBtn"); if(rb){rb.disabled=true;rb.style.opacity=".5";}
+      if(window.swimRefreshUsaStandardsStatus)window.swimRefreshUsaStandardsStatus();
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish the USA standards table.":"Upload failed: "+err.message;} }
+  };
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     🏅 MASTERS WORLD RECORDS — in-browser PDF parser
+     Much simpler layout than the Standards/Rudolph tables: each event is a
+     flat "{Course} {Sex} {Distance}m {Stroke} (AgeGroup)" header line
+     followed by "Time NF Athlete Date" and one data row (occasionally two,
+     for ties — the first is kept). Parsed via line-based regex on the
+     extracted text stream, no coordinate clustering needed. Validated
+     against both real attached PDFs with a throwaway Node script, including
+     a rare pdf.js text-split edge case in one ultra-long record
+     ("01:15:54.3"+"9" → merged back into "01:15:54.39").
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  const TIME_RE=/^\d{1,2}(:\d{2}){0,2}\.\d{2}$/;
+  const HDR_RE=/^(LCM|SCM)\s+(Women|Men)\s+(\d+)m\s+(Freestyle|Backstroke|Breaststroke|Butterfly|Medley)\s+\((\d+-\d+)\)$/;
+  const parseTime=(s)=>{
+    const parts=s.trim().split(":");
+    if(parts.length===1)return parseFloat(parts[0]);
+    if(parts.length===2)return(+parts[0])*60+parseFloat(parts[1]);
+    return(+parts[0])*3600+(+parts[1])*60+parseFloat(parts[2]);
+  };
+  function strokeAbbr(w){
+    if(/Butterfly/i.test(w))return"Fly";
+    if(/Backstroke/i.test(w))return"Back";
+    if(/Breaststroke/i.test(w))return"Breast";
+    if(/Medley/i.test(w))return"IM";
+    return"Free";
+  }
+
+  async function wrParsePdf(buf){
+    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let toks=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p), tc=await page.getTextContent();
+      tc.items.forEach((it)=>{const s=it.str.trim();if(s)toks.push(s);});
+    }
+    // Rare pdf.js text-layer split, e.g. "01:15:54.3"+"9" → "01:15:54.39"
+    // (seen once, an ultra-long 1500m Free masters record at the oldest bracket).
+    const merged=[];
+    for(let k=0;k<toks.length;k++){
+      const t=toks[k],nxt=toks[k+1];
+      if(/^\d{1,2}(:\d{2}){0,2}\.\d$/.test(t)&&nxt&&/^\d$/.test(nxt)){merged.push(t+nxt);k++;}
+      else merged.push(t);
+    }
+    toks=merged;
+
+    const table={}; let i=0,rows=0;
+    while(i<toks.length){
+      const hdrM=toks[i].match(HDR_RE);
+      if(!hdrM){i++;continue;}
+      const[,course,sexWord,dist,strokeWord,ageGroup]=hdrM;
+      const sex=sexWord==="Women"?"F":"M";
+      const key=dist+"|"+strokeAbbr(strokeWord);
+      i++;
+      if(toks.slice(i,i+4).join("|")!=="Time|NF|Athlete|Date"){continue;}
+      i+=4;
+      let first=true;
+      while(i+3<toks.length&&TIME_RE.test(toks[i])){
+        const[timeStr,nf,athlete,date]=toks.slice(i,i+4);
+        if(first){
+          table[course]=table[course]||{};
+          table[course][sex]=table[course][sex]||{};
+          table[course][sex][ageGroup]=table[course][sex][ageGroup]||{};
+          table[course][sex][ageGroup][key]={seconds:+parseTime(timeStr).toFixed(2),athlete,nf,date};
+          rows++;
+          first=false;
+        }
+        i+=4;
+      }
+    }
+    if(!rows)throw new Error("0 records parsed — wrong PDF?");
+    return{table};
+  }
+
+  function countTable(t){let n=0;for(const c in t)for(const sx in t[c])for(const ag in t[c][sx])for(const k in t[c][sx][ag])n++;return n;}
+  function diffTable(oldT,newT,course){
+    let added=0,changed=0; const changes=[]; oldT=oldT||{};
+    for(const sx in newT)for(const ag in newT[sx])for(const key in newT[sx][ag]){
+      const nv=JSON.stringify(newT[sx][ag][key]);
+      const ov=((((oldT[sx]||{})[ag]||{})[key]))?JSON.stringify(oldT[sx][ag][key]):null;
+      if(ov==null){added++;changes.push("➕ "+course+" "+sx+" "+ag+" "+key);}
+      else if(ov!==nv){changed++;changes.push("✎ "+course+" "+sx+" "+ag+" "+key);}
+    }
+    return{added,changed,changes};
+  }
+
+  const $=(id)=>document.getElementById(id);
+  window.__wrSlices={}; // "SCM"|"LCM" → parsed table for that course
+  let mergedTable=null;
+  function resetPublish(){ mergedTable=null; const pb=$("wrPublishBtn"); if(pb){pb.disabled=true;pb.style.opacity=".5";pb.textContent="☁ Upload changes to Cloud";} const pv=$("wrPreview"); if(pv)pv.style.display="none"; }
+  function updateReviewBtn(){ const any=Object.keys(window.__wrSlices).length>0; const b=$("wrReviewBtn"); if(b){b.disabled=!any;b.style.opacity=any?"1":".5";} resetPublish(); }
+
+  window.wrShowInfo=function(){
+    alert("World Aquatics Masters World Records — the fastest-ever time by 5-year age bracket (25-29 through 100+), both sexes, long course (LCM) and short course meters (SCM).\n\nThe app compares a swimmer's best time in each event against the world record for their current age bracket, so you can see how close the fastest people on Earth are for someone their age.\n\nUpload the official PDF(s) below whenever new records are set; it's parsed entirely in your browser, nothing is sent anywhere until you click Upload.");
+  };
+
+  window.wrPickPdf=async function(e,course){
+    const f=e.target.files&&e.target.files[0]; if(!f)return;
+    const lab=e.target.closest(".wr-slot"), fn=lab&&lab.querySelector(".wr-fname");
+    if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
+    try{
+      const{table}=await wrParsePdf(await f.arrayBuffer());
+      const n=countTable(table);
+      if(!n)throw new Error("0 records — wrong PDF for this slot?");
+      window.__wrSlices[course]=table;
+      if(fn){fn.innerHTML="✓ <strong>"+n+"</strong> records — "+f.name;fn.style.color="#1a7a4f";}
+      if(lab){lab.style.borderColor="#1D9E75";lab.style.background="#f0faf5";}
+    }catch(err){
+      delete window.__wrSlices[course];
+      if(fn){fn.textContent="⚠ "+err.message;fn.style.color="#c0392b";}
+      if(lab){lab.style.borderColor="#e5a05a";lab.style.background="#fef6ee";}
+    }
+    updateReviewBtn();
+  };
+
+  window.wrReview=async function(){
+    const st=$("wrPublishStatus"), pv=$("wrPreview"), pubBtn=$("wrPublishBtn");
+    const slices=window.__wrSlices;
+    if(!Object.keys(slices).length){ if(st){st.style.color="#c0392b";st.textContent="Parse at least one PDF first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Signing in / reading current cloud table…";}
+    if(!(await window.swimEnsureSignIn())){ if(st){st.style.color="#c0392b";st.textContent="Sign-in needed to compare with the cloud.";} return; }
+    try{
+      const cloud=await window.swimFetchMastersRecords();
+      const base=cloud&&cloud.table?cloud.table:{};
+      const merged=JSON.parse(JSON.stringify(base));
+      let added=0,changed=0; const changes=[];
+      for(const course in slices){
+        const{added:a,changed:c,changes:ch}=diffTable(base[course],slices[course],course);
+        added+=a;changed+=c;changes.push(...ch);
+        merged[course]=merged[course]||{};
+        for(const sx in slices[course])for(const ag in slices[course][sx]){merged[course][sx]=merged[course][sx]||{};merged[course][sx][ag]=slices[course][sx][ag];}
+      }
+      mergedTable=merged;
+      const total=added+changed;
+      const body=total?("Changes to upload: "+added+" new, "+changed+" updated.\n\n"+changes.slice(0,60).join("\n")+(changes.length>60?("\n… +"+(changes.length-60)+" more"):"")):"No changes — the cloud already matches these files.";
+      if(pv){pv.style.display="";pv.textContent=body;}
+      if(pubBtn){pubBtn.disabled=!total;pubBtn.style.opacity=total?"1":".5";pubBtn.textContent="☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud";}
+      if(st){st.style.color=total?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):"Nothing to upload — already up to date.";}
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Not allowed — your email isn't on the access list.":"Compare failed: "+err.message;} }
+  };
+
+  window.wrPublish=async function(){
+    const st=$("wrPublishStatus");
+    if(!mergedTable){ if(st){st.style.color="#c0392b";st.textContent="Click “Review changes vs cloud” first.";} return; }
+    if(st){st.style.color="#666";st.textContent="Uploading…";}
+    try{
+      await window.swimPublishMastersRecords(mergedTable);
+      if(st){st.style.color="#1a7a4f";st.textContent="✅ Uploaded. Cloud table now has "+countTable(mergedTable)+" records total.";}
+      window.__wrSlices={}; updateReviewBtn();
+      if(window.swimRefreshMastersRecordsStatus)window.swimRefreshMastersRecordsStatus();
+    }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish masters records.":"Upload failed: "+err.message;} }
+  };
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
      ☁ FIREBASE CLOUD SYNC  (project: swimtrack-e12c8)
      Signs in with Google and pushes the loaded data to Firestore so the
      mobile app can read it. Extraction stays 100% on the desktop.
@@ -4157,6 +4682,66 @@ async function refreshRudolphStatus() {
 }
 window.swimRefreshRudolphStatus = refreshRudolphStatus;
 
+// ── USA Motivational Standards (config/usaStandards) ─────────────────────
+// Shape: { table:{ "SCM"|"LCM":{ "10".."18":{ "F"|"M":{ "dist|stroke":{B,BB,A,AA,AAA,AAAA} } } } },
+//          count, loadedAt, by }.
+function countUsaStandards(t) { let n = 0; for (const c in t) for (const a in t[c]) for (const sx of ["F", "M"]) for (const k in (t[c][a][sx] || {})) n++; return n; }
+window.swimFetchUsaStandards = async () => { const s = await getDoc(doc(db, "config", "usaStandards")); return s.exists() ? s.data() : null; };
+window.swimPublishUsaStandards = async (table) => {
+  await setDoc(doc(db, "config", "usaStandards"), {
+    table, count: countUsaStandards(table), loadedAt: Date.now(), by: currentUser ? currentUser.email : "",
+  });
+};
+async function refreshUsaStandardsStatus() {
+  const el = $("usaStatus");
+  if (!currentUser) { if (el) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published standards."; } return; }
+  try {
+    const d = await window.swimFetchUsaStandards();
+    window.__usaStandardsTable = d && d.table ? d.table : null;
+    if (window.buildUsaStandards && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildUsaStandards();
+    if (!el) return;
+    if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No standards published yet — upload the PDF below."; return; }
+    el.style.color = "#1a7a4f";
+    el.innerHTML = "<strong>" + (d.count || countUsaStandards(d.table || {})) + "</strong> time entries published" +
+      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "");
+  } catch (e) {
+    if (!el) return;
+    el.style.color = "#c0392b";
+    el.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Couldn't read standards: " + e.message;
+  }
+}
+window.swimRefreshUsaStandardsStatus = refreshUsaStandardsStatus;
+
+// ── Masters World Records (config/mastersRecords) ────────────────────────
+// Shape: { table:{ "SCM"|"LCM":{ "F"|"M":{ "25-29".."105-109":{ "dist|stroke":{seconds,athlete,nf,date} } } } },
+//          count, loadedAt, by }.
+function countMastersRecords(t) { let n = 0; for (const c in t) for (const sx in t[c]) for (const ag in t[c][sx]) for (const k in t[c][sx][ag]) n++; return n; }
+window.swimFetchMastersRecords = async () => { const s = await getDoc(doc(db, "config", "mastersRecords")); return s.exists() ? s.data() : null; };
+window.swimPublishMastersRecords = async (table) => {
+  await setDoc(doc(db, "config", "mastersRecords"), {
+    table, count: countMastersRecords(table), loadedAt: Date.now(), by: currentUser ? currentUser.email : "",
+  });
+};
+async function refreshMastersRecordsStatus() {
+  const el = $("wrStatus");
+  if (!currentUser) { if (el) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published records."; } return; }
+  try {
+    const d = await window.swimFetchMastersRecords();
+    window.__mastersRecordsTable = d && d.table ? d.table : null;
+    if (window.buildMastersWr && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildMastersWr();
+    if (!el) return;
+    if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No records published yet — upload the PDF(s) below."; return; }
+    el.style.color = "#1a7a4f";
+    el.innerHTML = "<strong>" + (d.count || countMastersRecords(d.table || {})) + "</strong> records published" +
+      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "");
+  } catch (e) {
+    if (!el) return;
+    el.style.color = "#c0392b";
+    el.textContent = /permission/i.test(e.message) ? "Not allowed — your email isn't on the access list." : "Couldn't read records: " + e.message;
+  }
+}
+window.swimRefreshMastersRecordsStatus = refreshMastersRecordsStatus;
+
 // Clear the loaded analysis view (defined here so it's always available,
 // independent of the main script's execution order).
 window.clearLoadedData = function () {
@@ -4193,6 +4778,8 @@ onAuthStateChanged(auth, (u) => {
   render();
   refreshRecordsStatus();
   refreshRudolphStatus();
+  refreshUsaStandardsStatus();
+  refreshMastersRecordsStatus();
 });
 // Re-render the sync button label when the active swimmer changes.
 window.addEventListener("focus", render);

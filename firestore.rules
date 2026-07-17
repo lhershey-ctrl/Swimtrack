@@ -55,5 +55,19 @@ service cloud.firestore {
       allow read: if isAllowed();
       allow write: if isOwner();
     }
+
+    // USA Swimming Motivational Standards (junior, SCM/LCM): everyone allowed
+    // can read; only owners can publish (loaded via the desktop app).
+    match /config/usaStandards {
+      allow read: if isAllowed();
+      allow write: if isOwner();
+    }
+
+    // World Aquatics Masters world records (SCM/LCM): everyone allowed can
+    // read; only owners can publish (loaded via the desktop app).
+    match /config/mastersRecords {
+      allow read: if isAllowed();
+      allow write: if isOwner();
+    }
   }
 }
