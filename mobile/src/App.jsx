@@ -1502,6 +1502,8 @@ function SettingsTab({ user, swimmers, reloadSwimmers }) {
 
       <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} />
 
+      <TeamViewerManager user={user} swimmers={swimmers} />
+
       <AccessManager owner={owner} />
 
       <div style={s.h2}>About</div>
@@ -1549,6 +1551,59 @@ function SwimmersManager({ swimmers, reloadSwimmers, coachUid }) {
         </div>
         {status && <div style={{ marginTop: 8, fontSize: 12.5, color: status[0] === "✅" ? c.green : c.amber }}>{status}</div>}
         <div style={{ fontSize: 11, color: c.dim, marginTop: 8 }}>Then sync this swimmer's data from the desktop app.</div>
+      </Card>
+    </>
+  );
+}
+
+// Any coach — not just the owner — can invite someone to share (fully
+// read/write) their OWN current roster, the same way sharos88 shares
+// access with lhershey. Different from the owner-only "Invite a Coach"
+// panel in Admin, which creates a brand-new, independent, empty roster.
+function TeamViewerManager({ user, swimmers }) {
+  const { c, s } = useUI();
+  const [note, setNote] = useState("");
+  const [codes, setCodes] = useState([]);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function generate() {
+    if (!swimmers.length) { setStatus("Add a swimmer first — there's nothing to share yet."); return; }
+    setBusy(true); setStatus("");
+    try {
+      const code = await createInviteCode(user, note.trim(), { targetCoachUid: user.uid, swimmerIds: swimmers.map((sw) => sw.id) });
+      setCodes((prev) => [{ code, note: note.trim() }, ...prev]);
+      setNote(""); setStatus("✅ Code generated — copy it to your viewer.");
+    } catch (e) { setStatus("❌ " + e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <>
+      <div style={s.h2}>Add a Viewer</div>
+      <Card>
+        <div style={{ fontSize: 12, color: c.dim, marginBottom: 10 }}>
+          Generate a one-time code for someone to see and manage the same {swimmers.length} swimmer{swimmers.length !== 1 ? "s" : ""} you do
+          (like a co-coach or parent) — not a separate, independent account.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (e.g. their name) — optional"
+            style={{ ...s.input, flex: 1 }} />
+          <button onClick={generate} disabled={busy} style={{ padding: "0 18px", borderRadius: 10, border: "none",
+            background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>{busy ? "…" : "Generate"}</button>
+        </div>
+        {status && <div style={{ marginTop: 8, fontSize: 12.5, color: status[0] === "✅" ? c.green : c.amber }}>{status}</div>}
+        {codes.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            {codes.map((c2, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 0", borderTop: i > 0 ? `1px solid ${c.line}` : "none" }}>
+                <span style={{ fontFamily: "monospace", fontWeight: 800, fontSize: 15 }}>{c2.code}</span>
+                <span style={{ fontSize: 11.5, color: c.dim }}>{c2.note}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </>
   );
@@ -1903,6 +1958,29 @@ function AdminTab({ user }) {
 // Owner-only cross-coach view — deliberately separate from every other
 // query in the app, which is always scoped to the signed-in account's own
 // roster. This is the one place seeing "everyone" is the point.
+// Groups coaches into "teams" — connected components of the graph where an
+// edge exists between two coaches if they share at least one swimmer (e.g.
+// lhershey + sharos88, who co-manage Noga/Gal). A coach with no shared
+// swimmers is its own team of one. This matches how the app is actually
+// used far better than one row per raw account/uid.
+function groupCoachesIntoTeams(coaches, swimmers) {
+  const parent = {};
+  coaches.forEach((co) => { parent[co.uid] = co.uid; });
+  const find = (x) => { while (parent[x] && parent[x] !== x) x = parent[x]; return x; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  swimmers.forEach((sw) => {
+    const uids = (sw.coachUids || []).filter((uid) => uid in parent);
+    for (let i = 1; i < uids.length; i++) union(uids[0], uids[i]);
+  });
+  const teamsByRoot = {};
+  coaches.forEach((co) => { (teamsByRoot[find(co.uid)] = teamsByRoot[find(co.uid)] || []).push(co); });
+  return Object.values(teamsByRoot).map((members) => {
+    const memberUids = new Set(members.map((m) => m.uid));
+    const swimmerCount = swimmers.filter((sw) => (sw.coachUids || []).some((uid) => memberUids.has(uid))).length;
+    return { members, swimmerCount };
+  }).sort((a, b) => b.swimmerCount - a.swimmerCount);
+}
+
 function AdminStatsPanel({ owner }) {
   const { c, s } = useUI();
   const [coaches, setCoaches] = useState(null);
@@ -1921,10 +1999,7 @@ function AdminStatsPanel({ owner }) {
   if (err) return <><div style={s.h2}>Stats</div><Card style={{ borderColor: c.red }}>Failed to load: {err}</Card></>;
   if (!coaches) return <><div style={s.h2}>Stats</div><Center>Loading…</Center></>;
 
-  const countByCoach = {};
-  swimmers.forEach((sw) => (sw.coachUids || []).forEach((uid) => { countByCoach[uid] = (countByCoach[uid] || 0) + 1; }));
-  const coachRows = coaches.map((co) => ({ ...co, swimmerCount: countByCoach[co.uid] || 0 }))
-    .sort((a, b) => b.swimmerCount - a.swimmerCount);
+  const teams = groupCoachesIntoTeams(coaches, swimmers);
   const openCodes = codes.filter((cd) => !cd.usedBy);
   const usedCodes = codes.filter((cd) => cd.usedBy);
 
@@ -1932,19 +2007,21 @@ function AdminStatsPanel({ owner }) {
     <>
       <div style={s.h2}>Stats</div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-        <KPI val={coaches.length} lbl="Coaches" />
+        <KPI val={teams.length} lbl="Teams" />
         <KPI val={swimmers.length} lbl="Swimmers" />
         <KPI val={openCodes.length} lbl="Open Codes" color={c.amber} />
       </div>
       <Card style={{ padding: 6 }}>
-        {coachRows.map((co, i) => (
-          <div key={co.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "9px 10px", borderBottom: i < coachRows.length - 1 ? `1px solid ${c.line}` : "none" }}>
+        {teams.map((team, i) => (
+          <div key={team.members[0].uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "9px 10px", borderBottom: i < teams.length - 1 ? `1px solid ${c.line}` : "none" }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{co.name || co.email}</div>
-              {co.name && <div style={{ fontSize: 11, color: c.dim }}>{co.email}</div>}
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                {team.members.map((m) => m.name || m.email).join(" + ")}
+              </div>
+              <div style={{ fontSize: 11, color: c.dim }}>{team.members.map((m) => m.email).join(" · ")}</div>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: c.blue }}>{co.swimmerCount}</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: c.blue }}>{team.swimmerCount}</div>
           </div>
         ))}
       </Card>

@@ -229,14 +229,19 @@ export async function claimOrphanedSwimmers(user) {
   } catch (e) { console.error("claimOrphanedSwimmers failed:", e); }
 }
 
-// ── Invite codes (config for onboarding new coaches) ──────────────────
-// inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt, note }.
-// Owner-only to create; single-use, self-service to redeem.
-export async function createInviteCode(ownerUser, note) {
+// ── Invite codes ────────────────────────────────────────────────────
+// inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt, note,
+//   targetCoachUid?, swimmerIds? }.
+// Two kinds: (1) a plain code (owner-only) creates a brand-new,
+// independent coach with an empty roster; (2) a "join my team" code
+// (any coach, for their own uid only — see firestore.rules) shares the
+// creator's CURRENT swimmer list with whoever redeems it, same access
+// a co-coach already has. Single-use, self-service to redeem either way.
+export async function createInviteCode(user, note, shareWith) {
   const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-  await setDoc(doc(db, "inviteCodes", code), {
-    createdAt: Date.now(), createdBy: ownerUser.email, usedBy: null, usedAt: null, note: note || "",
-  });
+  const payload = { createdAt: Date.now(), createdBy: user.email, usedBy: null, usedAt: null, note: note || "" };
+  if (shareWith) { payload.targetCoachUid = shareWith.targetCoachUid; payload.swimmerIds = shareWith.swimmerIds; }
+  await setDoc(doc(db, "inviteCodes", code), payload);
   return code;
 }
 
@@ -262,13 +267,24 @@ export async function fetchInviteCode(code) {
   return snap.exists() ? snap.data() : null;
 }
 
-// Redeem an invite code: marks it used by this account, then creates the
-// coaches/{uid} doc that actually grants access. Throws if the code is
-// missing/already used — caller should show that message to the user.
+// Redeem an invite code: marks it used by this account, creates the
+// coaches/{uid} doc that grants base access, and — if this was a "join my
+// team" code — self-writes pendingShares/{uid} then adds this account to
+// every listed swimmer's coachUids (see the matching bridge in
+// firestore.rules). Throws if the code is missing/already used — caller
+// should show that message to the user.
 export async function redeemInviteCode(code, user) {
   const inv = await fetchInviteCode(code);
   if (!inv) throw new Error("Invite code not found.");
   if (inv.usedBy) throw new Error("This invite code has already been used.");
   await setDoc(doc(db, "inviteCodes", code), { usedBy: user.email, usedAt: Date.now() }, { merge: true });
   await createCoachDoc(user);
+  if (inv.targetCoachUid && Array.isArray(inv.swimmerIds) && inv.swimmerIds.length) {
+    await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds: inv.swimmerIds, claimedAt: Date.now() });
+    const results = await Promise.allSettled(inv.swimmerIds.map((id) =>
+      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+    ));
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
+  }
 }
