@@ -21,6 +21,7 @@ import {
   lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
   recordKey, rudolphTrend, usaStandardsForAge, USA_TIERS, USA_STROKES,
   wrAgeGroup, wrAvailableGroups, wrGapColor, wrGapRows,
+  teamUsaTierSummary, teamRudolphSummary, teamHighlights,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -227,6 +228,7 @@ const TABS = [
   { key: "progress", label: "Progress", icon: "📈" },
   { key: "records", label: "Records", icon: "🏅" },
   { key: "seasons", label: "Seasons", icon: "🗓" },
+  { key: "team", label: "Team", icon: "👥" },
   { key: "settings", label: "Settings", icon: "⚙️" },
 ];
 const ADMIN_TAB = { key: "admin", label: "Admin", icon: "🔑" };
@@ -1935,6 +1937,8 @@ export default function App() {
         <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers} />
       ) : tab === "admin" ? (
         <AdminTab user={user} />
+      ) : tab === "team" ? (
+        <TeamTab swimmers={swimmers} rudolphDoc={rudolphDoc} usaStandardsDoc={usaStandardsDoc} />
       ) : (
         <>
           {loadErr && <div style={s.pad}><Card style={{ borderColor: "#ef4444" }}>{loadErr}</Card></div>}
@@ -1953,6 +1957,96 @@ export default function App() {
         </>
       )}
       <BottomNav tab={tab} setTab={setTab} owner={isOwner(user)} />
+    </div>
+  );
+}
+
+function relTime(ts) {
+  if (!ts) return "never";
+  const diff = Date.now() - ts, day = 24 * 3600 * 1000;
+  if (diff < 3600 * 1000) return "just now";
+  if (diff < day) return Math.floor(diff / 3600000) + "h ago";
+  const days = Math.floor(diff / day);
+  if (days < 30) return days + "d ago";
+  const months = Math.floor(days / 30);
+  if (months < 12) return months + "mo ago";
+  return Math.floor(months / 12) + "y ago";
+}
+
+// Cross-swimmer view of a coach's own roster: highlights, USA Standards /
+// Rudolph performance split, and per-swimmer last-synced health. Visible to
+// every coach (not owner-gated), unlike AdminTab below.
+function TeamTab({ swimmers, rudolphDoc, usaStandardsDoc }) {
+  const { c, s } = useUI();
+  const roster = useMemo(() => swimmers.map((sw) => ({ swimmer: sw, D: sw.seasons || {} })), [swimmers]);
+  const highlights = useMemo(() => teamHighlights(roster), [roster]);
+  const usaSummary = useMemo(() => teamUsaTierSummary(roster, usaStandardsDoc && usaStandardsDoc.table), [roster, usaStandardsDoc]);
+  const rudSummary = useMemo(() => teamRudolphSummary(roster, rudolphDoc && rudolphDoc.table), [roster, rudolphDoc]);
+  const totalPBs = roster.reduce((sum, { swimmer, D }) => {
+    if (!seasons(D).length) return sum;
+    const recap = seasonRecap(D, swimmer)[0];
+    return sum + (recap ? recap.nPBs : 0);
+  }, 0);
+
+  if (!swimmers.length) {
+    return <div style={s.pad}><Card>No swimmers on your roster yet — add one in Settings.</Card></div>;
+  }
+
+  return (
+    <div style={s.pad}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <KPI val={swimmers.length} lbl="Swimmers" color={c.blue} />
+        <KPI val={totalPBs} lbl="PBs This Season" color={c.amber} />
+      </div>
+
+      {highlights.length > 0 && <>
+        <div style={s.h2}>Highlights</div>
+        {highlights.map((it, i) => (
+          <div key={i} style={{ ...s.card, display: "flex", gap: 12, alignItems: "flex-start",
+            borderLeft: `4px solid ${c[INSIGHT_COLOR[it.type]] || c.blue}`, marginBottom: 10 }}>
+            <div style={{ fontSize: 22 }}>{it.ico}</div>
+            <div><div style={{ fontWeight: 700, fontSize: 14 }}>{it.title}</div>
+              {it.text && <div style={{ fontSize: 12.5, color: c.dim, marginTop: 3, lineHeight: 1.5 }}>{it.text}</div>}</div>
+          </div>
+        ))}
+      </>}
+
+      <div style={s.h2}>Performance Split</div>
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", marginBottom: 8 }}>USA Standards (ages 10-18)</div>
+        {usaSummary.perSwimmer.length ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {USA_TIERS.filter((t) => usaSummary.histogram[t] > 0).map((t) => (
+              <span key={t} style={{ fontSize: 12.5, fontWeight: 700, color: c.blue, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 10px" }}>
+                {t}: {usaSummary.histogram[t]}
+              </span>
+            ))}
+          </div>
+        ) : <div style={{ fontSize: 12.5, color: c.dim }}>No swimmers ages 10-18 with standards data yet.</div>}
+
+        <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", margin: "14px 0 8px" }}>Rudolph Age Score</div>
+        {rudSummary.perSwimmer.length ? (
+          <>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>Team average: <b>{rudSummary.avg.toFixed(1)}</b> pts</div>
+            {rudSummary.perSwimmer.slice().sort((a, b) => b.score - a.score).map((p) => (
+              <div key={p.swimmer.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${c.line}`, fontSize: 12.5 }}>
+                <span>{p.swimmer.name}</span><span style={{ fontWeight: 700 }}>{p.score.toFixed(1)} pts</span>
+              </div>
+            ))}
+          </>
+        ) : <div style={{ fontSize: 12.5, color: c.dim }}>No Rudolph-scored swims yet.</div>}
+      </Card>
+
+      <div style={s.h2}>Roster Health</div>
+      <Card style={{ padding: 6 }}>
+        {swimmers.map((sw, i) => (
+          <div key={sw.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "9px 10px", borderBottom: i < swimmers.length - 1 ? `1px solid ${c.line}` : "none" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{sw.name}</span>
+            <span style={{ fontSize: 11.5, color: c.dim }}>{relTime(sw.updatedAt)}</span>
+          </div>
+        ))}
+      </Card>
     </div>
   );
 }
@@ -1999,12 +2093,14 @@ function AdminStatsPanel({ owner }) {
   const [coaches, setCoaches] = useState(null);
   const [swimmers, setSwimmers] = useState(null);
   const [codes, setCodes] = useState(null);
+  const [rudolphDoc, setRudolphDoc] = useState(null);
+  const [usaStandardsDoc, setUsaStandardsDoc] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     if (!owner) return;
-    Promise.all([fetchAllCoaches(), fetchAllSwimmersAdmin(), fetchAllInviteCodes()])
-      .then(([co, sw, cd]) => { setCoaches(co); setSwimmers(sw); setCodes(cd); })
+    Promise.all([fetchAllCoaches(), fetchAllSwimmersAdmin(), fetchAllInviteCodes(), fetchRudolph(), fetchUsaStandards()])
+      .then(([co, sw, cd, rud, usa]) => { setCoaches(co); setSwimmers(sw); setCodes(cd); setRudolphDoc(rud); setUsaStandardsDoc(usa); })
       .catch((e) => setErr(e.message));
   }, [owner]);
 
@@ -2015,6 +2111,10 @@ function AdminStatsPanel({ owner }) {
   const teams = groupCoachesIntoTeams(coaches, swimmers);
   const openCodes = codes.filter((cd) => !cd.usedBy);
   const usedCodes = codes.filter((cd) => cd.usedBy);
+  const roster = swimmers.map((sw) => ({ swimmer: sw, D: sw.seasons || {} }));
+  const usaSummary = teamUsaTierSummary(roster, usaStandardsDoc && usaStandardsDoc.table);
+  const rudSummary = teamRudolphSummary(roster, rudolphDoc && rudolphDoc.table);
+  const stalest = swimmers.slice().sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0)).slice(0, 8);
 
   return (
     <>
@@ -2055,6 +2155,33 @@ function AdminStatsPanel({ owner }) {
             </div>
           ))
         )}
+      </Card>
+
+      <div style={s.h2}>Performance Split (all coaches)</div>
+      <Card style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", marginBottom: 8 }}>USA Standards (ages 10-18)</div>
+        {usaSummary.perSwimmer.length ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {USA_TIERS.filter((t) => usaSummary.histogram[t] > 0).map((t) => (
+              <span key={t} style={{ fontSize: 12.5, fontWeight: 700, color: c.blue, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 10px" }}>
+                {t}: {usaSummary.histogram[t]}
+              </span>
+            ))}
+          </div>
+        ) : <div style={{ fontSize: 12.5, color: c.dim }}>No swimmers ages 10-18 with standards data yet.</div>}
+        <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", margin: "14px 0 4px" }}>Rudolph Age Score</div>
+        <div style={{ fontSize: 13 }}>{rudSummary.avg != null ? <>Average: <b>{rudSummary.avg.toFixed(1)}</b> pts across {rudSummary.perSwimmer.length} swimmer(s)</> : "No Rudolph-scored swims yet."}</div>
+      </Card>
+
+      <div style={s.h2}>Least Recently Synced</div>
+      <Card style={{ padding: 6 }}>
+        {stalest.map((sw, i) => (
+          <div key={sw.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "9px 10px", borderBottom: i < stalest.length - 1 ? `1px solid ${c.line}` : "none" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{sw.name}</span>
+            <span style={{ fontSize: 11.5, color: c.dim }}>{relTime(sw.updatedAt)}</span>
+          </div>
+        ))}
       </Card>
     </>
   );

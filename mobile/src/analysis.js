@@ -773,6 +773,82 @@ export function wrGapRows(table, S, group, D, birthdate) {
   return rows.slice(0, 5);
 }
 
+// ── Team View (cross-swimmer aggregates for a coach's own roster) ───────
+// `roster` = [{ swimmer, D }, ...] — one entry per swimmer on the roster,
+// `swimmer` the doc (name/birthdate/sex) and `D` its seasons map. All three
+// functions below are pure and just loop the existing per-swimmer analysis
+// functions above; they never fetch anything themselves.
+
+// USA Standards tier histogram (ages 10-18 only, per the feature's own
+// scope). Each swimmer's "headline tier" is the single highest B..AAAA tier
+// they've reached in either distance band, using the same "current age +
+// best-ever time" convention the per-swimmer USA Standards view already
+// uses (see usaStandardsForAge's call site in App.jsx).
+export function teamUsaTierSummary(roster, table) {
+  const histogram = {}; USA_TIERS.forEach((t) => (histogram[t] = 0));
+  const perSwimmer = [];
+  if (!table) return { histogram, perSwimmer };
+  roster.forEach(({ swimmer, D }) => {
+    if (!swimmer || !swimmer.birthdate) return;
+    const age = Math.floor(recordAge(swimmer.birthdate, null));
+    if (age < 10 || age > 18) return;
+    const { shortTier, longTier } = usaStandardsForAge(D, table, swimmer.sex, swimmer.birthdate, age);
+    const best = Math.max(0, ...Object.values(shortTier), ...Object.values(longTier));
+    if (best > 0) {
+      histogram[USA_TIERS[best - 1]]++;
+      perSwimmer.push({ swimmer, tier: USA_TIERS[best - 1] });
+    }
+  });
+  return { histogram, perSwimmer };
+}
+
+// Rudolph age-graded score per swimmer (long-course only, same convention as
+// the per-swimmer Rudolph trend view) — latest scored swim's points, plus
+// the team average.
+export function teamRudolphSummary(roster, table) {
+  const perSwimmer = [];
+  if (!table) return { avg: null, perSwimmer };
+  roster.forEach(({ swimmer, D }) => {
+    if (!swimmer || !swimmer.birthdate) return;
+    const tr = rudolphTrend(D, table, swimmer.sex, swimmer.birthdate, { pool: "50" });
+    if (!tr.points.length) return;
+    const latest = tr.points.reduce((a, b) => (b.x > a.x ? b : a));
+    perSwimmer.push({ swimmer, score: latest.y });
+  });
+  const avg = perSwimmer.length ? perSwimmer.reduce((s, p) => s + p.score, 0) / perSwimmer.length : null;
+  return { avg, perSwimmer };
+}
+
+// Team-wide highlights, in the same { type, ico, title, text } shape
+// insights() already uses (so the existing insight-card UI renders these
+// unmodified), plus swimmerName. Most-improved event and biggest single PB
+// across the whole roster's latest season.
+export function teamHighlights(roster) {
+  const out = [];
+  let bestImp = null, bestPB = null, busiest = null;
+  roster.forEach(({ swimmer, D }) => {
+    const ss = seasons(D);
+    if (!ss.length) return;
+    const recap = seasonRecap(D, swimmer)[0]; // latest season first
+    if (recap && recap.impEv && (!bestImp || recap.impPct > bestImp.pct))
+      bestImp = { name: swimmer.name, event: recap.impEv, pct: recap.impPct };
+    if (recap && recap.bestPts && (!bestPB || recap.bestPts.points > bestPB.points))
+      bestPB = { name: swimmer.name, event: recap.bestPts.event, points: recap.bestPts.points };
+    if (recap && (!busiest || recap.nMeets > busiest.nMeets))
+      busiest = { name: swimmer.name, nMeets: recap.nMeets };
+  });
+  if (bestImp)
+    out.push({ type: "green", ico: "🚀", swimmerName: bestImp.name,
+      title: "Most improved: " + bestImp.name, text: bestImp.event + " · +" + bestImp.pct.toFixed(1) + "%" });
+  if (bestPB)
+    out.push({ type: "blue", ico: "🏅", swimmerName: bestPB.name,
+      title: "Top points swim: " + bestPB.name, text: bestPB.event + " · " + bestPB.points + " pts" });
+  if (busiest && busiest.nMeets > 0)
+    out.push({ type: "amber", ico: "📅", swimmerName: busiest.name,
+      title: "Busiest competitor: " + busiest.name, text: busiest.nMeets + " meet" + (busiest.nMeets !== 1 ? "s" : "") + " this season" });
+  return out;
+}
+
 // Event-coverage heat map for one season: stroke (rows) × distance (cols),
 // value = number of swims. Used to see which events were raced and how often.
 export function eventHeatmap(D, seasonKey) {

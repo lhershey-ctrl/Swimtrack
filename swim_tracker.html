@@ -170,6 +170,7 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   <button class="tab-btn" onclick="switchTab('extract')" id="t-extract">Extract Data</button>
   <button class="tab-btn active" onclick="switchTab('analyze')" id="t-analyze">Analyze</button>
   <button class="tab-btn" onclick="switchTab('race')" id="t-race"><span class="tn">🏁</span>Race</button>
+  <button class="tab-btn" onclick="switchTab('team')" id="t-team"><span class="tn">👥</span>Team</button>
   <button class="tab-btn" onclick="switchTab('settings')" id="t-settings"><span class="tn">⚙</span>Settings</button>
   <button class="tab-btn" onclick="switchTab('admin')" id="t-admin" style="display:none"><span class="tn">🔑</span>Admin</button>
 </div>
@@ -1201,6 +1202,18 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
 
 </div>
 
+<div id="tc-team" class="page" style="display:none">
+
+  <div class="section-title">👥 Team</div>
+  <div class="metrics" id="teamMetrics" style="margin-bottom:20px"></div>
+  <div id="teamHighlights" style="margin-bottom:20px"></div>
+  <div class="section-title">📊 Performance Split</div>
+  <div id="teamPerf" style="margin-bottom:20px"></div>
+  <div class="section-title">🩺 Roster Health</div>
+  <div id="teamHealth" class="card" style="padding:6px"></div>
+
+</div>
+
 <div id="tc-admin" class="page" style="display:none">
 
   <div class="section-title">📊 Stats</div>
@@ -1208,6 +1221,10 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   <div id="adminCoachesCard" class="card" style="padding:6px;margin-bottom:20px"></div>
   <div class="section-title">🎟 Invite Codes</div>
   <div id="adminCodesCard" class="card" style="padding:6px;margin-bottom:24px"></div>
+  <div class="section-title">📊 Performance Split (all coaches)</div>
+  <div id="adminPerf" style="margin-bottom:20px"></div>
+  <div class="section-title">🩺 Least Recently Synced</div>
+  <div id="adminStale" class="card" style="padding:6px;margin-bottom:24px"></div>
 
   <div class="section-title">🔑 Invite a Coach</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time invite code for a new coach. They sign in with Google, then enter this code to activate their account — after that, just Google sign-in like everyone else. Each code works once.</p>
@@ -1602,7 +1619,7 @@ window.extractFromHtmlFile = function(e){
 //  TAB SWITCHING
 // ═══════════════════════════════════════════════════════════════════
 function switchTab(n){
-  ['extract','analyze','race','settings','admin'].forEach(function(t){
+  ['extract','analyze','race','team','settings','admin'].forEach(function(t){
     document.getElementById('tc-'+t).style.display=t===n?'':'none';
     document.getElementById('t-'+t).classList.toggle('active',t===n);
   });
@@ -1612,6 +1629,9 @@ function switchTab(n){
   }
   if(n==='race') initRaceTab();
   if(n==='analyze') setTimeout(function(){window.dispatchEvent(new Event('resize'));},50);
+  if(n==='team'){
+    if(typeof window.renderTeamStats==='function')window.renderTeamStats();
+  }
   if(n==='admin'){
     if(typeof window.renderInviteBar==='function')window.renderInviteBar();
     if(typeof window.renderAdminStats==='function')window.renderAdminStats();
@@ -5235,6 +5255,215 @@ async function redeemInviteCode(code, user) {
 // Groups coach accounts into "teams" via union-find over shared swimmers —
 // two coaches are the same team if they co-appear in any swimmer's
 // coachUids. Mirrors mobile's groupCoachesIntoTeams (App.jsx).
+// ── Team View aggregation (parameterized twins of the single-swimmer ⑩/⑪
+// math above — these take D explicitly instead of reading the global D, so
+// Team View can loop every roster swimmer without touching whichever
+// swimmer is currently loaded on the Analyze tab). ──
+function _teamAllResults(D) {
+  var seen = new Set(), res = [];
+  Object.keys(D).sort().forEach(function (sk) {
+    var s = D[sk], src = s.results && s.results.length ? s.results : [];
+    src.forEach(function (r) {
+      if (!r.event || !r.seconds || r.seconds <= 0 || isRelay(r.event)) return;
+      var key = r.event + '|' + (r.pool || '') + '|' + (r.date || '') + '|' + r.seconds;
+      if (seen.has(key)) return; seen.add(key);
+      res.push(Object.assign({}, r, { pool: poolNorm(r.pool) }));
+    });
+  });
+  return res;
+}
+function _teamBestInGroup(D, pool, bd, cat) {
+  var range = _recRange(cat), out = {};
+  Object.keys(D).sort().forEach(function (sk) {
+    (D[sk].bests || []).forEach(function (b) {
+      if (!b.event || !b.seconds || isRelay(b.event) || poolNorm(b.pool) !== pool) return;
+      if (range) { var a = _recAge(bd, parseDate(b.date)); if (a == null || a < range[0] || a > range[1]) return; }
+      if (!out[b.event] || b.seconds < out[b.event].seconds) out[b.event] = { seconds: b.seconds, time: b.time };
+    });
+  });
+  return out;
+}
+function _teamUsaTier(D, table, sex, bd, age) {
+  var shortTier = {}, longTier = {};
+  USA_STROKES.forEach(function (s) { shortTier[s] = 0; longTier[s] = 0; });
+  [['25', 'SCM'], ['50', 'LCM']].forEach(function (pair) {
+    var pool = pair[0], course = pair[1], best = _teamBestInGroup(D, pool, bd, String(age));
+    Object.keys(best).forEach(function (ev) {
+      var stroke = getStroke(ev); if (USA_STROKES.indexOf(stroke) < 0) return;
+      var dist = extractDist(ev), tier = _usaTier(table, course, age, sex, ev, best[ev].seconds);
+      var bucket = dist <= 100 ? shortTier : longTier;
+      if (tier > bucket[stroke]) bucket[stroke] = tier;
+    });
+  });
+  return { shortTier: shortTier, longTier: longTier };
+}
+// Latest scored swim's Rudolph points (long course only) — same "most
+// recent, not best-ever" convention as mobile's teamRudolphSummary.
+function _teamRudolphScore(D, table, sex, bd) {
+  var latest = null;
+  _teamAllResults(D).filter(function (r) { return r.pool === '50'; }).forEach(function (r) {
+    var ts = parseDate(r.date); if (!ts) return;
+    var age = _recAge(bd, ts), score = _rudScore(table, sex, age, r.event, r.seconds);
+    if (score == null) return;
+    if (!latest || ts > latest.ts) latest = { ts: ts, score: score };
+  });
+  return latest ? latest.score : null;
+}
+function _teamPBTimeline(D) {
+  var ar = _teamAllResults(D).slice().sort(function (a, b) { return (parseDate(a.date) || 0) - (parseDate(b.date) || 0); });
+  var bests = {}, pbKeys = new Set();
+  ar.forEach(function (r) {
+    var k = r.event + '|' + (r.pool || '');
+    if (!bests[k] || r.seconds < bests[k]) { bests[k] = r.seconds; pbKeys.add(r.event + '|' + r.pool + '|' + (r.date || '') + '|' + r.seconds); }
+  });
+  return pbKeys;
+}
+// Latest-season recap for one swimmer — nMeets/nPBs/bestPts/impEv/impPct —
+// same fields+convention as mobile's seasonRecap()[0], desktop-side twin.
+function _teamSeasonRecap(D) {
+  var ss = Object.keys(D).sort();
+  if (!ss.length) return null;
+  var sk = ss[ss.length - 1], pbKeys = _teamPBTimeline(D);
+  var res = (D[sk].results || []).filter(function (r) { return r.seconds > 0 && !isRelay(r.event); });
+  var bests = (D[sk].bests || []).filter(function (b) { return b.seconds > 0 && !isRelay(b.event); });
+  var meetSet = new Set(); res.forEach(function (r) { meetSet.add((r.competition || '?') + '__' + (r.date || '?')); });
+  var nPBs = 0;
+  res.forEach(function (r) {
+    var k = r.event + '|' + (poolNorm(r.pool) || '') + '|' + (r.date || '') + '|' + r.seconds;
+    if (pbKeys.has(k)) nPBs++;
+  });
+  var bestPts = null;
+  res.forEach(function (r) { if (r.points > 0 && (!bestPts || r.points > bestPts.points)) bestPts = r; });
+  if (!bestPts) bests.forEach(function (b) { if (b.points > 0 && (!bestPts || b.points > bestPts.points)) bestPts = b; });
+  var firstIn = {}, bestIn = {};
+  res.slice().sort(function (a, b) { return (parseDate(a.date) || 0) - (parseDate(b.date) || 0); }).forEach(function (r) {
+    var k = r.event + '|' + (poolNorm(r.pool) || '');
+    if (!firstIn[k]) firstIn[k] = r.seconds;
+    if (!bestIn[k] || r.seconds < bestIn[k]) bestIn[k] = r.seconds;
+  });
+  var impEv = null, impPct = 0;
+  Object.keys(firstIn).forEach(function (k) {
+    var pct = (firstIn[k] - bestIn[k]) / firstIn[k] * 100;
+    if (pct > impPct) { impPct = pct; impEv = k; }
+  });
+  return { nMeets: meetSet.size, nSwims: res.length, nPBs: nPBs, bestPts: bestPts, impEv: impEv ? impEv.replace('|', ' ') : null, impPct: impPct };
+}
+// roster = [{swimmer:{id,name,birthdate,sex}, D, updatedAt}, ...]
+function _teamHighlights(roster) {
+  var out = [], bestImp = null, bestPB = null, busiest = null;
+  roster.forEach(function (r) {
+    var recap = _teamSeasonRecap(r.D);
+    if (!recap) return;
+    if (recap.impEv && (!bestImp || recap.impPct > bestImp.pct)) bestImp = { name: r.swimmer.name, event: recap.impEv, pct: recap.impPct };
+    if (recap.bestPts && (!bestPB || recap.bestPts.points > bestPB.points)) bestPB = { name: r.swimmer.name, event: recap.bestPts.event, points: recap.bestPts.points };
+    if (!busiest || recap.nMeets > busiest.nMeets) busiest = { name: r.swimmer.name, nMeets: recap.nMeets };
+  });
+  if (bestImp) out.push({ type: 'green', ico: '🚀', title: 'Most improved: ' + bestImp.name, text: bestImp.event + ' · +' + bestImp.pct.toFixed(1) + '%' });
+  if (bestPB) out.push({ type: 'blue', ico: '🏅', title: 'Top points swim: ' + bestPB.name, text: bestPB.event + ' · ' + bestPB.points + ' pts' });
+  if (busiest && busiest.nMeets > 0) out.push({ type: 'amber', ico: '📅', title: 'Busiest competitor: ' + busiest.name, text: busiest.nMeets + ' meet' + (busiest.nMeets !== 1 ? 's' : '') + ' this season' });
+  return out;
+}
+function groupTeamStats(roster, usaTable, rudTable) {
+  var usaHist = {}; USA_TIERS.forEach(function (t) { usaHist[t] = 0; });
+  var usaPer = [], rudPer = [];
+  roster.forEach(function (r) {
+    if (!r.swimmer.birthdate) return;
+    var age = _recAge(r.swimmer.birthdate, null);
+    if (usaTable && age >= 10 && age <= 18) {
+      var tiers = _teamUsaTier(r.D, usaTable, r.swimmer.sex, r.swimmer.birthdate, age);
+      var best = 0;
+      Object.values(tiers.shortTier).concat(Object.values(tiers.longTier)).forEach(function (v) { if (v > best) best = v; });
+      if (best > 0) { usaHist[USA_TIERS[best - 1]]++; usaPer.push({ name: r.swimmer.name, tier: USA_TIERS[best - 1] }); }
+    }
+    if (rudTable) {
+      var score = _teamRudolphScore(r.D, rudTable, r.swimmer.sex, r.swimmer.birthdate);
+      if (score != null) rudPer.push({ name: r.swimmer.name, score: score });
+    }
+  });
+  var rudAvg = rudPer.length ? rudPer.reduce(function (s, p) { return s + p.score; }, 0) / rudPer.length : null;
+  return { usaHistogram: usaHist, usaPerSwimmer: usaPer, rudAvg: rudAvg, rudPerSwimmer: rudPer };
+}
+function _teamRelTime(ts) {
+  if (!ts) return 'never';
+  var diff = Date.now() - ts, day = 24 * 3600 * 1000;
+  if (diff < 3600 * 1000) return 'just now';
+  if (diff < day) return Math.floor(diff / 3600000) + 'h ago';
+  var days = Math.floor(diff / day);
+  if (days < 30) return days + 'd ago';
+  var months = Math.floor(days / 30);
+  if (months < 12) return months + 'mo ago';
+  return Math.floor(months / 12) + 'y ago';
+}
+
+// Fetches every roster swimmer's full doc (incl. .seasons) — unlike
+// refreshCloudSwimmers()/autoSyncProfilesFromCloud() which only ever pull
+// {id,name} or profile fields. Never touches the global D/window.D that the
+// Analyze tab depends on.
+async function fetchTeamData() {
+  if (!cloudSwimmers.length) return [];
+  const snaps = await Promise.all(cloudSwimmers.map((sw) => getDoc(doc(db, "swimmers", sw.id))));
+  return snaps.filter((d) => d.exists()).map((d) => {
+    const data = d.data();
+    return { swimmer: { id: d.id, name: data.name, birthdate: data.birthdate, sex: data.sex }, D: data.seasons || {}, updatedAt: data.updatedAt };
+  });
+}
+
+async function renderTeamStats() {
+  const metricsEl = $("teamMetrics"), hiEl = $("teamHighlights"), perfEl = $("teamPerf"), healthEl = $("teamHealth");
+  if (!metricsEl || !currentUser) return;
+  metricsEl.innerHTML = '<div class="metric"><div class="lbl">Loading…</div></div>';
+  try {
+    const roster = await fetchTeamData();
+    if (!roster.length) {
+      metricsEl.innerHTML = '<div class="metric"><div class="lbl">No swimmers yet</div></div>';
+      hiEl.innerHTML = ""; perfEl.innerHTML = ""; healthEl.innerHTML = '<div style="padding:14px;color:#aaa;font-size:13px">No swimmers on your roster yet.</div>';
+      return;
+    }
+    let totalPBs = 0;
+    roster.forEach((r) => { const recap = _teamSeasonRecap(r.D); if (recap) totalPBs += recap.nPBs; });
+    metricsEl.innerHTML =
+      '<div class="metric hi"><div class="lbl">Swimmers</div><div class="val">' + roster.length + '</div></div>' +
+      '<div class="metric green"><div class="lbl">PBs This Season</div><div class="val">' + totalPBs + '</div></div>';
+
+    const highlights = _teamHighlights(roster);
+    const hiColor = { green: '#1a7a4f', blue: '#185FA5', amber: '#9a6b00', red: '#a32d2d' };
+    hiEl.innerHTML = highlights.map((h) =>
+      '<div class="card" style="display:flex;gap:12px;align-items:flex-start;border-left:4px solid ' + (hiColor[h.type] || '#185FA5') + ';margin-bottom:10px;padding:14px 16px">' +
+      '<div style="font-size:22px">' + h.ico + '</div>' +
+      '<div><div style="font-weight:700;font-size:14px">' + h.title + '</div>' +
+      (h.text ? '<div style="font-size:12.5px;color:#888;margin-top:3px">' + h.text + '</div>' : '') + '</div></div>'
+    ).join('');
+
+    const usaTable = window.__usaStandardsTable || null, rudTable = window.__rudolphTable || null;
+    const stats = groupTeamStats(roster, usaTable, rudTable);
+    const usaChips = USA_TIERS.filter((t) => stats.usaHistogram[t] > 0)
+      .map((t) => '<span style="font-size:12.5px;font-weight:700;color:#185FA5;background:#eff6ff;border:1px solid #93c5fd;border-radius:7px;padding:4px 10px;margin:0 6px 6px 0;display:inline-block">' + t + ': ' + stats.usaHistogram[t] + '</span>').join('');
+    perfEl.innerHTML =
+      '<div class="card" style="padding:16px 20px">' +
+      '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:8px">USA Standards (ages 10-18)</div>' +
+      (usaChips || '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
+      '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin:14px 0 8px">Rudolph Age Score</div>' +
+      (stats.rudAvg != null
+        ? '<div style="font-size:13px;margin-bottom:8px">Team average: <strong>' + stats.rudAvg.toFixed(1) + '</strong> pts</div>' +
+          stats.rudPerSwimmer.slice().sort((a, b) => b.score - a.score).map((p) =>
+            '<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid #f0efe9;font-size:12.5px"><span>' + p.name + '</span><strong>' + p.score.toFixed(1) + ' pts</strong></div>'
+          ).join('')
+        : '<div style="font-size:12.5px;color:#aaa">No Rudolph-scored swims yet.</div>') +
+      '</div>';
+
+    const sorted = roster.slice().sort((a, b) => a.swimmer.name.localeCompare(b.swimmer.name));
+    healthEl.innerHTML = sorted.map((r, i) =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;' +
+      (i < sorted.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
+      '<div style="font-size:13px;font-weight:600">' + r.swimmer.name + '</div>' +
+      '<div style="font-size:11.5px;color:#999">' + _teamRelTime(r.updatedAt) + '</div></div>'
+    ).join('');
+  } catch (e) {
+    metricsEl.innerHTML = '<div class="metric"><div class="lbl" style="color:#c0392b">Failed to load: ' + e.message + '</div></div>';
+  }
+}
+window.renderTeamStats = renderTeamStats;
+
 function groupCoachesIntoTeams(coaches, swimmers) {
   const parent = {};
   coaches.forEach((co) => { parent[co.uid] = co.uid; });
@@ -5257,7 +5486,8 @@ function groupCoachesIntoTeams(coaches, swimmers) {
 // in the app, which is always scoped to the signed-in account's own
 // roster). This is the one place cross-coach visibility is intentional. ──
 async function renderAdminStats() {
-  const metricsEl = $("adminMetrics"), coachesEl = $("adminCoachesCard"), codesEl = $("adminCodesCard");
+  const metricsEl = $("adminMetrics"), coachesEl = $("adminCoachesCard"), codesEl = $("adminCodesCard"),
+    perfEl = $("adminPerf"), staleEl = $("adminStale");
   if (!metricsEl || !isOwner(currentUser)) return;
   metricsEl.innerHTML = '<div class="metric"><div class="lbl">Loading…</div></div>';
   try {
@@ -5295,6 +5525,31 @@ async function renderAdminStats() {
         '<div style="font-size:11px;font-weight:700;color:' + (cd.usedBy ? '#1a7a4f' : '#9a6b00') + '">' +
         (cd.usedBy ? '✅ ' + cd.usedBy : 'Open') + '</div></div>';
     }).join('') : '<div style="padding:14px;color:#aaa;font-size:13px">None generated yet.</div>';
+
+    if (perfEl && staleEl) {
+      const roster = swimmers.map((sw) => ({ swimmer: { id: sw.id, name: sw.name, birthdate: sw.birthdate, sex: sw.sex }, D: sw.seasons || {}, updatedAt: sw.updatedAt }));
+      const usaTable = window.__usaStandardsTable || null, rudTable = window.__rudolphTable || null;
+      const stats = groupTeamStats(roster, usaTable, rudTable);
+      const usaChips = USA_TIERS.filter((t) => stats.usaHistogram[t] > 0)
+        .map((t) => '<span style="font-size:12.5px;font-weight:700;color:#185FA5;background:#eff6ff;border:1px solid #93c5fd;border-radius:7px;padding:4px 10px;margin:0 6px 6px 0;display:inline-block">' + t + ': ' + stats.usaHistogram[t] + '</span>').join('');
+      perfEl.innerHTML =
+        '<div class="card" style="padding:16px 20px">' +
+        '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:8px">USA Standards (ages 10-18)</div>' +
+        (usaChips || '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
+        '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin:14px 0 4px">Rudolph Age Score</div>' +
+        (stats.rudAvg != null
+          ? '<div style="font-size:13px">Average: <strong>' + stats.rudAvg.toFixed(1) + '</strong> pts across ' + stats.rudPerSwimmer.length + ' swimmer(s)</div>'
+          : '<div style="font-size:12.5px;color:#aaa">No Rudolph-scored swims yet.</div>') +
+        '</div>';
+
+      const stalest = roster.slice().sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0)).slice(0, 8);
+      staleEl.innerHTML = stalest.length ? stalest.map((r, i) =>
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;' +
+        (i < stalest.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
+        '<div style="font-size:13px;font-weight:600">' + r.swimmer.name + '</div>' +
+        '<div style="font-size:11.5px;color:#999">' + _teamRelTime(r.updatedAt) + '</div></div>'
+      ).join('') : '<div style="padding:14px;color:#aaa;font-size:13px">No swimmers yet.</div>';
+    }
   } catch (e) {
     metricsEl.innerHTML = '<div class="metric"><div class="lbl" style="color:#c0392b">Failed to load: ' + e.message + '</div></div>';
   }
