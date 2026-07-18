@@ -228,12 +228,14 @@ const TABS = [
   { key: "seasons", label: "Seasons", icon: "🗓" },
   { key: "settings", label: "Settings", icon: "⚙️" },
 ];
-function BottomNav({ tab, setTab }) {
+const ADMIN_TAB = { key: "admin", label: "Admin", icon: "🔑" };
+function BottomNav({ tab, setTab, owner }) {
   const { c } = useUI();
+  const tabs = owner ? TABS.concat([ADMIN_TAB]) : TABS;
   return (
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 30, maxWidth: 540, margin: "0 auto",
       background: c.card, borderTop: `1px solid ${c.line}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)" }}>
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <button key={t.key} onClick={() => setTab(t.key)} style={{ flex: 1, background: "none", border: "none",
           cursor: "pointer", padding: "9px 0 11px", color: tab === t.key ? c.blue : c.dim, fontWeight: 700 }}>
           <div style={{ fontSize: 19, filter: tab === t.key ? "none" : "grayscale(.4) opacity(.8)" }}>{t.icon}</div>
@@ -1499,8 +1501,6 @@ function SettingsTab({ user, swimmers, reloadSwimmers }) {
 
       <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} />
 
-      <InviteCodeManager owner={owner} user={user} />
-
       <AccessManager owner={owner} />
 
       <div style={s.h2}>About</div>
@@ -1790,10 +1790,15 @@ export default function App() {
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
-  useEffect(() => { if (user) fetchRecords().then(setRecordsDoc).catch(() => setRecordsDoc(null)); }, [user]);
-  useEffect(() => { if (user) fetchRudolph().then(setRudolphDoc).catch(() => setRudolphDoc(null)); }, [user]);
-  useEffect(() => { if (user) fetchUsaStandards().then(setUsaStandardsDoc).catch(() => setUsaStandardsDoc(null)); }, [user]);
-  useEffect(() => { if (user) fetchMastersRecords().then(setMastersRecordsDoc).catch(() => setMastersRecordsDoc(null)); }, [user]);
+  // Gated on coachStatus (not just user): a brand-new coach's very first
+  // sign-in fires these before their coaches/{uid} doc exists yet (they
+  // haven't redeemed an invite code), so the first attempt legitimately
+  // fails — re-firing once coachStatus flips to "ok" is what actually
+  // populates these for them instead of leaving them permanently null.
+  useEffect(() => { if (user && coachStatus === "ok") fetchRecords().then(setRecordsDoc).catch(() => setRecordsDoc(null)); }, [user, coachStatus]);
+  useEffect(() => { if (user && coachStatus === "ok") fetchRudolph().then(setRudolphDoc).catch(() => setRudolphDoc(null)); }, [user, coachStatus]);
+  useEffect(() => { if (user && coachStatus === "ok") fetchUsaStandards().then(setUsaStandardsDoc).catch(() => setUsaStandardsDoc(null)); }, [user, coachStatus]);
+  useEffect(() => { if (user && coachStatus === "ok") fetchMastersRecords().then(setMastersRecordsDoc).catch(() => setMastersRecordsDoc(null)); }, [user, coachStatus]);
 
   function loadSwimmers() {
     return fetchSwimmers(user)
@@ -1852,6 +1857,8 @@ export default function App() {
       <TopBar user={user} swimmer={swimmer} swimmers={swimmers} onPick={setSwimmerId} onSignOut={signOut} />
       {tab === "settings" ? (
         <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers} />
+      ) : tab === "admin" ? (
+        <AdminTab user={user} />
       ) : (
         <>
           {loadErr && <div style={s.pad}><Card style={{ borderColor: "#ef4444" }}>{loadErr}</Card></div>}
@@ -1869,7 +1876,16 @@ export default function App() {
           </TabErrorBoundary>}
         </>
       )}
-      <BottomNav tab={tab} setTab={setTab} />
+      <BottomNav tab={tab} setTab={setTab} owner={isOwner(user)} />
+    </div>
+  );
+}
+
+function AdminTab({ user }) {
+  const { s } = useUI();
+  return (
+    <div style={s.pad}>
+      <InviteCodeManager owner={isOwner(user)} user={user} />
     </div>
   );
 }

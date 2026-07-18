@@ -171,6 +171,7 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   <button class="tab-btn active" onclick="switchTab('analyze')" id="t-analyze">Analyze</button>
   <button class="tab-btn" onclick="switchTab('race')" id="t-race"><span class="tn">🏁</span>Race</button>
   <button class="tab-btn" onclick="switchTab('settings')" id="t-settings"><span class="tn">⚙</span>Settings</button>
+  <button class="tab-btn" onclick="switchTab('admin')" id="t-admin" style="display:none"><span class="tn">🔑</span>Admin</button>
 </div>
 
 <!-- ══════════ TAB 1 · EXTRACTOR ══════════ -->
@@ -383,10 +384,10 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
 
 <script>
 (function(){
-  var DEFAULT_SWIMMERS=[
-    {name:'Noga',id:'268117',seasonIds:[],heights:[],weights:[],birthdate:'',sex:''},
-    {name:'Gal',id:'276401',seasonIds:[],heights:[],weights:[],birthdate:'',sex:''}
-  ];
+  // No hardcoded defaults — a fresh browser starts empty. Signing in
+  // auto-populates each coach's own swimmers via autoSyncProfilesFromCloud();
+  // anyone can also add a swimmer manually below.
+  var DEFAULT_SWIMMERS=[];
   var SWIMMERS,activeSwimmer=0;
 
   function loadSettings(){
@@ -889,14 +890,6 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     <span id="cloudActions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
   </div>
 
-  <!-- ☁ INVITE A COACH (owner-only) -->
-  <div id="inviteBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 2px;padding:11px 14px;background:linear-gradient(135deg,#f0faf5,#f7fdfa);border:1px solid #b7e4cc;border-radius:12px">
-    <span style="font-size:13px;color:#1a7a4f;font-weight:800">🔑 Invite a Coach</span>
-    <input id="inviteNote" placeholder="Note (e.g. coach's name) — optional" style="padding:6px 10px;border:1px solid #b7e4cc;border-radius:7px;font-size:12px;min-width:160px">
-    <span style="flex:1"></span>
-    <span id="inviteActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
-  </div>
-
   <div id="swimmerBanner" style="display:none;margin:14px 0 20px"></div>
 
   <div id="analysis" style="display:none">
@@ -1160,6 +1153,19 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   <p id="settingsCloudStatus" style="font-size:12px;margin-top:6px;font-weight:600"></p>
   <p id="settingsLoadStatus" style="font-size:12px;margin-top:6px"></p>
   <p style="font-size:12px;color:#aaa;margin-top:8px">Changes save automatically in this browser. Height, weight &amp; profile also save to the cloud (for the phone app) when you're signed in — use <strong>☁ Save to Cloud</strong> to sign in and push everything.</p>
+
+</div>
+
+<div id="tc-admin" class="page" style="display:none">
+
+  <div class="section-title">🔑 Invite a Coach</div>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time invite code for a new coach. They sign in with Google, then enter this code to activate their account — after that, just Google sign-in like everyone else. Each code works once.</p>
+  <div class="card" style="padding:16px 20px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="inviteNote" placeholder="Note (e.g. coach's name) — optional" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-family:inherit">
+      <span id="inviteActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
+    </div>
+  </div>
 
 </div>
 
@@ -1545,13 +1551,14 @@ window.extractFromHtmlFile = function(e){
 //  TAB SWITCHING
 // ═══════════════════════════════════════════════════════════════════
 function switchTab(n){
-  ['extract','analyze','race','settings'].forEach(function(t){
+  ['extract','analyze','race','settings','admin'].forEach(function(t){
     document.getElementById('tc-'+t).style.display=t===n?'':'none';
     document.getElementById('t-'+t).classList.toggle('active',t===n);
   });
   if(n==='settings' && typeof renderSettingsUI==='function'){renderSettingsUI();renderPhysStats();}
   if(n==='race') initRaceTab();
   if(n==='analyze') setTimeout(function(){window.dispatchEvent(new Event('resize'));},50);
+  if(n==='admin' && typeof window.renderInviteBar==='function') window.renderInviteBar();
 }
 
 // Analyze-tab sub-navigation: groups the (many) sections into Overview /
@@ -4600,7 +4607,7 @@ function render() {
       try {
         await redeemInviteCode(code, currentUser);
         coachStatus = "ok";
-        refreshCloudSwimmers(); autoSyncProfilesFromCloud();
+        refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables();
         render();
       } catch (e) { st.style.color = "#c0392b"; st.textContent = "❌ " + e.message; }
     }, "#1D9E75"));
@@ -4632,10 +4639,10 @@ function render() {
 
 let generatedCodes = []; // [{code, note}] generated this session
 function renderInviteBar() {
-  const bar = $("inviteBar"), out = $("inviteActions"), noteInput = $("inviteNote");
-  if (!bar || !out) return;
-  if (!isOwner(currentUser)) { bar.style.display = "none"; return; }
-  bar.style.display = "flex";
+  const tabBtn = $("t-admin"), out = $("inviteActions"), noteInput = $("inviteNote");
+  if (!tabBtn) return;
+  tabBtn.style.display = isOwner(currentUser) ? "" : "none";
+  if (!isOwner(currentUser) || !out) return;
   out.innerHTML = "";
   out.appendChild(btn("Generate code", async () => {
     try {
@@ -4652,6 +4659,7 @@ function renderInviteBar() {
     out.appendChild(chip);
   });
 }
+window.renderInviteBar = renderInviteBar;
 
 async function swimLoadFromCloud(id) {
   const snap = await getDoc(doc(db, "swimmers", String(id)));
@@ -5052,6 +5060,19 @@ async function redeemInviteCode(code, user) {
   await createCoachDoc(user);
 }
 
+// Fetch the shared reference tables (records/Rudolph/USA standards/masters
+// WR) — only once coachStatus is actually "ok". A brand-new coach's very
+// first sign-in has no coaches/{uid} doc yet (they haven't redeemed an
+// invite code), so calling these too early legitimately fails; call this
+// again after that resolves (or after a successful Activate) instead of
+// leaving the statuses permanently stuck on their first failed attempt.
+function refreshSharedTables() {
+  refreshRecordsStatus();
+  refreshRudolphStatus();
+  refreshUsaStandardsStatus();
+  refreshMastersRecordsStatus();
+}
+
 onAuthStateChanged(auth, (u) => {
   currentUser = u; window.swimUser = u;
   if (u) {
@@ -5059,18 +5080,15 @@ onAuthStateChanged(auth, (u) => {
     (isOwner(u) ? Promise.resolve(null) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
       .then((coach) => {
         coachStatus = (isOwner(u) || coach) ? "ok" : "needsInvite";
-        if (coachStatus === "ok") { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); }
+        if (coachStatus === "ok") { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables(); }
         render();
       })
       .catch((e) => { console.error("Coach status check failed:", e); coachStatus = "needsInvite"; render(); });
   } else {
     cloudSwimmers = []; coachStatus = "checking";
+    refreshSharedTables(); // resets each status line back to "sign in…"
   }
   render();
-  refreshRecordsStatus();
-  refreshRudolphStatus();
-  refreshUsaStandardsStatus();
-  refreshMastersRecordsStatus();
 });
 // Re-render the sync button label when the active swimmer changes.
 window.addEventListener("focus", render);
