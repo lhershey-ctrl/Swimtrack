@@ -18,7 +18,7 @@ import {
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
   lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
   recordKey, rudolphTrend, usaStandardsForAge, USA_TIERS, USA_STROKES,
-  wrAgeGroup, wrAvailableGroups, wrGapColor, wrGapRows, bestTimesByPool,
+  wrAgeGroup, wrAvailableGroups, wrGapColor, wrGapRows,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -1073,14 +1073,23 @@ function MastersWrPanel({ D, swimmer, mastersRecordsDoc }) {
   const curAge = birthdate ? recordAge(birthdate, null) : null; // age GROUP, matching World Aquatics' own convention
   const curGroup = curAge != null ? wrAgeGroup(curAge) : null;
   const S = sexNorm(sex);
-  const groups = (table && S) ? wrAvailableGroups(table, S) : [];
-  const defaultGroup = groups.includes(curGroup) ? curGroup : groups[0];
-  const activeGroup = groups.includes(selGroup) ? selGroup : defaultGroup;
 
-  const rows = useMemo(
-    () => (table && S && activeGroup) ? wrGapRows(table, S, activeGroup, bestTimesByPool(D)) : [],
-    [D, table, S, activeGroup]
-  );
+  // Only offer age groups this swimmer actually has results (and WR matches)
+  // in — not every published bracket, and never a future one they haven't
+  // reached yet.
+  const rowsByGroup = useMemo(() => {
+    if (!table || !S || !birthdate) return {};
+    const map = {};
+    wrAvailableGroups(table, S).forEach((g) => {
+      const r = wrGapRows(table, S, g, D, birthdate);
+      if (r.length) map[g] = r;
+    });
+    return map;
+  }, [D, table, S, birthdate]);
+  const groups = Object.keys(rowsByGroup).sort((a, b) => parseInt(a) - parseInt(b));
+  const defaultGroup = groups.includes(curGroup) ? curGroup : groups[groups.length - 1];
+  const activeGroup = groups.includes(selGroup) ? selGroup : defaultGroup;
+  const rows = rowsByGroup[activeGroup] || [];
   const chartData = rows.map((r) => ({ name: r.event, pct: +r.pct.toFixed(1), mine: r.mine, wrTime: r.wrTime, athlete: r.athlete }));
 
   if (curAge == null || curAge <= 30) return null; // only meaningful for masters-age swimmers
@@ -1099,9 +1108,10 @@ function MastersWrPanel({ D, swimmer, mastersRecordsDoc }) {
             105-109), both sexes, long course (LCM) and short course meters (SCM).
           </p>
           <p style={{ margin: 0 }}>
-            Your best-ever time in each event is compared against the record for whichever bracket you pick below —
-            each event judged against its own course (25m → SCM, 50m → LCM). Bars are colour-coded by how close you
-            are: green ≤5%, yellow ≤8%, orange ≤10%, red ≤15%, black beyond that.
+            Your best time <strong>actually swum while in that age bracket</strong> is compared against the record
+            for it — each event judged against its own course (25m → SCM, 50m → LCM). Only brackets you have real
+            results in are shown. Bars are colour-coded by how close you are: green ≤5%, yellow ≤8%, orange ≤10%,
+            red ≤15%, black beyond that.
           </p>
         </InfoModal>
       )}
@@ -1110,7 +1120,7 @@ function MastersWrPanel({ D, swimmer, mastersRecordsDoc }) {
       ) : !birthdate || !sex ? (
         <Card><Center>Set birthdate and sex in Settings to see the gap.</Center></Card>
       ) : !groups.length ? (
-        <Card><Center>No masters records for this sex yet.</Center></Card>
+        <Card><Center>No results yet in any published age group.</Center></Card>
       ) : (
         <>
           <PillRow label="Bracket" active={activeGroup} onPick={setSelGroup}

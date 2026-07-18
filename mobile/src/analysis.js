@@ -183,7 +183,7 @@ export function lookupRecord(records, sex, age, pool, event) {
 export function categoryAgeRange(cat) {
   if (!cat || cat === "open") return null;
   if (/^\d{1,2}$/.test(cat)) return [+cat, +cat];
-  const m = cat.match(/^(\d{2})-(\d{2})$/);
+  const m = cat.match(/^(\d{2,3})-(\d{2,3})$/);
   return m ? [+m[1], +m[2]] : null;
 }
 // Israeli age groups use the age a swimmer REACHES during the calendar year (age on
@@ -731,9 +731,9 @@ export function usaStandardsForAge(D, table, sex, birthdate, age) {
 // records PDFs. Shape:
 //   { table: { "SCM"|"LCM": { "F"|"M": { "25-29".."105-109": { "dist|stroke": {seconds,athlete,date} } } } },
 //     count, loadedAt, by }
-// Unlike the age-restricted USA Standards lookup, this compares a swimmer's
-// BEST-EVER time (any age) against a chosen bracket's record — best-ever
-// time is what's meaningful here, not "best while in that bracket."
+// Like USA Standards, compares the best time actually swum WHILE IN a given
+// age bracket (bestInAgeGroup) against that bracket's record — not a
+// best-ever time, so only brackets the swimmer has real results in show data.
 export function wrAgeGroup(age) {
   if (age == null || age < 25) return null;
   const base = 25 + Math.floor((age - 25) / 5) * 5;
@@ -755,20 +755,13 @@ export function wrGapColor(pct) {
   if (pct <= 15) return "#d9362e";  // red
   return "#111827";                 // black
 }
-// Best-ever time per event/pool, keyed by event — mirrors desktop's _bestTimesByPool().
-export function bestTimesByPool(D) {
-  const out = { "25": {}, "50": {} };
-  ["25", "50"].forEach((pool) => {
-    personalRecords(D, pool).forEach((r) => { out[pool][r.event] = { seconds: r.seconds, time: r.time }; });
-  });
-  return out;
-}
-// Top-5 closest-to-record events for a given bracket, sorted by % gap ascending.
-export function wrGapRows(table, S, group, bestByPool) {
+// Top-5 closest-to-record events for a given bracket, using the best time
+// actually swum while the swimmer was in that bracket, sorted by % gap ascending.
+export function wrGapRows(table, S, group, D, birthdate) {
   const rows = [];
   [["25", "SCM"], ["50", "LCM"]].forEach(([pool, course]) => {
     const recTable = ((table[course] || {})[S] || {})[group] || {};
-    const best = bestByPool[pool];
+    const best = bestInAgeGroup(D, pool, birthdate, group);
     Object.keys(best).forEach((ev) => {
       const key = recordKey(ev); if (!key) return;
       const wr = recTable[key]; if (!wr || !wr.seconds) return;

@@ -988,11 +988,12 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
         ⑫ Distance to World Record
         <button onclick="wrShowInfo()" title="What are the Masters World Records?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
       </div>
-      <p style="font-size:12px;color:#888;margin-bottom:10px">Best-ever time per event vs. the World Aquatics Masters world record for a 5-year age bracket — each event judged against its own course (25m → SCM, 50m → LCM). Shown for swimmers over 30. Pick a bracket below to compare against.</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Best time per event <b>swum while in that age group</b> vs. the World Aquatics Masters world record for it — each event judged against its own course (25m → SCM, 50m → LCM). Shown for swimmers over 30. Pick a past or current age group below to compare against.</p>
       <div id="wrGapHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
       <div id="wrGapAgeSelector" class="ev-selector" style="margin-bottom:12px"></div>
       <div id="wrGapChartWrap" class="card" style="padding:16px 20px;margin-bottom:16px">
         <div style="position:relative;height:280px"><canvas id="wrGapChart"></canvas></div>
+        <p id="wrGapEmpty" style="display:none;color:#aaa;font-size:12px;padding:10px 0;text-align:center"></p>
       </div>
     </div>
     </div>
@@ -2446,24 +2447,6 @@ function buildRudolphTrend(){
 function setRudFilter(ev){rudFilter=ev;buildRudolphTrend();};
 window.buildRudolphTrend=buildRudolphTrend;
 
-// Best-ever time per event, split by pool — same aggregation buildRecords()
-// uses for Personal Records, reused here so both new sections compare
-// against the swimmer's CURRENT age using their best-ever time (not the
-// age-graded per-swim convention Rudolph uses above).
-function _bestTimesByPool(){
-  var ss=seasons();
-  var out={'25':{},'50':{}};
-  ss.forEach(function(s){
-    (D[s].bests||[]).forEach(function(b){
-      if(!b.event||!b.seconds||isRelay(b.event))return;
-      var pool=poolNorm(b.pool),store=out[pool];
-      if(!store)return;
-      if(!store[b.event]||b.seconds<store[b.event].seconds)store[b.event]={seconds:b.seconds,time:b.time};
-    });
-  });
-  return out;
-}
-
 // ── ⑪ USA MOTIVATIONAL STANDARDS (junior, ages 10-18) ─────────────────
 var usaStdShortChartInst=null,usaStdLongChartInst=null;
 var USA_TIERS=['B','BB','A','AA','AAA','AAAA']; // easiest→hardest; tier level = index+1
@@ -2595,10 +2578,11 @@ function _wrGapColor(pct){
   if(pct<=15)return'#d9362e';  // red
   return'#111';                // black
 }
-function _wrGapRows(table,S,ageGroup,bestByPool){
+function _wrGapRows(table,S,ageGroup,bd){
   var rows=[];
   ['25','50'].forEach(function(pool){
-    var course=pool==='25'?'SCM':'LCM',best=bestByPool[pool];
+    var course=pool==='25'?'SCM':'LCM';
+    var best=_bestInGroup(pool,bd,ageGroup); // best time actually swum WHILE in this age group
     var recTable=((table[course]||{})[S]||{})[ageGroup]||{};
     Object.keys(best).forEach(function(ev){
       var key=_recKey(ev);if(!key)return;
@@ -2621,10 +2605,18 @@ function _wrGapChartOpts(rows){
     }
   };
 }
-function _wrRenderForGroup(table,S,group,bestByPool){
-  var rows=_wrGapRows(table,S,group,bestByPool);
-  var canvasEl=document.getElementById('wrGapChart');if(!canvasEl)return;
-  if(wrGapChartInst)wrGapChartInst.destroy();
+function _wrRenderForGroup(table,S,group,bd,rows){
+  rows=rows||_wrGapRows(table,S,group,bd);
+  var canvasEl=document.getElementById('wrGapChart'),emptyEl=document.getElementById('wrGapEmpty');
+  if(!canvasEl)return;
+  if(wrGapChartInst){wrGapChartInst.destroy();wrGapChartInst=null;}
+  if(!rows.length){
+    canvasEl.style.display='none';
+    if(emptyEl){emptyEl.style.display='';emptyEl.textContent='No results in the '+group+' age group yet.';}
+    return;
+  }
+  canvasEl.style.display='';
+  if(emptyEl)emptyEl.style.display='none';
   wrGapChartInst=new Chart(canvasEl.getContext('2d'),{
     type:'bar',
     data:{labels:rows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:rows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:rows.map(function(r){return _wrGapColor(r.pct);})}]},
@@ -2644,13 +2636,21 @@ function buildMastersWr(){
   if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see the gap.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
   var S=_sexN(sex),curGroup=_wrAgeGroup(curAge);
   if(!S||!curGroup){if(hintEl)hintEl.innerHTML='Couldn\'t determine this swimmer\'s age bracket.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
-  var groups=_wrAvailableGroups(table,S);
-  if(!groups.length){if(hintEl)hintEl.innerHTML='No masters records for this sex yet.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
+
+  // Only offer age groups this swimmer actually has results (and WR matches) in —
+  // not every published bracket, and never a future one they haven't reached yet.
+  var rowsByGroup={};
+  var groups=_wrAvailableGroups(table,S).filter(function(g){
+    var rows=_wrGapRows(table,S,g,bd);
+    if(!rows.length)return false;
+    rowsByGroup[g]=rows;
+    return true;
+  });
+  if(!groups.length){if(hintEl)hintEl.innerHTML='No results yet in any published age group for this swimmer.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
   if(hintEl)hintEl.innerHTML='';
   if(chartWrap)chartWrap.style.display='';
 
-  var bestByPool=_bestTimesByPool();
-  var defaultGroup=groups.indexOf(curGroup)>=0?curGroup:groups[0];
+  var defaultGroup=groups.indexOf(curGroup)>=0?curGroup:groups[groups.length-1];
 
   if(ageSelEl){
     ageSelEl.innerHTML='';
@@ -2661,12 +2661,12 @@ function buildMastersWr(){
       btn.onclick=function(){
         ageSelEl.querySelectorAll('button').forEach(function(b){b.classList.remove('active');});
         btn.classList.add('active');
-        _wrRenderForGroup(table,S,g,bestByPool);
+        _wrRenderForGroup(table,S,g,bd,rowsByGroup[g]);
       };
       ageSelEl.appendChild(btn);
     });
   }
-  _wrRenderForGroup(table,S,defaultGroup,bestByPool);
+  _wrRenderForGroup(table,S,defaultGroup,bd,rowsByGroup[defaultGroup]);
 }
 window.buildMastersWr=buildMastersWr;
 
@@ -2944,7 +2944,7 @@ function _sexN(s){s=(s||'').toString().toLowerCase();return s[0]==='f'?'F':s[0]=
 function _recAge(bd,ts){var b=parseDate(bd);if(!b)return null;return new Date(ts==null?Date.now():ts).getFullYear()-new Date(b).getFullYear();} // year-end age
 function _recCat(age){if(age==null)return null;var a=Math.floor(age);if(a>=10&&a<=18)return''+a;if(a>=19&&a<=24)return'open';if(a>=25){var base=25+Math.floor((a-25)/5)*5;return base+'-'+(base+4);}return null;}
 function _recKey(ev){var m=(ev||'').match(/^(\d+)/);return m?m[1]+'|'+getStroke(ev):null;}
-function _recRange(cat){if(!cat||cat==='open')return null;if(/^\d{1,2}$/.test(cat))return[+cat,+cat];var m=cat.match(/^(\d{2})-(\d{2})$/);return m?[+m[1],+m[2]]:null;}
+function _recRange(cat){if(!cat||cat==='open')return null;if(/^\d{1,2}$/.test(cat))return[+cat,+cat];var m=cat.match(/^(\d{2,3})-(\d{2,3})$/);return m?[+m[1],+m[2]]:null;}
 function _nameMatch(a,b){var n=function(x){return(x||'').toString().replace(/['’‘׳\s\-]/g,'');};return !!a&&!!b&&n(a)===n(b);}
 function _lookupRec(recs,S,age,pool,ev){var cat=_recCat(age),key=_recKey(ev);if(!recs||!S||!cat||!key)return null;var r=(((recs[pool]||{})[S]||{})[cat]||{})[key];return r&&r.sec?r:null;}
 function _bestInGroup(pool,bd,cat){var range=_recRange(cat),out={};seasons().forEach(function(sk){(D[sk].bests||[]).forEach(function(b){if(!b.event||!b.seconds||isRelay(b.event)||poolNorm(b.pool)!==pool)return;if(range){var a=_recAge(bd,parseDate(b.date));if(a==null||a<range[0]||a>range[1])return;}if(!out[b.event]||b.seconds<out[b.event].seconds)out[b.event]={seconds:b.seconds,time:b.time};});});return out;}
