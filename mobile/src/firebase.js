@@ -147,10 +147,10 @@ export async function saveSwimmerProfile(swimmerId, profile) {
 // season data, including on a re-add of an already-tracked ID (id/name/
 // coachUids are safe to always re-stamp; seasons is desktop-sync-owned and
 // must be left untouched here).
-export async function createSwimmer(swimmerId, name, coachUid) {
+export async function createSwimmer(swimmerId, name, coachUid, coachEmail) {
   await setDoc(
     doc(db, "swimmers", String(swimmerId)),
-    { id: String(swimmerId), name, createdAt: Date.now(), coachUids: arrayUnion(coachUid) },
+    { id: String(swimmerId), name, createdAt: Date.now(), coachUids: arrayUnion(coachUid), coachEmails: arrayUnion(coachEmail) },
     { merge: true }
   );
 }
@@ -198,7 +198,7 @@ export async function migrateLegacyAccess(user) {
   if (!accessList.map((e) => e.toLowerCase()).includes((user.email || "").toLowerCase())) return { ran: false };
   await createCoachDoc(user);
   const results = await Promise.allSettled(LEGACY_SWIMMER_IDS.map((id) =>
-    setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+    setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
   ));
   const failed = results
     .map((r, i) => (r.status === "rejected" ? { id: LEGACY_SWIMMER_IDS[i], error: r.reason } : null))
@@ -282,7 +282,7 @@ export async function redeemInviteCode(code, user) {
   if (inv.targetCoachUid && Array.isArray(inv.swimmerIds) && inv.swimmerIds.length) {
     await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds: inv.swimmerIds, claimedAt: Date.now() });
     const results = await Promise.allSettled(inv.swimmerIds.map((id) =>
-      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
     ));
     const failed = results.filter((r) => r.status === "rejected");
     if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);

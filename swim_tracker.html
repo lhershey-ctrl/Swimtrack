@@ -1191,6 +1191,7 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
 
   <div class="section-title">👥 Add a Viewer</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
+  <div id="viewerTeamList" style="margin-bottom:12px"></div>
   <div class="card" style="padding:16px 20px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input id="viewerNote" placeholder="Note (e.g. their name) — optional" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-family:inherit">
@@ -4733,9 +4734,17 @@ window.renderInviteBar = renderInviteBar;
 // Coach," which creates a brand-new, independent, empty roster.
 let generatedViewerCodes = []; // [{code, note}] generated this session
 function renderViewerBar() {
-  const out = $("viewerActions"), noteInput = $("viewerNote");
+  const out = $("viewerActions"), noteInput = $("viewerNote"), teamEl = $("viewerTeamList");
   if (!out) return;
   out.innerHTML = "";
+  if (teamEl) {
+    const others = Array.from(new Set(cloudSwimmers.flatMap((s) => s.coachEmails || [])))
+      .filter((e) => currentUser && e.toLowerCase() !== currentUser.email.toLowerCase());
+    teamEl.innerHTML = others.length
+      ? '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Current Team</div>' +
+        others.map((e) => '<span style="display:inline-block;font-size:12px;color:#1a7a4f;background:#f0fdf4;border:1px solid #b7e4cc;border-radius:7px;padding:4px 10px;margin:0 6px 6px 0">' + e + '</span>').join('')
+      : "";
+  }
   if (!currentUser) { out.innerHTML = '<span style="font-size:12px;color:#9a6b00">Sign in above first.</span>'; return; }
   out.appendChild(btn("Generate code", async () => {
     if (!cloudSwimmers.length) { alert("You don't have any synced swimmers yet — sync at least one before sharing."); return; }
@@ -4774,7 +4783,7 @@ async function refreshCloudSwimmers() {
     const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
     const snap = await getDocs(q);
     cloudSwimmers = snap.docs
-      .map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)) }))
+      .map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)), coachEmails: d.data().coachEmails || [] }))
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch (e) { cloudSwimmers = []; }
   render();
@@ -4878,6 +4887,7 @@ async function doSync() {
       seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
       updatedAt: Date.now(),
       coachUids: arrayUnion(currentUser.uid),
+      coachEmails: arrayUnion(currentUser.email),
     };
     if (Object.keys(seasons).length) payload.seasons = seasons;
     await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
@@ -4909,6 +4919,7 @@ async function swimSaveProfile(sw) {
     seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
     updatedAt: Date.now(),
     coachUids: arrayUnion(currentUser.uid),
+    coachEmails: arrayUnion(currentUser.email),
   }, { merge: true });
 }
 
@@ -5136,11 +5147,38 @@ async function migrateLegacyAccess(user) {
   if (!accessEmails.map((e) => e.toLowerCase()).includes((user.email || "").toLowerCase())) return { ran: false };
   await createCoachDoc(user);
   const results = await Promise.allSettled(LEGACY_SWIMMER_IDS.map((id) =>
-    setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+    setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
   ));
   const failed = results.map((r, i) => (r.status === "rejected" ? { id: LEGACY_SWIMMER_IDS[i], error: r.reason } : null)).filter(Boolean);
   if (failed.length) console.error("migrateLegacyAccess: failed to claim swimmer(s)", failed);
   return { ran: true, failed };
+}
+
+// Owner-only, one-time-per-swimmer: backfills coachEmails for swimmers that
+// predate that field (e.g. Noga/Gal, shared since before the multi-coach
+// migration) — otherwise they'd only get it whenever someone next saves
+// their profile. Owner can read any coaches/{uid} doc to resolve emails.
+async function backfillCoachEmails(user) {
+  if (!isOwner(user)) return;
+  try {
+    const snap = await getDocs(collection(db, "swimmers"));
+    const targets = snap.docs.filter((d) => {
+      const data = d.data();
+      const cu = data.coachUids || [];
+      const ce = data.coachEmails || [];
+      return cu.length > 0 && ce.length < cu.length;
+    });
+    if (!targets.length) return;
+    await Promise.all(targets.map(async (d) => {
+      const cu = d.data().coachUids || [];
+      const emails = [];
+      for (const uid of cu) {
+        const co = await fetchCoach(uid);
+        if (co && co.email) emails.push(co.email);
+      }
+      if (emails.length) await setDoc(doc(db, "swimmers", d.id), { coachEmails: emails }, { merge: true });
+    }));
+  } catch (e) { console.error("backfillCoachEmails failed:", e); }
 }
 
 // Owner-only: the two-ID legacy bridge above only covers Noga/Gal, but the
@@ -5187,11 +5225,32 @@ async function redeemInviteCode(code, user) {
   if (inv.targetCoachUid && Array.isArray(inv.swimmerIds) && inv.swimmerIds.length) {
     await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds: inv.swimmerIds, claimedAt: Date.now() });
     const results = await Promise.allSettled(inv.swimmerIds.map((id) =>
-      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
     ));
     const failed = results.filter((r) => r.status === "rejected");
     if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
   }
+}
+
+// Groups coach accounts into "teams" via union-find over shared swimmers —
+// two coaches are the same team if they co-appear in any swimmer's
+// coachUids. Mirrors mobile's groupCoachesIntoTeams (App.jsx).
+function groupCoachesIntoTeams(coaches, swimmers) {
+  const parent = {};
+  coaches.forEach((co) => { parent[co.uid] = co.uid; });
+  const find = (x) => { while (parent[x] && parent[x] !== x) x = parent[x]; return x; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  swimmers.forEach((sw) => {
+    const uids = (sw.coachUids || []).filter((uid) => uid in parent);
+    for (let i = 1; i < uids.length; i++) union(uids[0], uids[i]);
+  });
+  const teamsByRoot = {};
+  coaches.forEach((co) => { (teamsByRoot[find(co.uid)] = teamsByRoot[find(co.uid)] || []).push(co); });
+  return Object.values(teamsByRoot).map((members) => {
+    const memberUids = new Set(members.map((m) => m.uid));
+    const swimmerCount = swimmers.filter((sw) => (sw.coachUids || []).some((uid) => memberUids.has(uid))).length;
+    return { members, swimmerCount };
+  }).sort((a, b) => b.swimmerCount - a.swimmerCount);
 }
 
 // ── Admin stats (owner-only; deliberately separate from every other query
@@ -5259,7 +5318,7 @@ onAuthStateChanged(auth, (u) => {
   currentUser = u; window.swimUser = u;
   if (u) {
     coachStatus = "checking"; render();
-    (isOwner(u) ? claimOrphanedSwimmers(u) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
+    (isOwner(u) ? claimOrphanedSwimmers(u).then(() => backfillCoachEmails(u)) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
       .then((coach) => {
         coachStatus = (isOwner(u) || coach) ? "ok" : "needsInvite";
         if (coachStatus === "ok") { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables(); }

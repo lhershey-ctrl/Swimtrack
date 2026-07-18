@@ -1500,7 +1500,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers }) {
           background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>Sign out</button>
       </Card>
 
-      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} />
+      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} coachEmail={user.email} />
 
       <TeamViewerManager user={user} swimmers={swimmers} />
 
@@ -1515,7 +1515,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers }) {
   );
 }
 
-function SwimmersManager({ swimmers, reloadSwimmers, coachUid }) {
+function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail }) {
   const { c, s } = useUI();
   const [editing, setEditing] = useState(null); // swimmer id
   const [newName, setNewName] = useState("");
@@ -1527,7 +1527,7 @@ function SwimmersManager({ swimmers, reloadSwimmers, coachUid }) {
     const name = newName.trim();
     if (!name || !id) { setStatus("Enter a name and numeric Player ID."); return; }
     try {
-      await createSwimmer(id, name, coachUid);
+      await createSwimmer(id, name, coachUid, coachEmail);
       setNewName(""); setNewId(""); setStatus("✅ Added " + name);
       reloadSwimmers();
     } catch (e) {
@@ -1578,6 +1578,9 @@ function TeamViewerManager({ user, swimmers }) {
     setBusy(false);
   }
 
+  const others = [...new Set(swimmers.flatMap((sw) => sw.coachEmails || []))]
+    .filter((e) => e.toLowerCase() !== (user.email || "").toLowerCase());
+
   return (
     <>
       <div style={s.h2}>Add a Viewer</div>
@@ -1586,6 +1589,16 @@ function TeamViewerManager({ user, swimmers }) {
           Generate a one-time code for someone to see and manage the same {swimmers.length} swimmer{swimmers.length !== 1 ? "s" : ""} you do
           (like a co-coach or parent) — not a separate, independent account.
         </div>
+        {others.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Current Team</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {others.map((e) => (
+                <span key={e} style={{ fontSize: 12, color: c.green, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 10px" }}>{e}</span>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8 }}>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (e.g. their name) — optional"
             style={{ ...s.input, flex: 1 }} />

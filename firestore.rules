@@ -114,18 +114,22 @@ service cloud.firestore {
         // every legacy user has signed in once after this migration.
         || (
           isLegacyAllowed() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coachUids']) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coachUids', 'coachEmails']) &&
           request.resource.data.coachUids ==
-            (('coachUids' in resource.data) ? resource.data.coachUids : []).concat([request.auth.uid])
+            (('coachUids' in resource.data) ? resource.data.coachUids : []).concat([request.auth.uid]) &&
+          request.resource.data.coachEmails ==
+            (('coachEmails' in resource.data) ? resource.data.coachEmails : []).concat([request.auth.token.email])
         )
         // Join-team bridge: the caller has a pendingShares/{their-uid} doc
         // (self-written right after redeeming a "join my team" invite code)
         // that explicitly lists THIS swimmer id, and the only change is
-        // adding their own uid to coachUids — nothing else.
+        // adding their own uid/email to coachUids/coachEmails — nothing else.
         || (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coachUids']) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coachUids', 'coachEmails']) &&
           request.resource.data.coachUids ==
             (('coachUids' in resource.data) ? resource.data.coachUids : []).concat([request.auth.uid]) &&
+          request.resource.data.coachEmails ==
+            (('coachEmails' in resource.data) ? resource.data.coachEmails : []).concat([request.auth.token.email]) &&
           exists(/databases/$(database)/documents/pendingShares/$(request.auth.uid)) &&
           swimmerId in get(/databases/$(database)/documents/pendingShares/$(request.auth.uid)).data.swimmerIds
         );
