@@ -663,13 +663,31 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
       heights:(profile&&Array.isArray(profile.heights))?profile.heights:[],
       weights:(profile&&Array.isArray(profile.weights))?profile.weights:[],
       birthdate:(profile&&profile.birthdate)||'',
-      sex:(profile&&profile.sex)||''
+      sex:(profile&&profile.sex)||'',
+      _autoImported:true // added by a cloud sync, not typed in by hand — see pruneAutoImportedSwimmers
     });
     saveSettings();
     renderSwimmerMgmt();
     if(typeof renderSettingsUI==='function')renderSettingsUI();
     if(typeof renderPhysStats==='function')renderPhysStats();
     return SWIMMERS.length-1;
+  };
+
+  // Drop any locally-cached swimmer that was auto-imported by a PAST cloud
+  // sync but isn't in the CURRENT (correctly-scoped) result — e.g. leftover
+  // from before per-coach isolation existed, or another coach's swimmer that
+  // briefly leaked in during an earlier bug. Never touches a swimmer the
+  // user actually typed in by hand (no _autoImported flag).
+  window.pruneAutoImportedSwimmers=function(validIds){
+    var valid={};validIds.forEach(function(id){valid[String(id)]=true;});
+    var before=SWIMMERS.length;
+    SWIMMERS=SWIMMERS.filter(function(sw){return !sw._autoImported||valid[String(sw.id)];});
+    if(SWIMMERS.length!==before){
+      if(activeSwimmer>=SWIMMERS.length)activeSwimmer=Math.max(0,SWIMMERS.length-1);
+      saveSettings();
+      renderSwimmerMgmt();renderSwimmerSelectors();
+      if(typeof renderSettingsUI==='function')renderSettingsUI();
+    }
   };
 
   // Pull the profile fields (heights/weights/birthdate/seasonIds) that live
@@ -5025,6 +5043,9 @@ async function autoSyncProfilesFromCloud() {
       if (isLocal) { if (window.applyCloudProfile) window.applyCloudProfile(d.id, data); }
       else if (window.silentAddSwimmer) window.silentAddSwimmer(d.id, data.name, data);
     });
+    // Clean up anything auto-imported by a past (possibly wrongly-scoped)
+    // sync that isn't actually in this account's roster anymore.
+    if (window.pruneAutoImportedSwimmers) window.pruneAutoImportedSwimmers(snap.docs.map((d) => d.id));
   } catch (e) { /* not signed in / no access yet — ignore */ }
 }
 
