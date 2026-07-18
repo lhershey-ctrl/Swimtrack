@@ -726,6 +726,60 @@ export function usaStandardsForAge(D, table, sex, birthdate, age) {
   return { shortTier, longTier, shortRows, longRows };
 }
 
+// ⑫ World Aquatics Masters World Records (config/mastersRecords) ─────────
+// Published from the desktop app after uploading the SCM/LCM masters world
+// records PDFs. Shape:
+//   { table: { "SCM"|"LCM": { "F"|"M": { "25-29".."105-109": { "dist|stroke": {seconds,athlete,date} } } } },
+//     count, loadedAt, by }
+// Unlike the age-restricted USA Standards lookup, this compares a swimmer's
+// BEST-EVER time (any age) against a chosen bracket's record — best-ever
+// time is what's meaningful here, not "best while in that bracket."
+export function wrAgeGroup(age) {
+  if (age == null || age < 25) return null;
+  const base = 25 + Math.floor((age - 25) / 5) * 5;
+  return base + "-" + (base + 4);
+}
+// Every age bracket present in the table for this sex, across both courses, sorted young→old.
+export function wrAvailableGroups(table, S) {
+  const set = new Set();
+  ["SCM", "LCM"].forEach((course) => {
+    const bySex = ((table[course] || {})[S]) || {};
+    Object.keys(bySex).forEach((g) => set.add(g));
+  });
+  return Array.from(set).sort((a, b) => parseInt(a) - parseInt(b));
+}
+export function wrGapColor(pct) {
+  if (pct <= 5) return "#1D9E75";   // green
+  if (pct <= 8) return "#e0b400";   // yellow
+  if (pct <= 10) return "#e07b00";  // orange
+  if (pct <= 15) return "#d9362e";  // red
+  return "#111827";                 // black
+}
+// Best-ever time per event/pool, keyed by event — mirrors desktop's _bestTimesByPool().
+export function bestTimesByPool(D) {
+  const out = { "25": {}, "50": {} };
+  ["25", "50"].forEach((pool) => {
+    personalRecords(D, pool).forEach((r) => { out[pool][r.event] = { seconds: r.seconds, time: r.time }; });
+  });
+  return out;
+}
+// Top-5 closest-to-record events for a given bracket, sorted by % gap ascending.
+export function wrGapRows(table, S, group, bestByPool) {
+  const rows = [];
+  [["25", "SCM"], ["50", "LCM"]].forEach(([pool, course]) => {
+    const recTable = ((table[course] || {})[S] || {})[group] || {};
+    const best = bestByPool[pool];
+    Object.keys(best).forEach((ev) => {
+      const key = recordKey(ev); if (!key) return;
+      const wr = recTable[key]; if (!wr || !wr.seconds) return;
+      const pct = (best[ev].seconds - wr.seconds) / wr.seconds * 100;
+      rows.push({ event: `${ev} (${pool}m)`, pct, mine: best[ev].time, wrTime: fmtT(wr.seconds), athlete: wr.athlete });
+    });
+  });
+  rows.sort((a, b) => a.pct - b.pct);
+  return rows.slice(0, 5);
+}
+
 // Event-coverage heat map for one season: stroke (rows) × distance (cols),
 // value = number of swims. Used to see which events were raced and how often.
 export function eventHeatmap(D, seasonKey) {

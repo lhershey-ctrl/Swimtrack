@@ -8,7 +8,7 @@ import { useUI, GRAD } from "./theme.jsx";
 import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
-  fetchRecords, fetchRudolph, fetchUsaStandards,
+  fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -18,6 +18,7 @@ import {
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
   lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
   recordKey, rudolphTrend, usaStandardsForAge, USA_TIERS, USA_STROKES,
+  wrAgeGroup, wrAvailableGroups, wrGapColor, wrGapRows, bestTimesByPool,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -910,7 +911,7 @@ function InfoModal({ title, children, onClose }) {
 //  RECORDS (+ SC vs LC)
 // ════════════════════════════════════════════════════════════════════
 const GOLD = "#e0a52a";
-function RecordsTab({ D, swimmer, recordsDoc }) {
+function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc }) {
   const { c, s } = useUI();
   const [pool, setPool] = useState("25");
   const [showBrowser, setShowBrowser] = useState(false);
@@ -1056,7 +1057,89 @@ function RecordsTab({ D, swimmer, recordsDoc }) {
           ))}
         </Card>
       )}
+
+      <MastersWrPanel D={D} swimmer={swimmer} mastersRecordsDoc={mastersRecordsDoc} />
     </div>
+  );
+}
+
+function MastersWrPanel({ D, swimmer, mastersRecordsDoc }) {
+  const { c, s } = useUI();
+  const [showInfo, setShowInfo] = useState(false);
+  const [selGroup, setSelGroup] = useState(null);
+  const table = mastersRecordsDoc && mastersRecordsDoc.table;
+  const sex = swimmer && swimmer.sex;
+  const birthdate = swimmer && swimmer.birthdate;
+  const curAge = birthdate ? recordAge(birthdate, null) : null; // age GROUP, matching World Aquatics' own convention
+  const curGroup = curAge != null ? wrAgeGroup(curAge) : null;
+  const S = sexNorm(sex);
+  const groups = (table && S) ? wrAvailableGroups(table, S) : [];
+  const defaultGroup = groups.includes(curGroup) ? curGroup : groups[0];
+  const activeGroup = groups.includes(selGroup) ? selGroup : defaultGroup;
+
+  const rows = useMemo(
+    () => (table && S && activeGroup) ? wrGapRows(table, S, activeGroup, bestTimesByPool(D)) : [],
+    [D, table, S, activeGroup]
+  );
+  const chartData = rows.map((r) => ({ name: r.event, pct: +r.pct.toFixed(1), mine: r.mine, wrTime: r.wrTime, athlete: r.athlete }));
+
+  if (curAge == null || curAge <= 30) return null; // only meaningful for masters-age swimmers
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <div style={s.h2}>Distance to World Record</div>
+        <button onClick={() => setShowInfo(true)} title="What are the Masters World Records?"
+          style={{ width: 26, height: 26, borderRadius: 999, border: `1px solid ${c.line}`, background: c.card2, color: c.dim, fontSize: 15, fontWeight: 800, lineHeight: "24px", padding: 0, cursor: "pointer" }}>?</button>
+      </div>
+      {showInfo && (
+        <InfoModal title="Distance to World Record" onClose={() => setShowInfo(false)}>
+          <p style={{ margin: "0 0 10px" }}>
+            World Aquatics Masters World Records — the fastest-ever time by 5-year age bracket (25-29 through
+            105-109), both sexes, long course (LCM) and short course meters (SCM).
+          </p>
+          <p style={{ margin: 0 }}>
+            Your best-ever time in each event is compared against the record for whichever bracket you pick below —
+            each event judged against its own course (25m → SCM, 50m → LCM). Bars are colour-coded by how close you
+            are: green ≤5%, yellow ≤8%, orange ≤10%, red ≤15%, black beyond that.
+          </p>
+        </InfoModal>
+      )}
+      {!table ? (
+        <Card><Center>Masters world records not published yet — load them from the desktop app's Extract tab.</Center></Card>
+      ) : !birthdate || !sex ? (
+        <Card><Center>Set birthdate and sex in Settings to see the gap.</Center></Card>
+      ) : !groups.length ? (
+        <Card><Center>No masters records for this sex yet.</Center></Card>
+      ) : (
+        <>
+          <PillRow label="Bracket" active={activeGroup} onPick={setSelGroup}
+            items={groups.map((g) => ({ key: g, label: g + (g === curGroup ? " (current)" : "") }))} />
+          {chartData.length === 0 ? (
+            <Card><Center>No matching events for this bracket yet.</Center></Card>
+          ) : (
+            <Card>
+              <div style={{ height: Math.max(160, chartData.length * 34) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} layout="vertical" margin={{ left: 6, right: 16, top: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={c.line} horizontal={false} />
+                    <XAxis type="number" tick={{ fill: c.dim, fontSize: 10 }} tickFormatter={(v) => "+" + v + "%"} />
+                    <YAxis type="category" dataKey="name" width={104} tick={{ fill: c.dim, fontSize: 10 }} />
+                    <Tooltip contentStyle={tooltipStyle(c)} formatter={(v, _n, p) => [
+                      `${p.payload.mine} vs WR ${p.payload.wrTime} (${p.payload.athlete}) · +${v}%`, "Gap",
+                    ]} />
+                    <Bar dataKey="pct" radius={[0, 6, 6, 0]}>
+                      {chartData.map((d, i) => <Cell key={i} fill={wrGapColor(d.pct)} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ fontSize: 11, color: c.dim, textAlign: "center", marginTop: 6 }}>% slower than the world record — top 5 closest events</div>
+            </Card>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -1589,12 +1672,14 @@ export default function App() {
   const [recordsDoc, setRecordsDoc] = useState(null);
   const [rudolphDoc, setRudolphDoc] = useState(null);
   const [usaStandardsDoc, setUsaStandardsDoc] = useState(null);
+  const [mastersRecordsDoc, setMastersRecordsDoc] = useState(null);
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
   useEffect(() => { if (user) fetchRecords().then(setRecordsDoc).catch(() => setRecordsDoc(null)); }, [user]);
   useEffect(() => { if (user) fetchRudolph().then(setRudolphDoc).catch(() => setRudolphDoc(null)); }, [user]);
   useEffect(() => { if (user) fetchUsaStandards().then(setUsaStandardsDoc).catch(() => setUsaStandardsDoc(null)); }, [user]);
+  useEffect(() => { if (user) fetchMastersRecords().then(setMastersRecordsDoc).catch(() => setMastersRecordsDoc(null)); }, [user]);
 
   function loadSwimmers() {
     return fetchSwimmers()
@@ -1644,7 +1729,7 @@ export default function App() {
             {tab === "home" && <HomeTab D={D} swimmer={swimmer} />}
             {tab === "meets" && <MeetsTab D={D} swimmer={swimmer} />}
             {tab === "progress" && <ProgressTab D={D} swimmer={swimmer} rudolphDoc={rudolphDoc} usaStandardsDoc={usaStandardsDoc} />}
-            {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
+            {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} mastersRecordsDoc={mastersRecordsDoc} />}
             {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
           </TabErrorBoundary>}
         </>

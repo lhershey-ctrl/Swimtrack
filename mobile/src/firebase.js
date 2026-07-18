@@ -115,6 +115,16 @@ export async function fetchUsaStandards() {
   return snap.exists() ? snap.data() : null;
 }
 
+// ── World Aquatics Masters World Records (config/mastersRecords) ─────────
+// Published from the desktop app after uploading the SCM/LCM masters world
+// records PDFs. Shape:
+//   { table: { "SCM"|"LCM": { "F"|"M": { "25-29".."105-109": { "dist|stroke": {seconds,athlete,date} } } } },
+//     count, loadedAt, by }
+export async function fetchMastersRecords() {
+  const snap = await getDoc(doc(db, "config", "mastersRecords"));
+  return snap.exists() ? snap.data() : null;
+}
+
 export async function saveAccessList(emails) {
   await setDoc(doc(db, "config", "access"), { emails });
 }

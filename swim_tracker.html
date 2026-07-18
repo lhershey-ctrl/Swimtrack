@@ -988,15 +988,11 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
         ⑫ Distance to World Record
         <button onclick="wrShowInfo()" title="What are the Masters World Records?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
       </div>
-      <p style="font-size:12px;color:#888;margin-bottom:10px">Best-ever time per event vs. the World Aquatics Masters world record for the swimmer's current 5-year age bracket — each event judged against its own course (25m → SCM, 50m → LCM). Shown for swimmers over 30.</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Best-ever time per event vs. the World Aquatics Masters world record for a 5-year age bracket — each event judged against its own course (25m → SCM, 50m → LCM). Shown for swimmers over 30. Pick a bracket below to compare against.</p>
       <div id="wrGapHint" style="font-size:13px;color:#9a6b00;margin-bottom:10px"></div>
+      <div id="wrGapAgeSelector" class="ev-selector" style="margin-bottom:12px"></div>
       <div id="wrGapChartWrap" class="card" style="padding:16px 20px;margin-bottom:16px">
-        <div id="wrGapAgeLabel" style="font-size:12px;color:#666;font-weight:700;margin-bottom:8px"></div>
         <div style="position:relative;height:280px"><canvas id="wrGapChart"></canvas></div>
-        <details id="wrGapPrevDetails" style="margin-top:14px;display:none">
-          <summary id="wrGapPrevSummary" style="cursor:pointer;font-size:12px;color:#185FA5;font-weight:700">Compare to previous age group</summary>
-          <div style="position:relative;height:280px;margin-top:10px"><canvas id="wrGapPrevChart"></canvas></div>
-        </details>
       </div>
     </div>
     </div>
@@ -2117,18 +2113,29 @@ function buildSeasonComp(){
   var el=document.getElementById('seasonCompDiv');if(!el)return;
   if(ss.length<2){el.innerHTML='<p style="color:#aaa;font-size:12px">Need at least 2 seasons of data.</p>';return;}
   var cur=ss[ss.length-1],prv=ss[ss.length-2];
-  // Best per event per season
-  function bestByEv(sk){var m={};(D[sk].results||[]).forEach(function(r){if(!r.event||!r.seconds||r.seconds<=0||isRelay(r.event))return;if(!m[r.event]||r.seconds<m[r.event].s)m[r.event]={s:r.seconds,pts:r.points||0,t:r.time||''};});(D[sk].bests||[]).forEach(function(r){if(!r.event||!r.seconds||r.seconds<=0||isRelay(r.event))return;if(!m[r.event]||r.seconds<m[r.event].s)m[r.event]={s:r.seconds,pts:r.points||0,t:r.time||''};});return m;}
+  // Best per event PER POOL per season — never compare a 25m best to a 50m best.
+  function bestByEv(sk){
+    var m={};
+    function upd(r){
+      if(!r.event||!r.seconds||r.seconds<=0||isRelay(r.event))return;
+      var pool=poolNorm(r.pool),key=r.event+'|'+pool;
+      if(!m[key]||r.seconds<m[key].s)m[key]={s:r.seconds,pts:r.points||0,t:r.time||'',event:r.event,pool:pool};
+    }
+    (D[sk].results||[]).forEach(upd);
+    (D[sk].bests||[]).forEach(upd);
+    return m;
+  }
   var curB=bestByEv(cur),prvB=bestByEv(prv);
-  var evs=Array.from(new Set(Object.keys(curB).concat(Object.keys(prvB)))).sort();
-  var rows=evs.map(function(ev){
-    var c=curB[ev],p=prvB[ev];
+  var keys=Array.from(new Set(Object.keys(curB).concat(Object.keys(prvB)))).sort();
+  var rows=keys.map(function(key){
+    var c=curB[key],p=prvB[key],meta=c||p;
+    var label=meta.event+' ('+meta.pool+'m)';
     var ds=c&&p?c.s-p.s:null;
     var dPts=c&&p?c.pts-p.pts:null;
     var col=ds===null?'#888':ds<0?'#1D9E75':ds>0?'#a32d2d':'#888';
     var arrow=ds===null?'':ds<0?'▼':ds>0?'▲':'=';
     return '<tr style="border-top:1px solid #f0efe9;font-size:12px">'+
-      '<td style="padding:7px 12px;font-weight:600">'+ev+'</td>'+
+      '<td style="padding:7px 12px;font-weight:600">'+label+'</td>'+
       '<td style="padding:7px 12px;text-align:center">'+((p&&p.t)||'—')+'</td>'+
       '<td style="padding:7px 12px;text-align:center;font-weight:700">'+((c&&c.t)||'—')+'</td>'+
       '<td style="padding:7px 12px;text-align:center;color:'+col+';font-weight:700">'+
@@ -2566,16 +2573,20 @@ function buildUsaStandards(){
 window.buildUsaStandards=buildUsaStandards;
 
 // ── ⑫ MASTERS WORLD RECORD GAP (age > 30) ─────────────────────────────
-var wrGapChartInst=null,wrGapPrevChartInst=null;
+var wrGapChartInst=null;
 function _wrAgeGroup(age){
   if(age==null||age<25)return null;
   var base=25+Math.floor((age-25)/5)*5;
   return base+'-'+(base+4);
 }
-function _wrPrevAgeGroup(ageGroup){
-  var m=(ageGroup||'').match(/^(\d+)-(\d+)$/);if(!m)return null;
-  var base=+m[1];if(base<=25)return null;
-  var prevBase=base-5;return prevBase+'-'+(prevBase+4);
+// Every age bracket present in the table for this sex, across both courses, sorted young→old.
+function _wrAvailableGroups(table,S){
+  var set={};
+  ['SCM','LCM'].forEach(function(course){
+    var bySex=((table[course]||{})[S])||{};
+    Object.keys(bySex).forEach(function(g){set[g]=true;});
+  });
+  return Object.keys(set).sort(function(a,b){return parseInt(a)-parseInt(b);});
 }
 function _wrGapColor(pct){
   if(pct<=5)return'#1D9E75';   // green
@@ -2610,6 +2621,16 @@ function _wrGapChartOpts(rows){
     }
   };
 }
+function _wrRenderForGroup(table,S,group,bestByPool){
+  var rows=_wrGapRows(table,S,group,bestByPool);
+  var canvasEl=document.getElementById('wrGapChart');if(!canvasEl)return;
+  if(wrGapChartInst)wrGapChartInst.destroy();
+  wrGapChartInst=new Chart(canvasEl.getContext('2d'),{
+    type:'bar',
+    data:{labels:rows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:rows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:rows.map(function(r){return _wrGapColor(r.pct);})}]},
+    options:_wrGapChartOpts(rows)
+  });
+}
 function buildMastersWr(){
   var section=document.getElementById('wrGapSection');if(!section)return;
   var table=window.__mastersRecordsTable||null;
@@ -2618,46 +2639,34 @@ function buildMastersWr(){
   var curAge=bd?_recAge(bd,null):null; // age GROUP (calendar year − birth year), matching World Aquatics' own convention
   if(curAge==null||curAge<=30){section.style.display='none';return;} // only meaningful for masters-age swimmers
   section.style.display='';
-  var hintEl=document.getElementById('wrGapHint'),chartWrap=document.getElementById('wrGapChartWrap');
-  if(!table){if(hintEl)hintEl.innerHTML='Masters world records not published yet — upload below (Extract tab ⑥).';if(chartWrap)chartWrap.style.display='none';return;}
-  if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see the gap.';if(chartWrap)chartWrap.style.display='none';return;}
-  var S=_sexN(sex),ageGroup=_wrAgeGroup(curAge);
-  if(!S||!ageGroup){if(hintEl)hintEl.innerHTML='Couldn\'t determine this swimmer\'s age bracket.';if(chartWrap)chartWrap.style.display='none';return;}
+  var hintEl=document.getElementById('wrGapHint'),chartWrap=document.getElementById('wrGapChartWrap'),ageSelEl=document.getElementById('wrGapAgeSelector');
+  if(!table){if(hintEl)hintEl.innerHTML='Masters world records not published yet — upload below (Extract tab ⑥).';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
+  if(!bd||!sex){if(hintEl)hintEl.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see the gap.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
+  var S=_sexN(sex),curGroup=_wrAgeGroup(curAge);
+  if(!S||!curGroup){if(hintEl)hintEl.innerHTML='Couldn\'t determine this swimmer\'s age bracket.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
+  var groups=_wrAvailableGroups(table,S);
+  if(!groups.length){if(hintEl)hintEl.innerHTML='No masters records for this sex yet.';if(chartWrap)chartWrap.style.display='none';if(ageSelEl)ageSelEl.innerHTML='';return;}
   if(hintEl)hintEl.innerHTML='';
   if(chartWrap)chartWrap.style.display='';
 
   var bestByPool=_bestTimesByPool();
-  var ageLabelEl=document.getElementById('wrGapAgeLabel');
-  if(ageLabelEl)ageLabelEl.textContent='Current age group: '+ageGroup;
+  var defaultGroup=groups.indexOf(curGroup)>=0?curGroup:groups[0];
 
-  var rows=_wrGapRows(table,S,ageGroup,bestByPool);
-  var canvasEl=document.getElementById('wrGapChart');if(!canvasEl)return;
-  if(wrGapChartInst)wrGapChartInst.destroy();
-  wrGapChartInst=new Chart(canvasEl.getContext('2d'),{
-    type:'bar',
-    data:{labels:rows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:rows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:rows.map(function(r){return _wrGapColor(r.pct);})}]},
-    options:_wrGapChartOpts(rows)
-  });
-
-  var prevGroup=_wrPrevAgeGroup(ageGroup);
-  var prevRows=prevGroup?_wrGapRows(table,S,prevGroup,bestByPool):[];
-  var detailsEl=document.getElementById('wrGapPrevDetails'),summaryEl=document.getElementById('wrGapPrevSummary');
-  if(!prevGroup||!prevRows.length){
-    if(detailsEl)detailsEl.style.display='none';
-    if(wrGapPrevChartInst){wrGapPrevChartInst.destroy();wrGapPrevChartInst=null;}
-  }else{
-    if(detailsEl)detailsEl.style.display='';
-    if(summaryEl)summaryEl.textContent='Compare to previous age group ('+prevGroup+')';
-    var prevCanvas=document.getElementById('wrGapPrevChart');
-    if(prevCanvas){
-      if(wrGapPrevChartInst)wrGapPrevChartInst.destroy();
-      wrGapPrevChartInst=new Chart(prevCanvas.getContext('2d'),{
-        type:'bar',
-        data:{labels:prevRows.map(function(r){return r.event;}),datasets:[{label:'% slower than WR',data:prevRows.map(function(r){return+r.pct.toFixed(1);}),backgroundColor:prevRows.map(function(r){return _wrGapColor(r.pct);})}]},
-        options:_wrGapChartOpts(prevRows)
-      });
-    }
+  if(ageSelEl){
+    ageSelEl.innerHTML='';
+    groups.forEach(function(g){
+      var btn=document.createElement('button');
+      btn.className='ev-btn'+(g===defaultGroup?' active':'');
+      btn.textContent=g+(g===curGroup?' (current)':'');
+      btn.onclick=function(){
+        ageSelEl.querySelectorAll('button').forEach(function(b){b.classList.remove('active');});
+        btn.classList.add('active');
+        _wrRenderForGroup(table,S,g,bestByPool);
+      };
+      ageSelEl.appendChild(btn);
+    });
   }
+  _wrRenderForGroup(table,S,defaultGroup,bestByPool);
 }
 window.buildMastersWr=buildMastersWr;
 
@@ -4006,7 +4015,7 @@ function clearRace2(){
       const base=cloud&&cloud.records?cloud.records:{};
       const merged=JSON.parse(JSON.stringify(base));
       const segments=Object.assign({}, cloud&&cloud.segments?cloud.segments:{});
-      let added=0,changed=0; const changes=[];
+      let added=0,changed=0; const changes=[]; let segFix=0;
       const now=Date.now();
       for(const slot in slices){
         const sl=slices[slot], rec=sl.records;
@@ -4016,15 +4025,24 @@ function clearRace2(){
           else if(ov.time!==nv.time){changed++; changes.push("✎ "+p+"m "+s+" "+c+" "+evLabel(e)+"  "+ov.time+" → "+nv.time+"  ("+nv.name+")");}
           merged[p]=merged[p]||{};merged[p][s]=merged[p][s]||{};merged[p][s][c]=merged[p][s][c]||{};merged[p][s][c][e]=nv;
         }
-        if(sl.full){ ["50|J","25|J","50|M","25|M"].forEach((k)=>segments[k]={loadedAt:now,count:(segments[k]&&segments[k].count)||0}); }
-        else segments[sl.pool+"|"+sl.type]={loadedAt:now,count:sl.count};
+        if(sl.full){ ["50|J","25|J","50|M","25|M"].forEach((k)=>{if(!segments[k])segFix++;segments[k]={loadedAt:now,count:(segments[k]&&segments[k].count)||0};}); }
+        else{
+          const key=sl.pool+"|"+sl.type;
+          // Even with 0 record-level diffs, refresh a segment's status if it was
+          // never recorded (or its count doesn't match) — otherwise a segment
+          // whose PDF is already correct can never clear a stale "not loaded"
+          // label, since there'd be nothing else to publish.
+          if(!segments[key]||segments[key].count!==sl.count)segFix++;
+          segments[key]={loadedAt:now,count:sl.count};
+        }
       }
       mergedPayload=merged; mergedSegments=segments;
       const total=added+changed;
-      const body=total?("Changes to upload: "+added+" new, "+changed+" updated.\n\n"+changes.slice(0,60).join("\n")+(changes.length>60?("\n… +"+(changes.length-60)+" more"):"")):"No changes — the cloud already matches these files.";
+      const publishTotal=total+ (total?0:segFix); // record changes take priority in the count shown; segFix alone still unlocks publish
+      const body=total?("Changes to upload: "+added+" new, "+changed+" updated.\n\n"+changes.slice(0,60).join("\n")+(changes.length>60?("\n… +"+(changes.length-60)+" more"):"")):(segFix?("No record changes, but "+segFix+" segment's status needs refreshing (was missing/out of date) — safe to upload."):"No changes — the cloud already matches these files.");
       if(pv){pv.style.display="";pv.textContent=body;}
-      if(pubBtn){pubBtn.disabled=!total;pubBtn.style.opacity=total?"1":".5";pubBtn.textContent="☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud";}
-      if(st){st.style.color=total?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):"Nothing to upload — already up to date.";}
+      if(pubBtn){pubBtn.disabled=!publishTotal;pubBtn.style.opacity=publishTotal?"1":".5";pubBtn.textContent=total?("☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud"):"☁ Refresh segment status";}
+      if(st){st.style.color=publishTotal?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):segFix?"No record changes — click to refresh the segment status shown above.":"Nothing to upload — already up to date.";}
     }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Not allowed — your email isn't on the access list.":"Compare failed: "+err.message;} }
   };
 
@@ -4811,9 +4829,10 @@ async function refreshRudolphStatus() {
     if (window.buildRudolphTrend && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildRudolphTrend();
     if (!el) return;
     if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No Rudolph table published yet — upload the PDF below."; return; }
-    el.style.color = "#1a7a4f";
-    el.innerHTML = "<strong>" + (d.count || countRudolph(d.table || {})) + "</strong> time entries published" +
-      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "");
+    const rudStale = d.loadedAt && Date.now() - d.loadedAt > SIX_MONTHS_MS;
+    el.style.color = rudStale ? "#b06a3a" : "#1a7a4f";
+    el.innerHTML = (rudStale ? "⚠ " : "") + "<strong>" + (d.count || countRudolph(d.table || {})) + "</strong> time entries published" +
+      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "") + (rudStale ? " — check for a newer PDF" : "");
   } catch (e) {
     if (!el) return;
     el.style.color = "#c0392b";
@@ -4841,9 +4860,10 @@ async function refreshUsaStandardsStatus() {
     if (window.buildUsaStandards && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildUsaStandards();
     if (!el) return;
     if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No standards published yet — upload the PDF below."; return; }
-    el.style.color = "#1a7a4f";
-    el.innerHTML = "<strong>" + (d.count || countUsaStandards(d.table || {})) + "</strong> time entries published" +
-      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "");
+    const usaStale = d.loadedAt && Date.now() - d.loadedAt > SIX_MONTHS_MS;
+    el.style.color = usaStale ? "#b06a3a" : "#1a7a4f";
+    el.innerHTML = (usaStale ? "⚠ " : "") + "<strong>" + (d.count || countUsaStandards(d.table || {})) + "</strong> time entries published" +
+      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "") + (usaStale ? " — check for newer standards" : "");
   } catch (e) {
     if (!el) return;
     el.style.color = "#c0392b";
@@ -4871,9 +4891,10 @@ async function refreshMastersRecordsStatus() {
     if (window.buildMastersWr && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildMastersWr();
     if (!el) return;
     if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No records published yet — upload the PDF(s) below."; return; }
-    el.style.color = "#1a7a4f";
-    el.innerHTML = "<strong>" + (d.count || countMastersRecords(d.table || {})) + "</strong> records published" +
-      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "");
+    const wrStale = d.loadedAt && Date.now() - d.loadedAt > SIX_MONTHS_MS;
+    el.style.color = wrStale ? "#b06a3a" : "#1a7a4f";
+    el.innerHTML = (wrStale ? "⚠ " : "") + "<strong>" + (d.count || countMastersRecords(d.table || {})) + "</strong> records published" +
+      (d.loadedAt ? " · last updated " + fmtWhen(d.loadedAt) : "") + (wrStale ? " — check for newer records" : "");
   } catch (e) {
     if (!el) return;
     el.style.color = "#c0392b";
