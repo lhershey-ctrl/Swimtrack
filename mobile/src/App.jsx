@@ -9,7 +9,7 @@ import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
-  migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode,
+  migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -1818,7 +1818,14 @@ export default function App() {
   // loadSwimmers() so a brand-new coach never sees a raw permission error.
   useEffect(() => {
     if (!user) return;
-    if (isOwner(user)) { setCoachStatus("ok"); migrateLegacyAccess(user); loadSwimmers(); return; }
+    if (isOwner(user)) {
+      setCoachStatus("ok");
+      // Claims any pre-multi-coach swimmer that predates coachUids entirely
+      // (e.g. the owner's own profile) — without this it's invisible even
+      // to the owner's own (correctly-scoped) queries.
+      claimOrphanedSwimmers(user).catch((e) => console.error("claimOrphanedSwimmers failed:", e)).then(loadSwimmers);
+      return;
+    }
     setCoachStatus("checking");
     migrateLegacyAccess(user)
       .then(() => fetchCoach(user.uid))

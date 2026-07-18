@@ -207,6 +207,28 @@ export async function migrateLegacyAccess(user) {
   return { ran: true, failed };
 }
 
+// Owner-only: the two-ID legacy bridge above only covers Noga/Gal, but the
+// owner may have OTHER pre-multi-coach swimmers (e.g. their own profile)
+// that predate coachUids entirely and were never migrated — those are
+// invisible to everyone (including the owner's own filtered queries) until
+// claimed. Owner bypass lets this safely discover every orphaned doc.
+export async function claimOrphanedSwimmers(user) {
+  if (!isOwner(user)) return;
+  try {
+    const snap = await getDocs(collection(db, "swimmers"));
+    const orphaned = snap.docs.filter((d) => {
+      const cu = d.data().coachUids;
+      return !Array.isArray(cu) || cu.length === 0;
+    });
+    if (!orphaned.length) return;
+    const results = await Promise.allSettled(orphaned.map((d) =>
+      setDoc(doc(db, "swimmers", d.id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+    ));
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length) console.error("claimOrphanedSwimmers: failed to claim", failed);
+  } catch (e) { console.error("claimOrphanedSwimmers failed:", e); }
+}
+
 // ── Invite codes (config for onboarding new coaches) ──────────────────
 // inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt, note }.
 // Owner-only to create; single-use, self-service to redeem.

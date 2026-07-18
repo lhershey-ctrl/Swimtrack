@@ -601,7 +601,7 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     var name=(nameEl.value||'').trim();
     var id=(idEl.value||'').trim().replace(/[^0-9]/g,'');
     if(!name||!id){alert('Please enter both a name and a player ID.');return;}
-    SWIMMERS.push({name:name,id:id,seasonIds:[]});
+    SWIMMERS.push({name:name,id:id,seasonIds:[],_manuallyAdded:true});
     saveSettings();nameEl.value='';idEl.value='';
     renderSwimmerMgmt();renderSwimmerSelectors();
   };
@@ -681,7 +681,12 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   window.pruneAutoImportedSwimmers=function(validIds){
     var valid={};validIds.forEach(function(id){valid[String(id)]=true;});
     var before=SWIMMERS.length;
-    SWIMMERS=SWIMMERS.filter(function(sw){return !sw._autoImported||valid[String(sw.id)];});
+    // Keep anything explicitly added by hand (even if not synced to the
+    // cloud yet), or anything present in the fresh, correctly-scoped cloud
+    // result. Drop everything else — this also retroactively cleans up
+    // entries that leaked in via the OLD unfiltered sync, before
+    // _autoImported/_manuallyAdded existed to tell them apart.
+    SWIMMERS=SWIMMERS.filter(function(sw){return sw._manuallyAdded||valid[String(sw.id)];});
     if(SWIMMERS.length!==before){
       if(activeSwimmer>=SWIMMERS.length)activeSwimmer=Math.max(0,SWIMMERS.length-1);
       saveSettings();
@@ -808,7 +813,7 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     };
 
   window.addSettingsSwimmer=function(){
-    SWIMMERS.push({name:'New Swimmer',id:'',seasonIds:[]});
+    SWIMMERS.push({name:'New Swimmer',id:'',seasonIds:[],_manuallyAdded:true});
     saveSettings();renderSettingsUI();renderSwimmerMgmt();renderSwimmerSelectors();
   };
 
@@ -5082,6 +5087,28 @@ async function migrateLegacyAccess(user) {
   return { ran: true, failed };
 }
 
+// Owner-only: the two-ID legacy bridge above only covers Noga/Gal, but the
+// owner may have OTHER pre-multi-coach swimmers (e.g. their own profile)
+// that predate coachUids entirely and were never migrated — those are
+// invisible to everyone (including the owner's own filtered queries) until
+// claimed. Owner bypass lets this safely discover every orphaned doc.
+async function claimOrphanedSwimmers(user) {
+  if (!isOwner(user)) return;
+  try {
+    const snap = await getDocs(collection(db, "swimmers"));
+    const orphaned = snap.docs.filter((d) => {
+      const cu = d.data().coachUids;
+      return !Array.isArray(cu) || cu.length === 0;
+    });
+    if (!orphaned.length) return;
+    const results = await Promise.allSettled(orphaned.map((d) =>
+      setDoc(doc(db, "swimmers", d.id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+    ));
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length) console.error("claimOrphanedSwimmers: failed to claim", failed);
+  } catch (e) { console.error("claimOrphanedSwimmers failed:", e); }
+}
+
 // inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt, note }.
 async function createInviteCode(note) {
   const code = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -5114,7 +5141,7 @@ onAuthStateChanged(auth, (u) => {
   currentUser = u; window.swimUser = u;
   if (u) {
     coachStatus = "checking"; render();
-    (isOwner(u) ? Promise.resolve(null) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
+    (isOwner(u) ? claimOrphanedSwimmers(u) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
       .then((coach) => {
         coachStatus = (isOwner(u) || coach) ? "ok" : "needsInvite";
         if (coachStatus === "ok") { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables(); }
