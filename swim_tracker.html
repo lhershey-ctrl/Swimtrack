@@ -748,7 +748,7 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     window.autoAddSeasonId=function(swimmerId,sid){
       if(!sid||isNaN(sid))return;
       var sw=SWIMMERS.filter(function(s){return String(s.id)===String(swimmerId);})[0];
-      if(!sw)return;
+      if(!sw){console.warn('autoAddSeasonId: no swimmer matches id',swimmerId);return;}
       sw.seasonIds=sw.seasonIds||[];
       if(sw.seasonIds.indexOf(sid)>=0)return; // already known
       sw.seasonIds.push(sid);
@@ -1189,6 +1189,15 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   <p id="settingsLoadStatus" style="font-size:12px;margin-top:6px"></p>
   <p style="font-size:12px;color:#aaa;margin-top:8px">Changes save automatically in this browser. Height, weight &amp; profile also save to the cloud (for the phone app) when you're signed in — use <strong>☁ Save to Cloud</strong> to sign in and push everything.</p>
 
+  <div class="section-title">👥 Add a Viewer</div>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
+  <div class="card" style="padding:16px 20px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="viewerNote" placeholder="Note (e.g. their name) — optional" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-family:inherit">
+      <span id="viewerActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
+    </div>
+  </div>
+
 </div>
 
 <div id="tc-admin" class="page" style="display:none">
@@ -1596,7 +1605,10 @@ function switchTab(n){
     document.getElementById('tc-'+t).style.display=t===n?'':'none';
     document.getElementById('t-'+t).classList.toggle('active',t===n);
   });
-  if(n==='settings' && typeof renderSettingsUI==='function'){renderSettingsUI();renderPhysStats();}
+  if(n==='settings'){
+    if(typeof renderSettingsUI==='function'){renderSettingsUI();renderPhysStats();}
+    if(typeof window.renderViewerBar==='function')window.renderViewerBar();
+  }
   if(n==='race') initRaceTab();
   if(n==='analyze') setTimeout(function(){window.dispatchEvent(new Event('resize'));},50);
   if(n==='admin'){
@@ -1677,10 +1689,13 @@ function mergeRaw(raw,errs){
     var label=k;
     if(/^\d+$/.test(k)){
       var n=parseInt(k);var yr=2025-Math.round((1715-n)/110);label=yr+'-'+(yr+1);
-      // Auto-detect: this swimmer actually has data for season ID n — track
-      // it without requiring a manual "+ Add" step in Settings.
-      if(mergeSwimmerId&&window.autoAddSeasonId)window.autoAddSeasonId(mergeSwimmerId,n);
     }
+    // Auto-detect: this swimmer actually has data for this season — track it
+    // without requiring a manual "+ Add" step in Settings. The extraction
+    // tools key seasons by year label ("2025-2026"), storing the numeric
+    // season ID inside s.seasonId, not as the object key.
+    var sidNum=parseInt(s&&s.seasonId,10);
+    if(mergeSwimmerId&&!isNaN(sidNum)&&window.autoAddSeasonId)window.autoAddSeasonId(mergeSwimmerId,sidNum);
     if(!D[label]){
       D[label]=s;
     } else {
@@ -4685,6 +4700,7 @@ function render() {
   }
   if (hasData) ac.appendChild(btn("✕ Clear", () => window.clearLoadedData && window.clearLoadedData(), "#b06a3a"));
   renderInviteBar();
+  renderViewerBar();
 }
 
 let generatedCodes = []; // [{code, note}] generated this session
@@ -4710,6 +4726,37 @@ function renderInviteBar() {
   });
 }
 window.renderInviteBar = renderInviteBar;
+
+// Any signed-in coach — not just the owner — can invite someone to share
+// (fully read/write) their OWN current roster, the same way sharos88
+// shares access with lhershey. Different from ④'s owner-only "Invite a
+// Coach," which creates a brand-new, independent, empty roster.
+let generatedViewerCodes = []; // [{code, note}] generated this session
+function renderViewerBar() {
+  const out = $("viewerActions"), noteInput = $("viewerNote");
+  if (!out) return;
+  out.innerHTML = "";
+  if (!currentUser) { out.innerHTML = '<span style="font-size:12px;color:#9a6b00">Sign in above first.</span>'; return; }
+  out.appendChild(btn("Generate code", async () => {
+    if (!cloudSwimmers.length) { alert("You don't have any synced swimmers yet — sync at least one before sharing."); return; }
+    try {
+      const code = await createInviteCode(noteInput ? noteInput.value.trim() : "", {
+        targetCoachUid: currentUser.uid,
+        swimmerIds: cloudSwimmers.map((s) => s.id),
+      });
+      generatedViewerCodes.unshift({ code, note: noteInput ? noteInput.value.trim() : "" });
+      if (noteInput) noteInput.value = "";
+      renderViewerBar();
+    } catch (e) { alert("Failed to generate code: " + e.message); }
+  }, "#1D9E75"));
+  generatedViewerCodes.forEach((c) => {
+    const chip = document.createElement("span");
+    chip.style.cssText = "font-family:monospace;font-weight:800;font-size:13px;color:#1a7a4f;background:#fff;border:1px solid #b7e4cc;border-radius:7px;padding:4px 10px";
+    chip.textContent = c.code + (c.note ? " (" + c.note + ")" : "");
+    out.appendChild(chip);
+  });
+}
+window.renderViewerBar = renderViewerBar;
 
 async function swimLoadFromCloud(id) {
   const snap = await getDoc(doc(db, "swimmers", String(id)));
@@ -5119,9 +5166,15 @@ async function claimOrphanedSwimmers(user) {
 }
 
 // inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt, note }.
-async function createInviteCode(note) {
+// Two kinds: a plain code (owner-only) creates a brand-new, independent
+// coach with an empty roster; a "join my team" code (any coach, targeting
+// only their own uid — see firestore.rules) shares the creator's CURRENT
+// swimmer list with whoever redeems it, same access a co-coach already has.
+async function createInviteCode(note, shareWith) {
   const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-  await setDoc(doc(db, "inviteCodes", code), { createdAt: Date.now(), createdBy: currentUser.email, usedBy: null, usedAt: null, note: note || "" });
+  const payload = { createdAt: Date.now(), createdBy: currentUser.email, usedBy: null, usedAt: null, note: note || "" };
+  if (shareWith) { payload.targetCoachUid = shareWith.targetCoachUid; payload.swimmerIds = shareWith.swimmerIds; }
+  await setDoc(doc(db, "inviteCodes", code), payload);
   return code;
 }
 async function redeemInviteCode(code, user) {
@@ -5131,6 +5184,14 @@ async function redeemInviteCode(code, user) {
   if (inv.usedBy) throw new Error("This invite code has already been used.");
   await setDoc(doc(db, "inviteCodes", code), { usedBy: user.email, usedAt: Date.now() }, { merge: true });
   await createCoachDoc(user);
+  if (inv.targetCoachUid && Array.isArray(inv.swimmerIds) && inv.swimmerIds.length) {
+    await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds: inv.swimmerIds, claimedAt: Date.now() });
+    const results = await Promise.allSettled(inv.swimmerIds.map((id) =>
+      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+    ));
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
+  }
 }
 
 // ── Admin stats (owner-only; deliberately separate from every other query
@@ -5149,24 +5210,21 @@ async function renderAdminStats() {
     const coaches = coachSnap.docs.map((d) => ({ uid: d.id, ...d.data() }));
     const swimmers = swimmerSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const codes = codeSnap.docs.map((d) => ({ code: d.id, ...d.data() }));
-    const countByCoach = {};
-    swimmers.forEach((sw) => (sw.coachUids || []).forEach((uid) => { countByCoach[uid] = (countByCoach[uid] || 0) + 1; }));
-    const coachRows = coaches.map((co) => ({ ...co, swimmerCount: countByCoach[co.uid] || 0 }))
-      .sort((a, b) => b.swimmerCount - a.swimmerCount);
+    const teams = groupCoachesIntoTeams(coaches, swimmers);
     const openCodes = codes.filter((cd) => !cd.usedBy);
     const usedCodes = codes.filter((cd) => cd.usedBy);
 
     metricsEl.innerHTML =
-      '<div class="metric hi"><div class="lbl">Coaches</div><div class="val">' + coaches.length + '</div></div>' +
+      '<div class="metric hi"><div class="lbl">Teams</div><div class="val">' + teams.length + '</div></div>' +
       '<div class="metric"><div class="lbl">Swimmers</div><div class="val">' + swimmers.length + '</div></div>' +
       '<div class="metric green"><div class="lbl">Open Codes</div><div class="val">' + openCodes.length + '</div></div>';
 
-    coachesEl.innerHTML = coachRows.length ? coachRows.map(function (co, i) {
+    coachesEl.innerHTML = teams.length ? teams.map(function (team, i) {
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;' +
-        (i < coachRows.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
-        '<div><div style="font-size:13px;font-weight:600">' + (co.name || co.email) + '</div>' +
-        (co.name ? '<div style="font-size:11px;color:#999">' + co.email + '</div>' : '') + '</div>' +
-        '<div style="font-size:14px;font-weight:800;color:#185FA5">' + co.swimmerCount + '</div></div>';
+        (i < teams.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
+        '<div><div style="font-size:13px;font-weight:600">' + team.members.map(function (m) { return m.name || m.email; }).join(' + ') + '</div>' +
+        '<div style="font-size:11px;color:#999">' + team.members.map(function (m) { return m.email; }).join(' · ') + '</div></div>' +
+        '<div style="font-size:14px;font-weight:800;color:#185FA5">' + team.swimmerCount + '</div></div>';
     }).join('') : '<div style="padding:14px;color:#aaa;font-size:13px">No coaches yet.</div>';
 
     const allCodes = openCodes.concat(usedCodes);
