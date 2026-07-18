@@ -2722,7 +2722,7 @@ function buildCompetitions(filterSeason){
 
   // Filter and render competition table
   var shown=compActiveSeason?allCompList.filter(function(c){return c.season===compActiveSeason;}):allCompList;
-  shown=shown.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+  shown=shown.slice().sort(function(a,b){return(parseDate(b.date)||0)-(parseDate(a.date)||0);});
 
   if(shown.length){
     var _pbKeys=computePBTimeline();
@@ -2822,7 +2822,7 @@ function makeEvChart(canvasId,sc25,lc50){
 
 function makeEvTable(results){
   if(!results.length)return'<p style="color:#aaa;font-size:12px;padding:10px 0">No results for this filter.</p>';
-  var sorted=results.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+  var sorted=results.slice().sort(function(a,b){return(parseDate(b.date)||0)-(parseDate(a.date)||0);});
   var h='<table style="width:100%;border-collapse:collapse;font-size:11px">';
   h+='<tr style="border-bottom:1px solid #eee">'+
     '<th style="padding:5px 6px;color:#999;text-align:left;white-space:nowrap">Date</th>'+
