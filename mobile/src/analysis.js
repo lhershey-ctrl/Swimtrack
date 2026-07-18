@@ -805,18 +805,24 @@ export function teamUsaTierSummary(roster, table) {
 // Rudolph age-graded score per swimmer (long-course only, same convention as
 // the per-swimmer Rudolph trend view) — latest scored swim's points, plus
 // the team average.
+// Rudolph is only calibrated through the junior/youth brackets — like USA
+// Standards, it isn't meaningful for masters swimmers, so anyone currently
+// over this age is excluded from the team summary entirely.
+export const RUDOLPH_TEAM_MAX_AGE = 20;
 export function teamRudolphSummary(roster, table) {
   const perSwimmer = [];
-  if (!table) return { avg: null, perSwimmer };
+  if (!table) return { best: null, perSwimmer };
   roster.forEach(({ swimmer, D }) => {
     if (!swimmer || !swimmer.birthdate) return;
+    const age = recordAge(swimmer.birthdate, null);
+    if (age != null && age > RUDOLPH_TEAM_MAX_AGE) return;
     const tr = rudolphTrend(D, table, swimmer.sex, swimmer.birthdate, { pool: "50" });
     if (!tr.points.length) return;
     const latest = tr.points.reduce((a, b) => (b.x > a.x ? b : a));
     perSwimmer.push({ swimmer, score: latest.y });
   });
-  const avg = perSwimmer.length ? perSwimmer.reduce((s, p) => s + p.score, 0) / perSwimmer.length : null;
-  return { avg, perSwimmer };
+  const best = perSwimmer.length ? perSwimmer.reduce((a, b) => (b.score > a.score ? b : a)) : null;
+  return { best: best ? { swimmer: best.swimmer, score: best.score } : null, perSwimmer };
 }
 
 // Team-wide highlights, in the same { type, ico, title, text } shape

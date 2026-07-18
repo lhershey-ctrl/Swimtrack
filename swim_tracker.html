@@ -5363,6 +5363,10 @@ function _teamHighlights(roster) {
   if (busiest && busiest.nMeets > 0) out.push({ type: 'amber', ico: '📅', title: 'Busiest competitor: ' + busiest.name, text: busiest.nMeets + ' meet' + (busiest.nMeets !== 1 ? 's' : '') + ' this season' });
   return out;
 }
+// Rudolph is only calibrated through the junior/youth brackets — like USA
+// Standards, it isn't meaningful for masters swimmers, so anyone currently
+// over this age is excluded from the team summary entirely.
+var RUDOLPH_TEAM_MAX_AGE = 20;
 function groupTeamStats(roster, usaTable, rudTable) {
   var usaHist = {}; USA_TIERS.forEach(function (t) { usaHist[t] = 0; });
   var usaPer = [], rudPer = [];
@@ -5375,13 +5379,13 @@ function groupTeamStats(roster, usaTable, rudTable) {
       Object.values(tiers.shortTier).concat(Object.values(tiers.longTier)).forEach(function (v) { if (v > best) best = v; });
       if (best > 0) { usaHist[USA_TIERS[best - 1]]++; usaPer.push({ name: r.swimmer.name, tier: USA_TIERS[best - 1] }); }
     }
-    if (rudTable) {
+    if (rudTable && age != null && age <= RUDOLPH_TEAM_MAX_AGE) {
       var score = _teamRudolphScore(r.D, rudTable, r.swimmer.sex, r.swimmer.birthdate);
       if (score != null) rudPer.push({ name: r.swimmer.name, score: score });
     }
   });
-  var rudAvg = rudPer.length ? rudPer.reduce(function (s, p) { return s + p.score; }, 0) / rudPer.length : null;
-  return { usaHistogram: usaHist, usaPerSwimmer: usaPer, rudAvg: rudAvg, rudPerSwimmer: rudPer };
+  var rudBest = rudPer.length ? rudPer.reduce(function (a, b) { return b.score > a.score ? b : a; }) : null;
+  return { usaHistogram: usaHist, usaPerSwimmer: usaPer, rudBest: rudBest, rudPerSwimmer: rudPer };
 }
 function _teamRelTime(ts) {
   if (!ts) return 'never';
@@ -5443,8 +5447,8 @@ async function renderTeamStats() {
       '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:8px">USA Standards (ages 10-18)</div>' +
       (usaChips || '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
       '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin:14px 0 8px">Rudolph Age Score</div>' +
-      (stats.rudAvg != null
-        ? '<div style="font-size:13px;margin-bottom:8px">Team average: <strong>' + stats.rudAvg.toFixed(1) + '</strong> pts</div>' +
+      (stats.rudBest != null
+        ? '<div style="font-size:13px;margin-bottom:8px">Best: <strong>' + stats.rudBest.score.toFixed(1) + '</strong> pts (' + stats.rudBest.name + ')</div>' +
           stats.rudPerSwimmer.slice().sort((a, b) => b.score - a.score).map((p) =>
             '<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid #f0efe9;font-size:12.5px"><span>' + p.name + '</span><strong>' + p.score.toFixed(1) + ' pts</strong></div>'
           ).join('')
@@ -5537,8 +5541,8 @@ async function renderAdminStats() {
         '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:8px">USA Standards (ages 10-18)</div>' +
         (usaChips || '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
         '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin:14px 0 4px">Rudolph Age Score</div>' +
-        (stats.rudAvg != null
-          ? '<div style="font-size:13px">Average: <strong>' + stats.rudAvg.toFixed(1) + '</strong> pts across ' + stats.rudPerSwimmer.length + ' swimmer(s)</div>'
+        (stats.rudBest != null
+          ? '<div style="font-size:13px">Best: <strong>' + stats.rudBest.score.toFixed(1) + '</strong> pts (' + stats.rudBest.name + ') — ' + stats.rudPerSwimmer.length + ' swimmer(s) scored</div>'
           : '<div style="font-size:12.5px;color:#aaa">No Rudolph-scored swims yet.</div>') +
         '</div>';
 

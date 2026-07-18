@@ -2027,7 +2027,7 @@ function TeamTab({ swimmers, rudolphDoc, usaStandardsDoc }) {
         <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", margin: "14px 0 8px" }}>Rudolph Age Score</div>
         {rudSummary.perSwimmer.length ? (
           <>
-            <div style={{ fontSize: 13, marginBottom: 8 }}>Team average: <b>{rudSummary.avg.toFixed(1)}</b> pts</div>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>Best: <b>{rudSummary.best.score.toFixed(1)}</b> pts ({rudSummary.best.swimmer.name})</div>
             {rudSummary.perSwimmer.slice().sort((a, b) => b.score - a.score).map((p) => (
               <div key={p.swimmer.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${c.line}`, fontSize: 12.5 }}>
                 <span>{p.swimmer.name}</span><span style={{ fontWeight: 700 }}>{p.score.toFixed(1)} pts</span>
@@ -2170,7 +2170,7 @@ function AdminStatsPanel({ owner }) {
           </div>
         ) : <div style={{ fontSize: 12.5, color: c.dim }}>No swimmers ages 10-18 with standards data yet.</div>}
         <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", margin: "14px 0 4px" }}>Rudolph Age Score</div>
-        <div style={{ fontSize: 13 }}>{rudSummary.avg != null ? <>Average: <b>{rudSummary.avg.toFixed(1)}</b> pts across {rudSummary.perSwimmer.length} swimmer(s)</> : "No Rudolph-scored swims yet."}</div>
+        <div style={{ fontSize: 13 }}>{rudSummary.best != null ? <>Best: <b>{rudSummary.best.score.toFixed(1)}</b> pts ({rudSummary.best.swimmer.name}) — {rudSummary.perSwimmer.length} swimmer(s) scored</> : "No Rudolph-scored swims yet."}</div>
       </Card>
 
       <div style={s.h2}>Least Recently Synced</div>
