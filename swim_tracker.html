@@ -459,16 +459,13 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
         if(age)ageLine='<span style="opacity:.8;font-size:12px">Age '+age+' · '+ageGroupLabel(age)+'</span>';
       }
 
-      // Season tags
+      // Season tags — auto-detected (see autoAddSeasonId); still removable
+      // in case one was ever detected wrong.
       var sidTagsHtml=sids.map(function(sid){
         var lbl=KNOWN[sid]?KNOWN[sid]+' ('+sid+')':'Season '+sid;
         return '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#dbeafe;border:1px solid #93c5fd;border-radius:20px;font-size:12px;font-weight:600;color:#1e40af;margin:2px">'
           +lbl+'<button onclick="removeSwimmerSeason('+i+','+sid+')" title="Remove" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:12px;line-height:1;padding:0;margin-left:2px">✕</button></span>';
-      }).join('') || '<span style="font-size:12px;color:#aaa;font-style:italic">No seasons added yet</span>';
-
-      var usedSids=sids.map(Number);
-      var availOpts=Object.keys(KNOWN).map(Number).filter(function(sid){return usedSids.indexOf(sid)<0;})
-        .map(function(sid){return '<option value="'+sid+'">'+KNOWN[sid]+' ('+sid+')</option>';}).join('');
+      }).join('');
 
       // Physical measurement tables
       function measTable(arr,unit,field,colorCls){
@@ -523,16 +520,16 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
           +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">'
             +'<div style="flex:1;min-width:110px">'
               +'<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Name</label>'
-              +'<input id="set-name-'+i+'" value="'+sw.name+'" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'
+              +'<input id="set-name-'+i+'" value="'+sw.name+'" oninput="var _s=window.getAllSwimmers()['+i+'];_s&&(_s.name=this.value)" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'
             +'</div>'
             +'<div style="flex:2;min-width:150px">'
               +'<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">LogLig Player ID</label>'
-              +'<input id="set-id-'+i+'" value="'+sw.id+'" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:monospace;box-sizing:border-box">'
+              +'<input id="set-id-'+i+'" value="'+sw.id+'" oninput="var _s=window.getAllSwimmers()['+i+'];_s&&(_s.id=this.value.replace(/[^0-9]/g,\'\'))" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:monospace;box-sizing:border-box">'
               +'<div style="font-size:10px;color:#bbb;margin-top:3px">loglig.com → /Players/Details/<strong>ID</strong></div>'
             +'</div>'
             +'<div style="flex:1;min-width:120px">'
               +'<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Date of Birth</label>'
-              +'<input id="set-bd-'+i+'" value="'+(sw.birthdate||'')+'" placeholder="DD/MM/YYYY" '
+              +'<input id="set-bd-'+i+'" value="'+(sw.birthdate||'')+'" placeholder="DD/MM/YYYY" oninput="var _s=window.getAllSwimmers()['+i+'];_s&&(_s.birthdate=this.value)" '
                 +'style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:monospace;box-sizing:border-box">'
             +'</div>'
             +'<div style="flex:1;min-width:130px">'
@@ -546,17 +543,14 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
             +'</div>'
           +'</div>'
 
-          // Seasons section
+          // Seasons section — auto-detected from whatever's actually been
+          // loaded/uploaded (see mergeRaw's autoAddSeasonId call); no manual
+          // "+ Add" step needed. A tag can still be removed if wrong.
           +'<div style="margin-bottom:18px;padding:14px 16px;background:#f8faff;border:1px solid #dbeafe;border-radius:10px">'
-            +'<div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">🗓 Seasons</div>'
-            +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">'+sidTagsHtml+'</div>'
-            +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-              +(availOpts?'<select id="new-sid-sel-'+i+'" style="padding:6px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:12px;background:#fff">'+availOpts+'</select>'
-                +'<button onclick="addSwimmerSeason('+i+',\'known\')" style="padding:6px 14px;background:#185FA5;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">+ Add</button>'
-                +'<span style="color:#d1d5db;font-size:11px">or custom ID:</span>':'')
-              +'<input id="custom-sid-'+i+'" placeholder="Season ID…" style="width:110px;padding:6px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:12px;font-family:monospace">'
-              +'<button onclick="addSwimmerSeason('+i+',\'custom\')" style="padding:6px 12px;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:7px;font-size:12px;cursor:pointer">+ Add</button>'
-            +'</div>'
+            +'<div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">🗓 Seasons — auto-detected from loaded data</div>'
+            +(sids.length
+              ?'<div style="display:flex;flex-wrap:wrap;gap:4px">'+sidTagsHtml+'</div>'
+              :'<div style="font-size:12px;color:#9ca3af;font-style:italic">None yet — upload this swimmer\'s season data (Extract tab) and it\'ll show up here automatically.</div>')
           +'</div>'
 
           // Physical measurements — two columns
@@ -596,6 +590,9 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
       if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
       if(typeof buildAll==='function')buildAll();
     }
+    // Picking a name is enough — pull this swimmer's data straight from the
+    // cloud instead of requiring a separate "Load from cloud" click too.
+    if(window.swimUser&&window.doLoadFromCloud)window.doLoadFromCloud();
   };
 
   window.addSwimmer=function(){
@@ -720,6 +717,21 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
       var sw=SWIMMERS[i];if(!sw)return;
       sw.seasonIds=(sw.seasonIds||[]).filter(function(s){return s!==sid;});
       saveSettings();renderSettingsUI();
+    };
+
+    // Auto-detect: called from mergeRaw() whenever an uploaded/pasted season
+    // JSON is merged in, so a swimmer's season list stays in sync with what's
+    // actually been loaded — no more manual "+ Add" step.
+    window.autoAddSeasonId=function(swimmerId,sid){
+      if(!sid||isNaN(sid))return;
+      var sw=SWIMMERS.filter(function(s){return String(s.id)===String(swimmerId);})[0];
+      if(!sw)return;
+      sw.seasonIds=sw.seasonIds||[];
+      if(sw.seasonIds.indexOf(sid)>=0)return; // already known
+      sw.seasonIds.push(sid);
+      sw.seasonIds.sort(function(a,b){return b-a;});
+      saveSettings();
+      if(document.getElementById('settingsSwimmerList'))renderSettingsUI();
     };
 
     window.setSwimmerSex=function(i,val){
@@ -1626,11 +1638,17 @@ function mergeRaw(raw,errs){
   // Capture top-level _swimmerId before iterating season keys
   if(parsed._swimmerId&&!D._swimmerId)D._swimmerId=parsed._swimmerId;
   if(parsed._swimmerName&&!D._swimmerName)D._swimmerName=parsed._swimmerName;
+  var mergeSwimmerId=parsed._swimmerId||window.__loadedSwimmerId;
   Object.keys(parsed).forEach(function(k){
     if(k==='_swimmerId'||k==='_swimmerName')return;
     var s=parsed[k];
     var label=k;
-    if(/^\d+$/.test(k)){var n=parseInt(k);var yr=2025-Math.round((1715-n)/110);label=yr+'-'+(yr+1);}
+    if(/^\d+$/.test(k)){
+      var n=parseInt(k);var yr=2025-Math.round((1715-n)/110);label=yr+'-'+(yr+1);
+      // Auto-detect: this swimmer actually has data for season ID n — track
+      // it without requiring a manual "+ Add" step in Settings.
+      if(mergeSwimmerId&&window.autoAddSeasonId)window.autoAddSeasonId(mergeSwimmerId,n);
+    }
     if(!D[label]){
       D[label]=s;
     } else {
@@ -4670,12 +4688,11 @@ async function swimLoadFromCloud(id) {
 // fresh browser) is loadable — not just the local localStorage defaults.
 async function refreshCloudSwimmers() {
   try {
-    // Owners see every swimmer (needed for support/admin); a coach only sees
-    // their own roster — Firestore rules require this filter to be present
-    // in the query itself, not just enforced per-doc.
-    const q = isOwner(currentUser)
-      ? collection(db, "swimmers")
-      : query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
+    // Always scoped to this account's own roster — even for the owner.
+    // Cross-coach visibility (e.g. for support) is a deliberate, separate
+    // admin action, never the default day-to-day swimmer list, so one
+    // coach's newly-added swimmers never bleed into another's picker.
+    const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
     const snap = await getDocs(q);
     cloudSwimmers = snap.docs
       .map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)) }))
@@ -4998,9 +5015,8 @@ window.clearLoadedData = function () {
 // switching the active swimmer, unlike upsertSwimmer.
 async function autoSyncProfilesFromCloud() {
   try {
-    const q = isOwner(currentUser)
-      ? collection(db, "swimmers")
-      : query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
+    // Always scoped to this account's own roster — see refreshCloudSwimmers().
+    const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
     const snap = await getDocs(q);
     const locals = window.getAllSwimmers ? window.getAllSwimmers() : [];
     snap.docs.forEach((d) => {
@@ -5096,6 +5112,10 @@ document.addEventListener("DOMContentLoaded", render);
 render();
 // Expose a hook so other UI (swimmer switch) can refresh the bar.
 window.refreshCloudBar = render;
+// Lets picking a swimmer's name (① Load Data picker) also pull their data
+// straight from the cloud, instead of requiring a separate "Load from
+// cloud" click after switching.
+window.doLoadFromCloud = doLoadFromCloud;
 </script>
 
 <!-- All-records browser modal -->

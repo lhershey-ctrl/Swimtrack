@@ -61,14 +61,13 @@ export function signOut() {
 //     updatedAt: <ms>
 //   }
 
-// One-time fetch of the swimmer list (id + name) for the picker. Owners see
-// every swimmer (needed for the admin stats panel); a coach only sees their
-// own roster (coachUids array-contains their uid) — Firestore rules require
-// this filter to be present in the query itself, not just enforced per-doc.
+// One-time fetch of the swimmer list (id + name) for the picker. Always
+// scoped to this account's own roster — even for the owner. Cross-coach
+// visibility (e.g. a future admin stats panel) is a deliberate, separate
+// action, never the default day-to-day list, so one coach's newly-added
+// swimmers never bleed into another's picker.
 export async function fetchSwimmers(user) {
-  const q = isOwner(user)
-    ? collection(db, "swimmers")
-    : query(collection(db, "swimmers"), where("coachUids", "array-contains", user.uid));
+  const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", user.uid));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
