@@ -889,6 +889,14 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     <span id="cloudActions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
   </div>
 
+  <!-- ☁ INVITE A COACH (owner-only) -->
+  <div id="inviteBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 2px;padding:11px 14px;background:linear-gradient(135deg,#f0faf5,#f7fdfa);border:1px solid #b7e4cc;border-radius:12px">
+    <span style="font-size:13px;color:#1a7a4f;font-weight:800">🔑 Invite a Coach</span>
+    <input id="inviteNote" placeholder="Note (e.g. coach's name) — optional" style="padding:6px 10px;border:1px solid #b7e4cc;border-radius:7px;font-size:12px;min-width:160px">
+    <span style="flex:1"></span>
+    <span id="inviteActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
+  </div>
+
   <div id="swimmerBanner" style="display:none;margin:14px 0 20px"></div>
 
   <div id="analysis" style="display:none">
@@ -4524,7 +4532,7 @@ function clearRace2(){
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs }
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, where, arrayUnion }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -4543,6 +4551,11 @@ const provider = new GoogleAuthProvider();
 let currentUser = null;
 let lastSyncedAt = null;
 let cloudSwimmers = []; // [{id, name}] fetched from Firestore when signed in
+let coachStatus = "checking"; // "checking" | "needsInvite" | "ok" — gates the cloud UI for non-owners
+
+// Keep in sync with ownerEmails() in firestore.rules.
+const OWNER_EMAILS = ["lhershey@gmail.com"];
+function isOwner(user) { return !!user && OWNER_EMAILS.includes((user.email || "").toLowerCase()); }
 function swIcon(name) { return name === "Noga" ? "🏊‍♀️ " : "🏊 "; }
 function fmtWhen(ms) {
   try { const d = new Date(ms); return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
@@ -4570,6 +4583,28 @@ function render() {
     st.textContent = "Not connected — sign in to load from or save to the cloud.";
     st.style.color = "#666";
     ac.appendChild(btn("☁ Sign in with Google", () => doSignIn(), "#185FA5"));
+  } else if (coachStatus === "checking") {
+    st.textContent = "Checking your account…";
+    st.style.color = "#666";
+  } else if (coachStatus === "needsInvite") {
+    st.innerHTML = "Signed in as <strong>" + currentUser.email + "</strong> · not activated yet";
+    st.style.color = "#9a6b00";
+    const input = document.createElement("input");
+    input.placeholder = "INVITE CODE";
+    input.style.cssText = "padding:6px 10px;border:1px solid #c9d3df;border-radius:7px;font-size:12px;font-family:monospace;text-transform:uppercase;width:130px";
+    ac.appendChild(input);
+    ac.appendChild(btn("Activate", async () => {
+      const code = input.value.trim().toUpperCase();
+      if (!code) { st.style.color = "#c0392b"; st.textContent = "Enter your invite code."; return; }
+      st.style.color = "#666"; st.textContent = "Checking code…";
+      try {
+        await redeemInviteCode(code, currentUser);
+        coachStatus = "ok";
+        refreshCloudSwimmers(); autoSyncProfilesFromCloud();
+        render();
+      } catch (e) { st.style.color = "#c0392b"; st.textContent = "❌ " + e.message; }
+    }, "#1D9E75"));
+    ac.appendChild(btn("Sign out", () => signOut(auth), "#9aa6b5"));
   } else {
     const sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
     // Only show a swimmer's NAME once their data is actually loaded; until then
@@ -4592,6 +4627,30 @@ function render() {
     ac.appendChild(btn("Sign out", () => signOut(auth), "#9aa6b5"));
   }
   if (hasData) ac.appendChild(btn("✕ Clear", () => window.clearLoadedData && window.clearLoadedData(), "#b06a3a"));
+  renderInviteBar();
+}
+
+let generatedCodes = []; // [{code, note}] generated this session
+function renderInviteBar() {
+  const bar = $("inviteBar"), out = $("inviteActions"), noteInput = $("inviteNote");
+  if (!bar || !out) return;
+  if (!isOwner(currentUser)) { bar.style.display = "none"; return; }
+  bar.style.display = "flex";
+  out.innerHTML = "";
+  out.appendChild(btn("Generate code", async () => {
+    try {
+      const code = await createInviteCode(noteInput ? noteInput.value.trim() : "");
+      generatedCodes.unshift({ code, note: noteInput ? noteInput.value.trim() : "" });
+      if (noteInput) noteInput.value = "";
+      renderInviteBar();
+    } catch (e) { alert("Failed to generate code: " + e.message); }
+  }, "#1D9E75"));
+  generatedCodes.forEach((c) => {
+    const chip = document.createElement("span");
+    chip.style.cssText = "font-family:monospace;font-weight:800;font-size:13px;color:#1a7a4f;background:#fff;border:1px solid #b7e4cc;border-radius:7px;padding:4px 10px";
+    chip.textContent = c.code + (c.note ? " (" + c.note + ")" : "");
+    out.appendChild(chip);
+  });
 }
 
 async function swimLoadFromCloud(id) {
@@ -4603,7 +4662,13 @@ async function swimLoadFromCloud(id) {
 // fresh browser) is loadable — not just the local localStorage defaults.
 async function refreshCloudSwimmers() {
   try {
-    const snap = await getDocs(collection(db, "swimmers"));
+    // Owners see every swimmer (needed for support/admin); a coach only sees
+    // their own roster — Firestore rules require this filter to be present
+    // in the query itself, not just enforced per-doc.
+    const q = isOwner(currentUser)
+      ? collection(db, "swimmers")
+      : query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
+    const snap = await getDocs(q);
     cloudSwimmers = snap.docs
       .map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)) }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -4708,6 +4773,7 @@ async function doSync() {
       weights: Array.isArray(sw.weights) ? sw.weights : [],
       seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
       updatedAt: Date.now(),
+      coachUids: arrayUnion(currentUser.uid),
     };
     if (Object.keys(seasons).length) payload.seasons = seasons;
     await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
@@ -4728,6 +4794,7 @@ async function doSync() {
 //    swimmer. Never touches season data (merge:true). Used by Settings. ──
 async function swimSaveProfile(sw) {
   if (!sw || !sw.id) throw new Error("missing swimmer id");
+  if (!currentUser) throw new Error("not signed in");
   await setDoc(doc(db, "swimmers", String(sw.id)), {
     name: sw.name || ("Swimmer " + sw.id),
     id: String(sw.id),
@@ -4737,6 +4804,7 @@ async function swimSaveProfile(sw) {
     weights: Array.isArray(sw.weights) ? sw.weights : [],
     seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
     updatedAt: Date.now(),
+    coachUids: arrayUnion(currentUser.uid),
   }, { merge: true });
 }
 
@@ -4922,7 +4990,10 @@ window.clearLoadedData = function () {
 // switching the active swimmer, unlike upsertSwimmer.
 async function autoSyncProfilesFromCloud() {
   try {
-    const snap = await getDocs(collection(db, "swimmers"));
+    const q = isOwner(currentUser)
+      ? collection(db, "swimmers")
+      : query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
+    const snap = await getDocs(q);
     const locals = window.getAllSwimmers ? window.getAllSwimmers() : [];
     snap.docs.forEach((d) => {
       const data = d.data();
@@ -4933,9 +5004,68 @@ async function autoSyncProfilesFromCloud() {
   } catch (e) { /* not signed in / no access yet — ignore */ }
 }
 
+// ── Coaches / invite codes (multi-coach access model) ─────────────────
+// coaches/{uid} = { email, name, createdAt }. Existence of this doc is what
+// makes an account a coach — see isCoach() in firestore.rules.
+async function fetchCoach(uid) {
+  const snap = await getDoc(doc(db, "coaches", uid));
+  return snap.exists() ? snap.data() : null;
+}
+async function createCoachDoc(user) {
+  await setDoc(doc(db, "coaches", user.uid), { email: user.email, name: user.displayName || "", createdAt: Date.now() });
+}
+
+// One-time bridge for the two pre-multi-coach family accounts (lhershey,
+// sharos88) who already had full shared access to Noga/Gal under the old
+// flat allow-list model. Safe to call on every sign-in — only does work
+// once per account. Deliberately does not swallow errors: a failure here
+// means the migration itself is broken and needs to be visible, not hidden.
+const LEGACY_SWIMMER_IDS = ["268117", "276401"]; // Noga, Gal
+async function migrateLegacyAccess(user) {
+  if (!user) return { ran: false };
+  const already = await fetchCoach(user.uid);
+  if (already) return { ran: false };
+  let accessEmails = [];
+  try { const snap = await getDoc(doc(db, "config", "access")); accessEmails = (snap.exists() && snap.data().emails) || []; } catch (e) { /* no access doc yet */ }
+  if (!accessEmails.map((e) => e.toLowerCase()).includes((user.email || "").toLowerCase())) return { ran: false };
+  await createCoachDoc(user);
+  const results = await Promise.allSettled(LEGACY_SWIMMER_IDS.map((id) =>
+    setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+  ));
+  const failed = results.map((r, i) => (r.status === "rejected" ? { id: LEGACY_SWIMMER_IDS[i], error: r.reason } : null)).filter(Boolean);
+  if (failed.length) console.error("migrateLegacyAccess: failed to claim swimmer(s)", failed);
+  return { ran: true, failed };
+}
+
+// inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt, note }.
+async function createInviteCode(note) {
+  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  await setDoc(doc(db, "inviteCodes", code), { createdAt: Date.now(), createdBy: currentUser.email, usedBy: null, usedAt: null, note: note || "" });
+  return code;
+}
+async function redeemInviteCode(code, user) {
+  const snap = await getDoc(doc(db, "inviteCodes", code));
+  if (!snap.exists()) throw new Error("Invite code not found.");
+  const inv = snap.data();
+  if (inv.usedBy) throw new Error("This invite code has already been used.");
+  await setDoc(doc(db, "inviteCodes", code), { usedBy: user.email, usedAt: Date.now() }, { merge: true });
+  await createCoachDoc(user);
+}
+
 onAuthStateChanged(auth, (u) => {
   currentUser = u; window.swimUser = u;
-  if (u) { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); } else { cloudSwimmers = []; }
+  if (u) {
+    coachStatus = "checking"; render();
+    (isOwner(u) ? Promise.resolve(null) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
+      .then((coach) => {
+        coachStatus = (isOwner(u) || coach) ? "ok" : "needsInvite";
+        if (coachStatus === "ok") { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); }
+        render();
+      })
+      .catch((e) => { console.error("Coach status check failed:", e); coachStatus = "needsInvite"; render(); });
+  } else {
+    cloudSwimmers = []; coachStatus = "checking";
+  }
   render();
   refreshRecordsStatus();
   refreshRudolphStatus();

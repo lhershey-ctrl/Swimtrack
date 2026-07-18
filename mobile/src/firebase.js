@@ -15,6 +15,9 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
+  query,
+  where,
+  arrayUnion,
 } from "firebase/firestore";
 
 // ── Firebase config (project: swimtrack-e12c8) ──────────────────────
@@ -58,9 +61,15 @@ export function signOut() {
 //     updatedAt: <ms>
 //   }
 
-// One-time fetch of the swimmer list (id + name) for the picker.
-export async function fetchSwimmers() {
-  const snap = await getDocs(collection(db, "swimmers"));
+// One-time fetch of the swimmer list (id + name) for the picker. Owners see
+// every swimmer (needed for the admin stats panel); a coach only sees their
+// own roster (coachUids array-contains their uid) — Firestore rules require
+// this filter to be present in the query itself, not just enforced per-doc.
+export async function fetchSwimmers(user) {
+  const q = isOwner(user)
+    ? collection(db, "swimmers")
+    : query(collection(db, "swimmers"), where("coachUids", "array-contains", user.uid));
+  const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
@@ -135,14 +144,93 @@ export async function saveSwimmerProfile(swimmerId, profile) {
   await setDoc(doc(db, "swimmers", String(swimmerId)), profile, { merge: true });
 }
 
-export async function createSwimmer(swimmerId, name) {
+// merge:true and deliberately omits `seasons` — never overwrite a swimmer's
+// season data, including on a re-add of an already-tracked ID (id/name/
+// coachUids are safe to always re-stamp; seasons is desktop-sync-owned and
+// must be left untouched here).
+export async function createSwimmer(swimmerId, name, coachUid) {
   await setDoc(
     doc(db, "swimmers", String(swimmerId)),
-    { id: String(swimmerId), name, seasons: {}, createdAt: Date.now() },
+    { id: String(swimmerId), name, createdAt: Date.now(), coachUids: arrayUnion(coachUid) },
     { merge: true }
   );
 }
 
 export async function deleteSwimmer(swimmerId) {
   await deleteDoc(doc(db, "swimmers", String(swimmerId)));
+}
+
+// ── Coaches (config for the multi-coach access model) ────────────────
+// coaches/{uid} = { email, name, createdAt }. Existence of this doc is what
+// makes an account a "coach" — see isCoach() in firestore.rules. Created
+// either by redeemInviteCode() (new coaches) or migrateLegacyAccess()
+// (the two pre-existing family accounts, one time only).
+export async function fetchCoach(uid) {
+  const snap = await getDoc(doc(db, "coaches", uid));
+  return snap.exists() ? snap.data() : null;
+}
+
+async function createCoachDoc(user) {
+  await setDoc(doc(db, "coaches", user.uid), {
+    email: user.email, name: user.displayName || "", createdAt: Date.now(),
+  });
+}
+
+// One-time bridge for the two pre-multi-coach family accounts (lhershey,
+// sharos88) who already had full shared access to Noga/Gal under the old
+// flat allow-list model. Runs harmlessly as a no-op for everyone else
+// (new coaches go through redeemInviteCode() instead). Safe to call on
+// every sign-in — it only does work once per account.
+//
+// Deliberately does NOT swallow errors: a permission-denied here means the
+// rules/migration logic itself is broken, not "nothing to migrate" — that
+// needs to surface (console + return value), not fail silently and leave
+// someone quietly locked out with no clue why.
+const LEGACY_SWIMMER_IDS = ["268117", "276401"]; // Noga, Gal
+export async function migrateLegacyAccess(user) {
+  if (!user) return { ran: false };
+  const already = await fetchCoach(user.uid);
+  if (already) return { ran: false };
+  // A brand-new (non-legacy) coach can't read config/access at all yet — that's
+  // expected (not a bug), so this specific read failing just means "nothing to
+  // migrate," not an error to propagate.
+  let accessList = [];
+  try { accessList = await getAccessList(); } catch (e) { /* not on the legacy list — fine */ }
+  if (!accessList.map((e) => e.toLowerCase()).includes((user.email || "").toLowerCase())) return { ran: false };
+  await createCoachDoc(user);
+  const results = await Promise.allSettled(LEGACY_SWIMMER_IDS.map((id) =>
+    setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid) }, { merge: true })
+  ));
+  const failed = results
+    .map((r, i) => (r.status === "rejected" ? { id: LEGACY_SWIMMER_IDS[i], error: r.reason } : null))
+    .filter(Boolean);
+  if (failed.length) console.error("migrateLegacyAccess: failed to claim swimmer(s)", failed);
+  return { ran: true, failed };
+}
+
+// ── Invite codes (config for onboarding new coaches) ──────────────────
+// inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt, note }.
+// Owner-only to create; single-use, self-service to redeem.
+export async function createInviteCode(ownerUser, note) {
+  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  await setDoc(doc(db, "inviteCodes", code), {
+    createdAt: Date.now(), createdBy: ownerUser.email, usedBy: null, usedAt: null, note: note || "",
+  });
+  return code;
+}
+
+export async function fetchInviteCode(code) {
+  const snap = await getDoc(doc(db, "inviteCodes", code));
+  return snap.exists() ? snap.data() : null;
+}
+
+// Redeem an invite code: marks it used by this account, then creates the
+// coaches/{uid} doc that actually grants access. Throws if the code is
+// missing/already used — caller should show that message to the user.
+export async function redeemInviteCode(code, user) {
+  const inv = await fetchInviteCode(code);
+  if (!inv) throw new Error("Invite code not found.");
+  if (inv.usedBy) throw new Error("This invite code has already been used.");
+  await setDoc(doc(db, "inviteCodes", code), { usedBy: user.email, usedAt: Date.now() }, { merge: true });
+  await createCoachDoc(user);
 }

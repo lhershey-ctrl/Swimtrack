@@ -9,6 +9,7 @@ import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
+  migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -128,6 +129,51 @@ function SignIn({ onSignIn, error }) {
         <GoogleG /> Sign in with Google
       </button>
       {error && <div style={{ color: "#fecaca", marginTop: 18, fontSize: 13, maxWidth: 320, textAlign: "center" }}>{error}</div>}
+    </div>
+  );
+}
+
+// Shown after Google sign-in for any account that isn't yet a recognized
+// coach (no coaches/{uid} doc) — a one-time invite code from the owner
+// activates the account. Signing out from here lets someone re-try with a
+// different Google account without needing to fully reload the page.
+function InviteGate({ user, onRedeemed, onSignOut }) {
+  const [code, setCode] = useState("");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function redeem() {
+    const c = code.trim().toUpperCase();
+    if (!c) { setStatus("Enter your invite code."); return; }
+    setBusy(true); setStatus("");
+    try { await redeemInviteCode(c, user); onRedeemed(); }
+    catch (e) { setStatus("❌ " + e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center",
+      justifyContent: "center", padding: 28, background: GRAD }}>
+      <div style={{ fontSize: 48, marginBottom: 8 }}>🔑</div>
+      <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-.5px", color: "#fff" }}>Invite code needed</div>
+      <div style={{ color: "rgba(255,255,255,.8)", marginTop: 8, marginBottom: 8, textAlign: "center", maxWidth: 320 }}>
+        Signed in as {user.email}. Enter the one-time invite code the owner gave you to activate your account.
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 20, width: "100%", maxWidth: 320 }}>
+        <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="INVITE CODE"
+          style={{ flex: 1, padding: "12px 14px", borderRadius: 12, border: "none", fontSize: 15,
+            fontFamily: "monospace", textTransform: "uppercase", textAlign: "center" }} />
+      </div>
+      <button onClick={redeem} disabled={busy} style={{ marginTop: 12, width: "100%", maxWidth: 320,
+        background: "#fff", color: "#1f2937", border: "none", borderRadius: 14, padding: "14px 22px",
+        fontSize: 15, fontWeight: 700, cursor: "pointer", boxShadow: "0 8px 24px rgba(0,0,0,.3)" }}>
+        {busy ? "Checking…" : "Activate"}
+      </button>
+      {status && <div style={{ color: "#fecaca", marginTop: 18, fontSize: 13, maxWidth: 320, textAlign: "center" }}>{status}</div>}
+      <button onClick={onSignOut} style={{ marginTop: 28, background: "none", border: "none",
+        color: "rgba(255,255,255,.7)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>
+        Sign in with a different account
+      </button>
     </div>
   );
 }
@@ -1451,7 +1497,9 @@ function SettingsTab({ user, swimmers, reloadSwimmers }) {
           background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>Sign out</button>
       </Card>
 
-      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} />
+      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} />
+
+      <InviteCodeManager owner={owner} user={user} />
 
       <AccessManager owner={owner} />
 
@@ -1464,7 +1512,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers }) {
   );
 }
 
-function SwimmersManager({ swimmers, reloadSwimmers }) {
+function SwimmersManager({ swimmers, reloadSwimmers, coachUid }) {
   const { c, s } = useUI();
   const [editing, setEditing] = useState(null); // swimmer id
   const [newName, setNewName] = useState("");
@@ -1475,9 +1523,13 @@ function SwimmersManager({ swimmers, reloadSwimmers }) {
     const id = newId.trim().replace(/[^0-9]/g, "");
     const name = newName.trim();
     if (!name || !id) { setStatus("Enter a name and numeric Player ID."); return; }
-    await createSwimmer(id, name);
-    setNewName(""); setNewId(""); setStatus("✅ Added " + name);
-    reloadSwimmers();
+    try {
+      await createSwimmer(id, name, coachUid);
+      setNewName(""); setNewId(""); setStatus("✅ Added " + name);
+      reloadSwimmers();
+    } catch (e) {
+      setStatus("❌ " + (/permission/i.test(e.message) ? "That Player ID already belongs to another coach." : e.message));
+    }
   }
 
   return (
@@ -1608,6 +1660,57 @@ function MeasEditor({ title, unit, color, arr, setArr, onAdd }) {
   );
 }
 
+// Owner-only: generate one-time invite codes for new coaches. Each code is
+// good for exactly one signup (see redeemInviteCode in firebase.js).
+function InviteCodeManager({ owner, user }) {
+  const { c, s } = useUI();
+  const [note, setNote] = useState("");
+  const [codes, setCodes] = useState([]); // codes generated this session
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!owner) return null;
+
+  async function generate() {
+    setBusy(true); setStatus("");
+    try {
+      const code = await createInviteCode(user, note.trim());
+      setCodes((prev) => [{ code, note: note.trim() }, ...prev]);
+      setNote(""); setStatus("✅ Code generated — copy it to the new coach.");
+    } catch (e) { setStatus("❌ " + e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <>
+      <div style={s.h2}>Invite a Coach</div>
+      <Card>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (e.g. coach's name) — optional"
+            style={{ ...s.input, flex: 1 }} />
+          <button onClick={generate} disabled={busy} style={{ padding: "0 18px", borderRadius: 10, border: "none",
+            background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>{busy ? "…" : "Generate"}</button>
+        </div>
+        {status && <div style={{ marginTop: 8, fontSize: 12.5, color: status[0] === "✅" ? c.green : c.amber }}>{status}</div>}
+        {codes.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            {codes.map((c2, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 0", borderTop: i > 0 ? `1px solid ${c.line}` : "none" }}>
+                <span style={{ fontFamily: "monospace", fontWeight: 800, fontSize: 15 }}>{c2.code}</span>
+                <span style={{ fontSize: 11.5, color: c.dim }}>{c2.note}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: c.dim, marginTop: 8 }}>
+          Each code works once. The new coach signs in with Google, then enters the code to activate their account.
+        </div>
+      </Card>
+    </>
+  );
+}
+
 function AccessManager({ owner }) {
   const { c, s } = useUI();
   const [emails, setEmails] = useState(null);
@@ -1683,6 +1786,7 @@ export default function App() {
   const [rudolphDoc, setRudolphDoc] = useState(null);
   const [usaStandardsDoc, setUsaStandardsDoc] = useState(null);
   const [mastersRecordsDoc, setMastersRecordsDoc] = useState(null);
+  const [coachStatus, setCoachStatus] = useState("checking"); // "checking" | "needsInvite" | "ok"
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
@@ -1692,17 +1796,33 @@ export default function App() {
   useEffect(() => { if (user) fetchMastersRecords().then(setMastersRecordsDoc).catch(() => setMastersRecordsDoc(null)); }, [user]);
 
   function loadSwimmers() {
-    return fetchSwimmers()
+    return fetchSwimmers(user)
       .then((list) => {
         setSwimmers(list);
         setSwimmerId((prev) => prev || (list[0] && list[0].id) || null);
-        setLoadErr(list.length ? "" : "No swimmer data in the cloud yet. Sync from the desktop app first.");
+        setLoadErr(list.length ? "" : "No swimmers yet — add one in Settings.");
       })
       .catch((e) => setLoadErr(/permission/i.test(e.message)
-        ? "Your account isn't on the access list. Ask the owner to add your email in Settings."
+        ? "Your account isn't recognized. Ask the owner for an invite code."
         : "Could not load data: " + e.message));
   }
-  useEffect(() => { if (user) loadSwimmers(); }, [user]);
+
+  // Gate: owners always have access; everyone else needs a coaches/{uid} doc,
+  // either from the one-time legacy-family bridge or from redeeming an
+  // invite code (see InviteGate below). Runs before ever calling
+  // loadSwimmers() so a brand-new coach never sees a raw permission error.
+  useEffect(() => {
+    if (!user) return;
+    if (isOwner(user)) { setCoachStatus("ok"); migrateLegacyAccess(user); loadSwimmers(); return; }
+    setCoachStatus("checking");
+    migrateLegacyAccess(user)
+      .then(() => fetchCoach(user.uid))
+      .then((coach) => {
+        if (coach) { setCoachStatus("ok"); loadSwimmers(); }
+        else setCoachStatus("needsInvite");
+      })
+      .catch((e) => { console.error("Coach status check failed:", e); setCoachStatus("needsInvite"); });
+  }, [user]);
 
   useEffect(() => {
     if (!user || !swimmerId) return;
@@ -1718,6 +1838,11 @@ export default function App() {
 
   if (user === undefined) return <div style={s.app}><Center>Loading…</Center></div>;
   if (!user) return <SignIn onSignIn={handleSignIn} error={authErr} />;
+  if (coachStatus === "checking") return <div style={s.app}><Center>Checking your account…</Center></div>;
+  if (coachStatus === "needsInvite") {
+    return <InviteGate user={user} onSignOut={signOut}
+      onRedeemed={() => { setCoachStatus("ok"); loadSwimmers(); }} />;
+  }
 
   const D = swimmer?.seasons || {};
   const hasData = swimmer && Object.keys(D).length > 0;

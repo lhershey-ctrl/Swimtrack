@@ -2,8 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Owners: permanent admins, hardcoded. Can always access data and
-    //    can edit the live allow-list. Add more owner emails here only. ──
+    // ── Owners: permanent admins, hardcoded. Can always access everything,
+    //    generate invite codes, and manage coach accounts. Add more owner
+    //    emails here only. ──
     function ownerEmails() {
       return [
         "lhershey@gmail.com"
@@ -15,58 +16,117 @@ service cloud.firestore {
         && request.auth.token.email in ownerEmails();
     }
 
-    // ── Allow-list lives in Firestore (config/access.emails) so it can be
-    //    edited from the app's Settings tab without redeploying rules. ──
+    // ── Legacy allow-list (config/access.emails) — pre-multi-coach shared
+    //    family access. Kept only as (a) a bridge so lhershey/sharos88 keep
+    //    working through the coachUids migration, and (b) a fallback so
+    //    those two accounts can still read shared reference tables below.
+    //    New coaches use coaches/{uid} instead — see isCoach(). ──
     function accessEmails() {
       return get(/databases/$(database)/documents/config/access).data.emails;
     }
 
-    function isAllowed() {
-      return request.auth != null && (
-        isOwner() ||
-        (
-          exists(/databases/$(database)/documents/config/access) &&
-          request.auth.token.email in accessEmails()
-        )
-      );
+    function isLegacyAllowed() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/config/access)
+        && request.auth.token.email in accessEmails();
     }
 
-    // Swimmer data: any allow-listed (or owner) account may read/write.
+    // ── Coaches: self-registered (via a one-time invite code redemption)
+    //    after 2026-07. Existence of coaches/{uid} is what makes an account
+    //    a coach — see the /coaches rules below for how a doc gets created. ──
+    function isCoach() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+    }
+
+    // Any recognized member of the app (owner, legacy family access, or a
+    // registered coach) — used to gate reads of shared reference tables that
+    // aren't per-coach data (Israeli records, Rudolph, USA standards, etc).
+    function isMember() {
+      return isOwner() || isCoach() || isLegacyAllowed();
+    }
+
+    match /coaches/{uid} {
+      // A coach can read their own doc (and the owner can read any, for the
+      // admin stats panel). Self-registration only: you may create your own
+      // doc (after redeeming an invite code client-side) with your own email
+      // — you can never create one for someone else. Only the owner can
+      // later edit/remove a coach.
+      allow read: if isOwner() || request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.email == request.auth.token.email;
+      allow update, delete: if isOwner();
+    }
+
+    match /inviteCodes/{code} {
+      // Any signed-in user may read a code to check validity before
+      // redeeming it. Only the owner can mint new codes. Redemption is a
+      // single, narrow, self-service update: you may only flip an unused
+      // code to "used by me", nothing else about it.
+      allow read: if request.auth != null;
+      allow create: if isOwner();
+      allow update: if request.auth != null
+        && resource.data.usedBy == null
+        && request.resource.data.usedBy == request.auth.token.email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedAt']);
+    }
+
+    // Swimmer data: isolated per coach via coachUids (an array, since a
+    // swimmer can have more than one coach — e.g. the original two family
+    // accounts sharing Noga/Gal). The owner can always read/write anything
+    // (needed for the admin stats panel + support).
     match /swimmers/{swimmerId} {
-      allow read, write: if isAllowed();
+      allow read, delete: if isOwner()
+        || (isCoach() && 'coachUids' in resource.data && request.auth.uid in resource.data.coachUids);
+      allow create: if isOwner()
+        || (isCoach() && 'coachUids' in request.resource.data && request.auth.uid in request.resource.data.coachUids);
+      allow update: if isOwner()
+        || (isCoach() && 'coachUids' in resource.data && request.auth.uid in resource.data.coachUids)
+        // One-time bridge: a legacy allow-listed user (pre-multi-coach shared
+        // family access) claims a swimmer they already had full access to,
+        // by adding ONLY their own uid to coachUids — nothing else about the
+        // document changes. Self-service; naturally stops mattering once
+        // every legacy user has signed in once after this migration.
+        || (
+          isLegacyAllowed() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coachUids']) &&
+          request.resource.data.coachUids ==
+            (('coachUids' in resource.data) ? resource.data.coachUids : []).concat([request.auth.uid])
+        );
     }
 
-    // The access list: everyone allowed can read it; only owners can change it.
+    // The legacy access list: members can read it (needed for the migration
+    // bridge check above); only owners can change it.
     match /config/access {
-      allow read: if isAllowed();
+      allow read: if isMember();
       allow write: if isOwner();
     }
 
-    // Israeli age records: everyone allowed can read; only owners can publish
+    // Israeli age records: every member can read; only owners can publish
     // (loaded ~once a year from the official record PDFs via the desktop app).
     match /config/records {
-      allow read: if isAllowed();
+      allow read: if isMember();
       allow write: if isOwner();
     }
 
-    // Rudolph age-graded points table: everyone allowed can read; only owners
+    // Rudolph age-graded points table: every member can read; only owners
     // can publish (loaded from the official Rudolph PDF via the desktop app).
     match /config/rudolph {
-      allow read: if isAllowed();
+      allow read: if isMember();
       allow write: if isOwner();
     }
 
-    // USA Swimming Motivational Standards (junior, SCM/LCM): everyone allowed
+    // USA Swimming Motivational Standards (junior, SCM/LCM): every member
     // can read; only owners can publish (loaded via the desktop app).
     match /config/usaStandards {
-      allow read: if isAllowed();
+      allow read: if isMember();
       allow write: if isOwner();
     }
 
-    // World Aquatics Masters world records (SCM/LCM): everyone allowed can
+    // World Aquatics Masters world records (SCM/LCM): every member can
     // read; only owners can publish (loaded via the desktop app).
     match /config/mastersRecords {
-      allow read: if isAllowed();
+      allow read: if isMember();
       allow write: if isOwner();
     }
   }
