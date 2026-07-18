@@ -240,6 +240,23 @@ export async function createInviteCode(ownerUser, note) {
   return code;
 }
 
+// ── Admin stats (owner-only; deliberately separate from the normal,
+//    always-scoped fetchSwimmers()) — total coaches, swimmers per coach,
+//    invite code status. This is the one place cross-coach visibility is
+//    intentional, and it's a dedicated action, never the default list. ──
+export async function fetchAllCoaches() {
+  const snap = await getDocs(collection(db, "coaches"));
+  return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+}
+export async function fetchAllSwimmersAdmin() {
+  const snap = await getDocs(collection(db, "swimmers"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+export async function fetchAllInviteCodes() {
+  const snap = await getDocs(collection(db, "inviteCodes"));
+  return snap.docs.map((d) => ({ code: d.id, ...d.data() }));
+}
+
 export async function fetchInviteCode(code) {
   const snap = await getDoc(doc(db, "inviteCodes", code));
   return snap.exists() ? snap.data() : null;

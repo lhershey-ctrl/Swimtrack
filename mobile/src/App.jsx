@@ -10,6 +10,7 @@ import {
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
   migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers,
+  fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -1890,9 +1891,81 @@ export default function App() {
 
 function AdminTab({ user }) {
   const { s } = useUI();
+  const owner = isOwner(user);
   return (
     <div style={s.pad}>
-      <InviteCodeManager owner={isOwner(user)} user={user} />
+      <AdminStatsPanel owner={owner} />
+      <InviteCodeManager owner={owner} user={user} />
     </div>
+  );
+}
+
+// Owner-only cross-coach view — deliberately separate from every other
+// query in the app, which is always scoped to the signed-in account's own
+// roster. This is the one place seeing "everyone" is the point.
+function AdminStatsPanel({ owner }) {
+  const { c, s } = useUI();
+  const [coaches, setCoaches] = useState(null);
+  const [swimmers, setSwimmers] = useState(null);
+  const [codes, setCodes] = useState(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!owner) return;
+    Promise.all([fetchAllCoaches(), fetchAllSwimmersAdmin(), fetchAllInviteCodes()])
+      .then(([co, sw, cd]) => { setCoaches(co); setSwimmers(sw); setCodes(cd); })
+      .catch((e) => setErr(e.message));
+  }, [owner]);
+
+  if (!owner) return null;
+  if (err) return <><div style={s.h2}>Stats</div><Card style={{ borderColor: c.red }}>Failed to load: {err}</Card></>;
+  if (!coaches) return <><div style={s.h2}>Stats</div><Center>Loading…</Center></>;
+
+  const countByCoach = {};
+  swimmers.forEach((sw) => (sw.coachUids || []).forEach((uid) => { countByCoach[uid] = (countByCoach[uid] || 0) + 1; }));
+  const coachRows = coaches.map((co) => ({ ...co, swimmerCount: countByCoach[co.uid] || 0 }))
+    .sort((a, b) => b.swimmerCount - a.swimmerCount);
+  const openCodes = codes.filter((cd) => !cd.usedBy);
+  const usedCodes = codes.filter((cd) => cd.usedBy);
+
+  return (
+    <>
+      <div style={s.h2}>Stats</div>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <KPI val={coaches.length} lbl="Coaches" />
+        <KPI val={swimmers.length} lbl="Swimmers" />
+        <KPI val={openCodes.length} lbl="Open Codes" color={c.amber} />
+      </div>
+      <Card style={{ padding: 6 }}>
+        {coachRows.map((co, i) => (
+          <div key={co.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "9px 10px", borderBottom: i < coachRows.length - 1 ? `1px solid ${c.line}` : "none" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{co.name || co.email}</div>
+              {co.name && <div style={{ fontSize: 11, color: c.dim }}>{co.email}</div>}
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: c.blue }}>{co.swimmerCount}</div>
+          </div>
+        ))}
+      </Card>
+
+      <div style={s.h2}>Invite Codes</div>
+      <Card style={{ padding: 6 }}>
+        {codes.length === 0 ? <div style={{ color: c.dim, padding: 10, fontSize: 13 }}>None generated yet.</div> : (
+          [...openCodes, ...usedCodes].map((cd, i) => (
+            <div key={cd.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "9px 10px", borderBottom: i < codes.length - 1 ? `1px solid ${c.line}` : "none" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: "monospace", fontWeight: 800, fontSize: 13.5 }}>{cd.code}</div>
+                {cd.note && <div style={{ fontSize: 11, color: c.dim }}>{cd.note}</div>}
+              </div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: cd.usedBy ? c.green : c.amber }}>
+                {cd.usedBy ? "✅ " + cd.usedBy : "Open"}
+              </div>
+            </div>
+          ))
+        )}
+      </Card>
+    </>
   );
 }

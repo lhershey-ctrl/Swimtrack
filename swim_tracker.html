@@ -1193,6 +1193,12 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
 
 <div id="tc-admin" class="page" style="display:none">
 
+  <div class="section-title">📊 Stats</div>
+  <div class="metrics" id="adminMetrics" style="margin-bottom:20px"></div>
+  <div id="adminCoachesCard" class="card" style="padding:6px;margin-bottom:20px"></div>
+  <div class="section-title">🎟 Invite Codes</div>
+  <div id="adminCodesCard" class="card" style="padding:6px;margin-bottom:24px"></div>
+
   <div class="section-title">🔑 Invite a Coach</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time invite code for a new coach. They sign in with Google, then enter this code to activate their account — after that, just Google sign-in like everyone else. Each code works once.</p>
   <div class="card" style="padding:16px 20px">
@@ -1593,7 +1599,10 @@ function switchTab(n){
   if(n==='settings' && typeof renderSettingsUI==='function'){renderSettingsUI();renderPhysStats();}
   if(n==='race') initRaceTab();
   if(n==='analyze') setTimeout(function(){window.dispatchEvent(new Event('resize'));},50);
-  if(n==='admin' && typeof window.renderInviteBar==='function') window.renderInviteBar();
+  if(n==='admin'){
+    if(typeof window.renderInviteBar==='function')window.renderInviteBar();
+    if(typeof window.renderAdminStats==='function')window.renderAdminStats();
+  }
 }
 
 // Analyze-tab sub-navigation: groups the (many) sections into Overview /
@@ -5123,6 +5132,57 @@ async function redeemInviteCode(code, user) {
   await setDoc(doc(db, "inviteCodes", code), { usedBy: user.email, usedAt: Date.now() }, { merge: true });
   await createCoachDoc(user);
 }
+
+// ── Admin stats (owner-only; deliberately separate from every other query
+// in the app, which is always scoped to the signed-in account's own
+// roster). This is the one place cross-coach visibility is intentional. ──
+async function renderAdminStats() {
+  const metricsEl = $("adminMetrics"), coachesEl = $("adminCoachesCard"), codesEl = $("adminCodesCard");
+  if (!metricsEl || !isOwner(currentUser)) return;
+  metricsEl.innerHTML = '<div class="metric"><div class="lbl">Loading…</div></div>';
+  try {
+    const [coachSnap, swimmerSnap, codeSnap] = await Promise.all([
+      getDocs(collection(db, "coaches")),
+      getDocs(collection(db, "swimmers")),
+      getDocs(collection(db, "inviteCodes")),
+    ]);
+    const coaches = coachSnap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+    const swimmers = swimmerSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const codes = codeSnap.docs.map((d) => ({ code: d.id, ...d.data() }));
+    const countByCoach = {};
+    swimmers.forEach((sw) => (sw.coachUids || []).forEach((uid) => { countByCoach[uid] = (countByCoach[uid] || 0) + 1; }));
+    const coachRows = coaches.map((co) => ({ ...co, swimmerCount: countByCoach[co.uid] || 0 }))
+      .sort((a, b) => b.swimmerCount - a.swimmerCount);
+    const openCodes = codes.filter((cd) => !cd.usedBy);
+    const usedCodes = codes.filter((cd) => cd.usedBy);
+
+    metricsEl.innerHTML =
+      '<div class="metric hi"><div class="lbl">Coaches</div><div class="val">' + coaches.length + '</div></div>' +
+      '<div class="metric"><div class="lbl">Swimmers</div><div class="val">' + swimmers.length + '</div></div>' +
+      '<div class="metric green"><div class="lbl">Open Codes</div><div class="val">' + openCodes.length + '</div></div>';
+
+    coachesEl.innerHTML = coachRows.length ? coachRows.map(function (co, i) {
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;' +
+        (i < coachRows.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
+        '<div><div style="font-size:13px;font-weight:600">' + (co.name || co.email) + '</div>' +
+        (co.name ? '<div style="font-size:11px;color:#999">' + co.email + '</div>' : '') + '</div>' +
+        '<div style="font-size:14px;font-weight:800;color:#185FA5">' + co.swimmerCount + '</div></div>';
+    }).join('') : '<div style="padding:14px;color:#aaa;font-size:13px">No coaches yet.</div>';
+
+    const allCodes = openCodes.concat(usedCodes);
+    codesEl.innerHTML = allCodes.length ? allCodes.map(function (cd, i) {
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;' +
+        (i < allCodes.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
+        '<div><div style="font-family:monospace;font-weight:800;font-size:13px">' + cd.code + '</div>' +
+        (cd.note ? '<div style="font-size:11px;color:#999">' + cd.note + '</div>' : '') + '</div>' +
+        '<div style="font-size:11px;font-weight:700;color:' + (cd.usedBy ? '#1a7a4f' : '#9a6b00') + '">' +
+        (cd.usedBy ? '✅ ' + cd.usedBy : 'Open') + '</div></div>';
+    }).join('') : '<div style="padding:14px;color:#aaa;font-size:13px">None generated yet.</div>';
+  } catch (e) {
+    metricsEl.innerHTML = '<div class="metric"><div class="lbl" style="color:#c0392b">Failed to load: ' + e.message + '</div></div>';
+  }
+}
+window.renderAdminStats = renderAdminStats;
 
 // Fetch the shared reference tables (records/Rudolph/USA standards/masters
 // WR) — only once coachStatus is actually "ok". A brand-new coach's very

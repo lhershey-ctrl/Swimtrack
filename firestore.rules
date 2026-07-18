@@ -59,11 +59,13 @@ service cloud.firestore {
     }
 
     match /inviteCodes/{code} {
-      // Any signed-in user may read a code to check validity before
-      // redeeming it. Only the owner can mint new codes. Redemption is a
-      // single, narrow, self-service update: you may only flip an unused
-      // code to "used by me", nothing else about it.
-      allow read: if request.auth != null;
+      // Any signed-in user may fetch a SPECIFIC code (they already have to
+      // know the exact string) to check validity before redeeming it — but
+      // only the owner may LIST/enumerate every code that exists (admin
+      // stats panel), so a random signed-in account can't discover and
+      // race to redeem a code that wasn't given to them.
+      allow get: if request.auth != null;
+      allow list: if isOwner();
       allow create: if isOwner();
       allow update: if request.auth != null
         && resource.data.usedBy == null
