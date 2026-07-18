@@ -2025,6 +2025,12 @@ function AdminStatsPanel({ owner }) {
   const usaSummary = teamUsaTierSummary(roster, usaStandardsDoc && usaStandardsDoc.table);
   const rudSummary = teamRudolphSummary(roster, rudolphDoc && rudolphDoc.table);
   const stalest = swimmers.slice().sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0)).slice(0, 8);
+  // One row per swimmer with either a Rudolph score or a USA Standards tier
+  // (or both) — a single table instead of two separate lists.
+  const perfByName = {};
+  usaSummary.perSwimmer.forEach((p) => { (perfByName[p.swimmer.name] = perfByName[p.swimmer.name] || { name: p.swimmer.name }).usaTier = p.tier; });
+  rudSummary.perSwimmer.forEach((p) => { (perfByName[p.swimmer.name] = perfByName[p.swimmer.name] || { name: p.swimmer.name }).rudScore = p.score; });
+  const perfRows = Object.values(perfByName).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <>
@@ -2068,26 +2074,25 @@ function AdminStatsPanel({ owner }) {
       </Card>
 
       <div style={s.h2}>Performance Split (all coaches)</div>
-      <Card style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", marginBottom: 8 }}>USA Standards (ages 10-18)</div>
-        {usaSummary.perSwimmer.length ? (
-          <>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
-              {USA_TIERS.filter((t) => usaSummary.histogram[t] > 0).map((t) => (
-                <span key={t} style={{ fontSize: 12.5, fontWeight: 700, color: c.blue, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 10px" }}>
-                  {t}: {usaSummary.histogram[t]}
-                </span>
+      <Card style={{ marginBottom: 14, padding: 6 }}>
+        {perfRows.length ? (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>
+              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Swimmer</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Rudolph</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>USA Standard</th>
+            </tr></thead>
+            <tbody>
+              {perfRows.map((r, i) => (
+                <tr key={r.name} style={{ borderTop: i > 0 ? `1px solid ${c.line}` : "none" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5 }}>{r.name}</td>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700 }}>{r.rudScore != null ? r.rudScore.toFixed(1) + " pts" : "—"}</td>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700, color: c.blue }}>{r.usaTier || "—"}</td>
+                </tr>
               ))}
-            </div>
-            {usaSummary.perSwimmer.slice().sort((a, b) => USA_TIERS.indexOf(b.tier) - USA_TIERS.indexOf(a.tier)).map((p) => (
-              <div key={p.swimmer.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${c.line}`, fontSize: 12.5 }}>
-                <span>{p.swimmer.name}</span><strong>{p.tier}</strong>
-              </div>
-            ))}
-          </>
-        ) : <div style={{ fontSize: 12.5, color: c.dim }}>No swimmers ages 10-18 with standards data yet.</div>}
-        <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", margin: "14px 0 4px" }}>Rudolph Age Score</div>
-        <div style={{ fontSize: 13 }}>{rudSummary.best != null ? <>Best: <b>{rudSummary.best.score.toFixed(1)}</b> pts ({rudSummary.best.swimmer.name}) — {rudSummary.perSwimmer.length} swimmer(s) scored</> : "No Rudolph-scored swims yet."}</div>
+            </tbody>
+          </table>
+        ) : <div style={{ fontSize: 12.5, color: c.dim, padding: 8 }}>No Rudolph or USA Standards data yet.</div>}
       </Card>
 
       <div style={s.h2}>Least Recently Synced</div>
