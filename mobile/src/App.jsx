@@ -2071,13 +2071,20 @@ function AdminStatsPanel({ owner }) {
       <Card style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", marginBottom: 8 }}>USA Standards (ages 10-18)</div>
         {usaSummary.perSwimmer.length ? (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {USA_TIERS.filter((t) => usaSummary.histogram[t] > 0).map((t) => (
-              <span key={t} style={{ fontSize: 12.5, fontWeight: 700, color: c.blue, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 10px" }}>
-                {t}: {usaSummary.histogram[t]}
-              </span>
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
+              {USA_TIERS.filter((t) => usaSummary.histogram[t] > 0).map((t) => (
+                <span key={t} style={{ fontSize: 12.5, fontWeight: 700, color: c.blue, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 10px" }}>
+                  {t}: {usaSummary.histogram[t]}
+                </span>
+              ))}
+            </div>
+            {usaSummary.perSwimmer.slice().sort((a, b) => USA_TIERS.indexOf(b.tier) - USA_TIERS.indexOf(a.tier)).map((p) => (
+              <div key={p.swimmer.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${c.line}`, fontSize: 12.5 }}>
+                <span>{p.swimmer.name}</span><strong>{p.tier}</strong>
+              </div>
             ))}
-          </div>
+          </>
         ) : <div style={{ fontSize: 12.5, color: c.dim }}>No swimmers ages 10-18 with standards data yet.</div>}
         <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", margin: "14px 0 4px" }}>Rudolph Age Score</div>
         <div style={{ fontSize: 13 }}>{rudSummary.best != null ? <>Best: <b>{rudSummary.best.score.toFixed(1)}</b> pts ({rudSummary.best.swimmer.name}) — {rudSummary.perSwimmer.length} swimmer(s) scored</> : "No Rudolph-scored swims yet."}</div>

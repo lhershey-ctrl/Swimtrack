@@ -5458,10 +5458,12 @@ async function renderTeamStats() {
     const stats = groupTeamStats(roster, usaTable, rudTable);
     const usaChips = USA_TIERS.filter((t) => stats.usaHistogram[t] > 0)
       .map((t) => '<span style="font-size:12.5px;font-weight:700;color:#185FA5;background:#eff6ff;border:1px solid #93c5fd;border-radius:7px;padding:4px 10px;margin:0 6px 6px 0;display:inline-block">' + t + ': ' + stats.usaHistogram[t] + '</span>').join('');
+    const usaRows = stats.usaPerSwimmer.slice().sort((a, b) => USA_TIERS.indexOf(b.tier) - USA_TIERS.indexOf(a.tier))
+      .map((p) => '<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid #f0efe9;font-size:12.5px"><span>' + p.name + '</span><strong>' + p.tier + '</strong></div>').join('');
     perfEl.innerHTML =
       '<div class="card" style="padding:16px 20px">' +
       '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:8px">USA Standards (ages 10-18)</div>' +
-      (usaChips || '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
+      (usaChips ? '<div style="display:flex;flex-wrap:wrap">' + usaChips + '</div>' + usaRows : '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
       '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin:14px 0 8px">Rudolph Age Score</div>' +
       (stats.rudBest != null
         ? '<div style="font-size:13px;margin-bottom:8px">Best: <strong>' + stats.rudBest.score.toFixed(1) + '</strong> pts (' + stats.rudBest.name + ')</div>' +
@@ -5552,10 +5554,12 @@ async function renderAdminStats() {
       const stats = groupTeamStats(roster, usaTable, rudTable);
       const usaChips = USA_TIERS.filter((t) => stats.usaHistogram[t] > 0)
         .map((t) => '<span style="font-size:12.5px;font-weight:700;color:#185FA5;background:#eff6ff;border:1px solid #93c5fd;border-radius:7px;padding:4px 10px;margin:0 6px 6px 0;display:inline-block">' + t + ': ' + stats.usaHistogram[t] + '</span>').join('');
+      const usaRows = stats.usaPerSwimmer.slice().sort((a, b) => USA_TIERS.indexOf(b.tier) - USA_TIERS.indexOf(a.tier))
+        .map((p) => '<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid #f0efe9;font-size:12.5px"><span>' + p.name + '</span><strong>' + p.tier + '</strong></div>').join('');
       perfEl.innerHTML =
         '<div class="card" style="padding:16px 20px">' +
         '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:8px">USA Standards (ages 10-18)</div>' +
-        (usaChips || '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
+        (usaChips ? '<div style="display:flex;flex-wrap:wrap">' + usaChips + '</div>' + usaRows : '<div style="font-size:12.5px;color:#aaa">No swimmers ages 10-18 with standards data yet.</div>') +
         '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;margin:14px 0 4px">Rudolph Age Score</div>' +
         (stats.rudBest != null
           ? '<div style="font-size:13px">Best: <strong>' + stats.rudBest.score.toFixed(1) + '</strong> pts (' + stats.rudBest.name + ') — ' + stats.rudPerSwimmer.length + ' swimmer(s) scored</div>'
