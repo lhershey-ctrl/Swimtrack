@@ -199,10 +199,14 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   .ld-h1{font-size:30px}
 }
 
-/* ── PDF Summary report (① swimmer banner → 📄 PDF Summary). Hidden on
-   screen; @media print shows only #pdfReportRoot and hides everything
-   else, so "Print → Save as PDF" produces just the report. ── */
-#pdfReportRoot{display:none}
+/* ── PDF Summary report (① swimmer banner → 📄 PDF Summary). Positioned
+   off-screen (NOT display:none) so its <canvas> charts still get real
+   layout dimensions when Chart.js draws into them — a display:none
+   parent has zero computed size, which makes responsive:true charts
+   render blank/zero-size, so nothing shows up once printed. @media
+   print moves it back into normal flow and hides everything else, so
+   "Print → Save as PDF" produces just the report. ── */
+#pdfReportRoot{position:fixed;top:0;left:-10000px;width:820px;background:#fff}
 .rpt-page{background:#fff;padding:10px 4px 30px}
 .rpt-topline{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}
 .rpt-brand{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--blue)}
@@ -249,7 +253,7 @@ table.rpt-table tr:last-child td{border-bottom:none}
 @media print{
   @page{margin:12mm}
   body>*:not(#pdfReportRoot){display:none!important}
-  #pdfReportRoot{display:block!important}
+  #pdfReportRoot{position:static;left:auto;top:auto;width:auto}
   .rpt-page{page-break-after:always}
   .rpt-page:last-child{page-break-after:auto}
 }
@@ -3088,7 +3092,7 @@ function buildTop5(){
   renderEvCards();
 }
 
-function makeEvChart(canvasId,sc25,lc50){
+function makeEvChart(canvasId,sc25,lc50,noAnim){
   if(top5Charts[canvasId])try{top5Charts[canvasId].destroy();}catch(e){}
   var datasets=[];
   if(sc25.length)datasets.push({label:'25m',data:sc25,borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.8)',
@@ -3101,6 +3105,7 @@ function makeEvChart(canvasId,sc25,lc50){
   try{top5Charts[canvasId]=new Chart(_cvs.getContext('2d'),{
     type:'scatter',data:{datasets:datasets},
     options:{responsive:true,maintainAspectRatio:false,
+      animation:noAnim?false:undefined,
       plugins:{legend:{display:true,position:'top',labels:{font:{size:11},color:'#555',boxWidth:12}},
         tooltip:{callbacks:{
           title:function(c){return c[0].raw.date||'';},
@@ -5713,7 +5718,7 @@ function buildPdfReport() {
       if (r.pool === '25') sc25.push(pt); else if (r.pool === '50') lc50.push(pt);
     });
     sc25.sort(function (a, b) { return a.x - b.x; }); lc50.sort(function (a, b) { return a.x - b.x; });
-    makeEvChart('rpt-evc-' + i, sc25, lc50);
+    makeEvChart('rpt-evc-' + i, sc25, lc50, true); // noAnim — printing captures whatever's painted at print() time
     var tblEl = document.getElementById('rpt-evt-' + i); if (tblEl) tblEl.innerHTML = makeEvTable(evRes);
     var all = evRes.filter(function (r) { return parseDate(r.date); }).sort(function (a, b) { return parseDate(a.date) - parseDate(b.date); });
     var subEl = document.getElementById('rpt-evt-sub-' + i);
@@ -5730,7 +5735,7 @@ function buildPdfReport() {
 function openPdfReport() {
   try { buildPdfReport(); }
   catch (e) { alert('Could not build the PDF report: ' + e.message); console.error('openPdfReport failed:', e); return; }
-  setTimeout(function () { window.print(); }, 50); // let charts finish a paint cycle before printing
+  setTimeout(function () { window.print(); }, 250); // let Chart.js finish its (now non-animated) initial paint before printing
 }
 window.openPdfReport = openPdfReport;
 
