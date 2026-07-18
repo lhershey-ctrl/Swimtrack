@@ -198,6 +198,61 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   .ld-steps{grid-template-columns:1fr}
   .ld-h1{font-size:30px}
 }
+
+/* ── PDF Summary report (① swimmer banner → 📄 PDF Summary). Hidden on
+   screen; @media print shows only #pdfReportRoot and hides everything
+   else, so "Print → Save as PDF" produces just the report. ── */
+#pdfReportRoot{display:none}
+.rpt-page{background:#fff;padding:10px 4px 30px}
+.rpt-topline{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}
+.rpt-brand{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--blue)}
+.rpt-date{font-size:11px;color:var(--gray-500)}
+.rpt-header{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,var(--blue-dark) 0%,var(--blue) 55%,#1a7ac4 100%);border-radius:14px;padding:18px 22px;color:#fff;margin-bottom:22px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rpt-ico{font-size:28px}
+.rpt-name{font-size:21px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+.rpt-meta{font-size:11.5px;opacity:.8;margin-top:4px}
+.rpt-kpis{display:flex;gap:20px;margin-left:auto}
+.rpt-kpi{text-align:center}
+.rpt-kpi .v{font-size:18px;font-weight:800}
+.rpt-kpi .k{font-size:8.5px;opacity:.75;text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+.rpt-kpi.hi .v{color:#ffe9a8}
+.rpt-section{margin-bottom:20px}
+.rpt-h2{font-size:10px;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid var(--blue-light)}
+.rpt-evt-card{border:1px solid var(--gray-200);border-radius:12px;padding:14px 16px;margin-bottom:14px;break-inside:avoid}
+.rpt-evt-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.rpt-evt-title{font-size:13px;font-weight:700}
+.rpt-evt-sub{font-size:11px;color:var(--gray-500)}
+.rpt-evt-body{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;align-items:start}
+.rpt-two-col{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+table.rpt-table{width:100%;border-collapse:collapse;font-size:11px}
+table.rpt-table th{text-align:left;padding:6px 7px;font-size:9px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.03em;border-bottom:1.5px solid var(--gray-200)}
+table.rpt-table td{padding:6px 7px;border-bottom:1px solid var(--gray-200)}
+table.rpt-table td.num,table.rpt-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+table.rpt-table tr:last-child td{border-bottom:none}
+.rpt-table .rank{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;background:var(--blue-light);color:var(--blue-dark);font-size:9px;font-weight:800}
+.rpt-table .tier{font-weight:800;color:var(--blue)}
+.rpt-table .improve{color:#1a9e6f;font-weight:800}
+.rpt-table .time-cell{font-weight:700}
+.rpt-note{font-size:9.5px;color:var(--gray-500);margin-top:6px}
+.rpt-heat{border-collapse:collapse;font-size:10.5px}
+.rpt-heat th{font-size:9px;font-weight:800;color:var(--gray-500);text-transform:uppercase;padding:4px 7px;text-align:center}
+.rpt-heat th:first-child,.rpt-heat td:first-child{text-align:left;font-weight:700;padding-left:0}
+.rpt-heat td{padding:3px 4px;text-align:center}
+.heat-cell{width:28px;height:20px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rpt-callout-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.rpt-callout{border:1px solid var(--gray-200);border-radius:11px;padding:11px 13px;break-inside:avoid}
+.rpt-callout.emph{border-color:#f0d78c;background:#fff7e6;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rpt-callout .ico{font-size:15px;margin-bottom:5px}
+.rpt-callout .t{font-size:11.5px;font-weight:700;margin-bottom:2px}
+.rpt-callout .s{font-size:10px;color:var(--gray-500);line-height:1.4}
+.rpt-footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--gray-200);display:flex;justify-content:space-between;font-size:9px;color:var(--gray-500)}
+@media print{
+  @page{margin:12mm}
+  body>*:not(#pdfReportRoot){display:none!important}
+  #pdfReportRoot{display:block!important}
+  .rpt-page{page-break-after:always}
+  .rpt-page:last-child{page-break-after:auto}
+}
 </style>
 </head>
 <body>
@@ -268,6 +323,11 @@ function landingSignIn(){
   if(window.doSignIn) window.doSignIn();
 }
 </script>
+
+<!-- PDF SUMMARY REPORT — hidden on screen, populated by openPdfReport() and
+     shown only via @media print (Print → Save as PDF). See swimmerBanner's
+     "📄 PDF Summary" button. -->
+<div id="pdfReportRoot"></div>
 
 <!-- TOP BAR -->
 <div class="topbar">
@@ -1877,6 +1937,10 @@ function renderSwimmerBanner(){
         +'<div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.05em">Swims</div></div>'
       +rangeHtml
     +'</div>'
+    +'<button onclick="openPdfReport()" title="Open a printable summary — Print &rarr; Save as PDF" '
+      +'style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;'
+      +'border-radius:8px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">'
+      +'📄 PDF Summary</button>'
   +'</div>';
 }
 function finalize(errs){
@@ -5374,6 +5438,301 @@ async function redeemInviteCode(code, user) {
     if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
   }
 }
+
+// ── PDF Summary report (📄 PDF Summary button in the swimmer banner) ──
+// Print → Save as PDF, same mechanism mobile's Season Report already uses
+// via window.print() — no new library. Reuses makeEvChart()/makeEvTable()
+// as-is (① Progress in Key Events) so the progress charts are pixel-for-
+// pixel the same as the live Analyze tab, plus the existing records/USA
+// Standards/Rudolph/Masters-WR lookups so every number matches what's
+// already shown elsewhere in the app.
+var MASTERS_REPORT_AGE = 30; // same threshold buildMastersWr() already uses
+
+function _reportTopEvents(n) {
+  var counts = {};
+  allResults().forEach(function (r) { counts[r.event] = (counts[r.event] || 0) + 1; });
+  Object.values(D).forEach(function (s) {
+    (s.bests || []).forEach(function (r) {
+      if (r.event && r.seconds > 0 && !isRelay(r.event) && !counts[r.event]) counts[r.event] = 1;
+    });
+  });
+  return Object.keys(counts).sort(function (a, b) {
+    return counts[b] - counts[a] || parseInt(a) - parseInt(b) || a.localeCompare(b);
+  }).slice(0, n);
+}
+
+function _reportBestPerformances(n) {
+  var best = {};
+  allResults().forEach(function (r) {
+    if (!r.event || !r.seconds || isRelay(r.event)) return;
+    var key = r.event + '|' + r.pool;
+    if (!best[key] || r.seconds < best[key].seconds) best[key] = r;
+  });
+  return Object.values(best).sort(function (a, b) { return (b.points || 0) - (a.points || 0); }).slice(0, n);
+}
+
+function _reportMostImproved(n) {
+  var ss = seasons();
+  if (ss.length < 2) return [];
+  var cur = ss[ss.length - 1], prv = ss[ss.length - 2];
+  function bestByEv(sk) {
+    var m = {};
+    function upd(r) {
+      if (!r.event || !r.seconds || r.seconds <= 0 || isRelay(r.event)) return;
+      var pool = poolNorm(r.pool), key = r.event + '|' + pool;
+      if (!m[key] || r.seconds < m[key].seconds) m[key] = { seconds: r.seconds, time: r.time || '', event: r.event, pool: pool };
+    }
+    (D[sk].results || []).forEach(upd); (D[sk].bests || []).forEach(upd);
+    return m;
+  }
+  var curB = bestByEv(cur), prvB = bestByEv(prv), rows = [];
+  Object.keys(curB).forEach(function (key) {
+    var c = curB[key], p = prvB[key];
+    if (!p || p.seconds <= c.seconds) return;
+    rows.push({ event: c.event, pool: c.pool, prevTime: p.time, curTime: c.time, pct: (p.seconds - c.seconds) / p.seconds * 100 });
+  });
+  rows.sort(function (a, b) { return b.pct - a.pct; });
+  return rows.slice(0, n);
+}
+
+function _reportHeatmap() {
+  var sk = latest(); if (!sk) return null;
+  var src = (D[sk].results && D[sk].results.length) ? D[sk].results : (D[sk].bests || []);
+  var counts = {}, dists = {};
+  src.forEach(function (r) {
+    if (!r.event || !(r.seconds > 0) || isRelay(r.event)) return;
+    var st = getStroke(r.event), dd = extractDist(r.event);
+    if (!dd) return;
+    dists[dd] = true;
+    counts[st] = counts[st] || {};
+    counts[st][dd] = (counts[st][dd] || 0) + 1;
+  });
+  var distList = Object.keys(dists).map(Number).sort(function (a, b) { return a - b; });
+  var max = 0;
+  Object.keys(counts).forEach(function (st) { distList.forEach(function (dd) { var v = counts[st][dd] || 0; if (v > max) max = v; }); });
+  return { season: sk, dists: distList, counts: counts, max: max };
+}
+
+function _reportRecordsHeld(bd, sex, myName) {
+  var recs = window.__records;
+  if (!recs || !bd || !myName) return [];
+  var age = _recAge(bd, null), cat = _recCat(age);
+  if (!cat) return [];
+  var S = _sexN(sex), held = [];
+  ['25', '50'].forEach(function (pool) {
+    var best = _bestInGroup(pool, bd, cat);
+    Object.keys(best).forEach(function (ev) {
+      var rec = _lookupRec(recs, S, age, pool, ev);
+      if (rec && _nameMatch(rec.name, myName)) held.push(ev + ' (' + pool + 'm)');
+    });
+  });
+  return held;
+}
+
+function _reportStrokeStrength() {
+  var sk = latest(); if (!sk) return null;
+  var bests = (D[sk].bests || []).filter(function (b) { return b.points > 0 && !isRelay(b.event); });
+  var sp = {}, cnt = {};
+  bests.forEach(function (b) { var st = getStroke(b.event); sp[st] = (sp[st] || 0) + b.points; cnt[st] = (cnt[st] || 0) + 1; });
+  var sorted = Object.keys(sp).sort(function (a, b) { return (sp[b] / cnt[b]) - (sp[a] / cnt[a]); });
+  if (!sorted.length) return null;
+  var avg = {}; sorted.forEach(function (k) { avg[k] = Math.round(sp[k] / cnt[k]); });
+  return { best: sorted[0], bestAvg: avg[sorted[0]], worst: sorted[sorted.length - 1], worstAvg: avg[sorted[sorted.length - 1]], single: sorted.length === 1 };
+}
+
+function _reportMeetsThisSeason() {
+  var sk = latest(); if (!sk) return { count: 0 };
+  var res = (D[sk].results || []).filter(function (r) { return r.seconds > 0 && !isRelay(r.event); });
+  var meets = {};
+  res.forEach(function (r) {
+    var key = (r.competition || '?') + '__' + (r.date || '?');
+    meets[key] = meets[key] || { name: r.competition || 'Meet', count: 0 };
+    meets[key].count++;
+  });
+  return { count: Object.keys(meets).length };
+}
+
+function _reportPbCounts() {
+  var pbKeys = computePBTimeline(), sk = latest(), total = 0, thisSeason = 0;
+  allResults().forEach(function (r) {
+    var k = r.event + '|' + r.pool + '|' + (r.date || '') + '|' + r.seconds;
+    if (pbKeys.has(k)) { total++; if (sk && r.season === sk) thisSeason++; }
+  });
+  return { total: total, thisSeason: thisSeason };
+}
+
+function buildPdfReport() {
+  var sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
+  var ss = seasons();
+  if (!sw || !ss.length) throw new Error('No swimmer data loaded.');
+  var root = document.getElementById('pdfReportRoot');
+  if (!root) return;
+
+  var prof = window.__recProfile || {};
+  var bd = prof.birthdate || sw.birthdate || '', sex = prof.sex || sw.sex || '', myName = prof.recordName || '';
+  var age = bd ? _recAge(bd, null) : null;
+  var masters = age != null && age > MASTERS_REPORT_AGE;
+  var groupLabel = masters ? ('Masters ' + (_wrAgeGroup(age) || '')) : (age != null ? ageGroupLabel(age) : '');
+  var pb = _reportPbCounts();
+  var totalSwims = allResults().length;
+
+  // ── Page 1: header + progress in main events (same chart/table as ①) ──
+  var topEvents = _reportTopEvents(4);
+  var eventCardsHtml = topEvents.map(function (ev, i) {
+    return '<div class="rpt-evt-card">'
+      + '<div class="rpt-evt-head"><span class="rpt-evt-title">' + ev + '</span><span id="rpt-evt-sub-' + i + '" class="rpt-evt-sub"></span></div>'
+      + '<div class="rpt-evt-body">'
+      + '<div style="height:190px;position:relative"><canvas id="rpt-evc-' + i + '"></canvas></div>'
+      + '<div id="rpt-evt-' + i + '"></div>'
+      + '</div></div>';
+  }).join('');
+
+  var page1 =
+    '<div class="rpt-page">'
+    + '<div class="rpt-topline"><div class="rpt-brand">🏊‍♀️ SwimTrack</div><div class="rpt-date">Generated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + '</div></div>'
+    + '<div class="rpt-header">'
+    + '<div class="rpt-ico">🏊‍♀️</div>'
+    + '<div><div class="rpt-name">' + sw.name + '</div>'
+    + '<div class="rpt-meta">Player ID ' + sw.id + (age != null ? ' · Age ' + age : '') + (groupLabel ? ' · ' + groupLabel : '') + ' · ' + ss.length + ' season' + (ss.length !== 1 ? 's' : '') + ' tracked</div></div>'
+    + '<div class="rpt-kpis">'
+    + '<div class="rpt-kpi"><div class="v">' + totalSwims + '</div><div class="k">Total Swims</div></div>'
+    + '<div class="rpt-kpi"><div class="v">' + pb.total + '</div><div class="k">Personal Bests</div></div>'
+    + '<div class="rpt-kpi hi"><div class="v">' + pb.thisSeason + '</div><div class="k">PBs This Season</div></div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="rpt-section"><div class="rpt-h2">Progress in Main Events</div>'
+    + (eventCardsHtml || '<p style="color:#aaa;font-size:12px">No results yet.</p>')
+    + '</div>'
+    + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page 1 of 2</span></div>'
+    + '</div>';
+
+  // ── Page 2: top-10 tables + heat map + callouts ──
+  var bestRows = _reportBestPerformances(10);
+  var usaTable = window.__usaStandardsTable, rudTable = window.__rudolphTable;
+  var bestHtml;
+  if (masters) {
+    var wrTable = window.__mastersRecordsTable, S = _sexN(sex), group = _wrAgeGroup(age);
+    bestHtml =
+      '<table class="rpt-table"><thead><tr><th></th><th>Event</th><th class="num">Time</th><th class="num">Points</th><th class="num" colspan="2">Gap to WR' + (group ? ' (' + group + ')' : '') + '</th></tr></thead><tbody>'
+      + bestRows.map(function (r, i) {
+        var course = r.pool === '25' ? 'SCM' : 'LCM', gapTxt = '—';
+        if (wrTable && S && group) {
+          var w = ((wrTable[course] || {})[S] || {})[group] || {};
+          var wr = w[_recKey(r.event)];
+          if (wr && wr.seconds) { var pct = (r.seconds - wr.seconds) / wr.seconds * 100; gapTxt = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%'; }
+        }
+        return '<tr><td><span class="rank">' + (i + 1) + '</span></td><td>' + r.event + ' (' + r.pool + 'm)</td>'
+          + '<td class="num time-cell">' + fmtT(r.seconds) + '</td><td class="num">' + (r.points || '—') + '</td>'
+          + '<td class="num" colspan="2">' + gapTxt + '</td></tr>';
+      }).join('')
+      + '</tbody></table>'
+      + '<div class="rpt-note">' + (group ? 'Gap = % slower than the current World Aquatics Masters record for this swimmer\'s age bracket, using each event\'s own pool (25m→SCM, 50m→LCM).' : 'No Masters World Record data published for this age bracket yet.') + '</div>';
+  } else {
+    bestHtml =
+      '<table class="rpt-table"><thead><tr><th></th><th>Event</th><th class="num">Time</th><th class="num">Points</th><th class="num">Rudolph</th><th class="num">USA Std.</th></tr></thead><tbody>'
+      + bestRows.map(function (r, i) {
+        var course = r.pool === '25' ? 'SCM' : 'LCM';
+        var tier = (usaTable && age != null) ? _usaTier(usaTable, course, age, _sexN(sex), r.event, r.seconds) : 0;
+        var swimAge = bd ? _recAge(bd, parseDate(r.date)) : null;
+        var rud = (rudTable && r.pool === '50' && swimAge != null) ? _rudScore(rudTable, _sexN(sex), swimAge, r.event, r.seconds) : null;
+        return '<tr><td><span class="rank">' + (i + 1) + '</span></td><td>' + r.event + ' (' + r.pool + 'm)</td>'
+          + '<td class="num time-cell">' + fmtT(r.seconds) + '</td><td class="num">' + (r.points || '—') + '</td>'
+          + '<td class="num">' + (rud != null ? rud.toFixed(1) : '—') + '</td>'
+          + '<td class="num tier">' + (tier ? USA_TIERS[tier - 1] : '—') + '</td></tr>';
+      }).join('')
+      + '</tbody></table>';
+  }
+
+  var impRows = _reportMostImproved(10);
+  var impHtml = impRows.length
+    ? '<table class="rpt-table"><thead><tr><th></th><th>Event</th><th class="num">Last Season</th><th class="num">This Season</th><th class="num">&Delta;</th></tr></thead><tbody>'
+      + impRows.map(function (r, i) {
+        return '<tr><td><span class="rank">' + (i + 1) + '</span></td><td>' + r.event + ' (' + r.pool + 'm)</td>'
+          + '<td class="num">' + r.prevTime + '</td><td class="num">' + r.curTime + '</td>'
+          + '<td class="num improve">-' + r.pct.toFixed(1) + '%</td></tr>';
+      }).join('') + '</tbody></table>'
+    : '<p style="color:#aaa;font-size:12px">Need at least 2 seasons of data.</p>';
+
+  var heat = _reportHeatmap();
+  var heatHtml = '<p style="color:#aaa;font-size:12px">No results yet.</p>';
+  if (heat && heat.dists.length) {
+    var strokes = Object.keys(heat.counts).filter(function (st) { return heat.dists.some(function (dd) { return heat.counts[st][dd] > 0; }); });
+    heatHtml = '<table class="rpt-heat"><thead><tr><th></th>' + heat.dists.map(function (dd) { return '<th>' + dd + '</th>'; }).join('') + '</tr></thead><tbody>'
+      + strokes.map(function (st) {
+        return '<tr><td>' + st + '</td>' + heat.dists.map(function (dd) {
+          var v = (heat.counts[st] && heat.counts[st][dd]) || 0;
+          var col = !v ? '#e5e7eb' : (v / heat.max < 0.34 ? '#8fc9ac' : v / heat.max < 0.67 ? '#5a9cd6' : '#185FA5');
+          var txt = !v ? '#9ca3af' : '#fff';
+          return '<td><span class="heat-cell" style="background:' + col + ';color:' + txt + '">' + v + '</span></td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  var held = _reportRecordsHeld(bd, sex, myName);
+  var stroke = _reportStrokeStrength();
+  var meets = _reportMeetsThisSeason();
+  var calloutsHtml =
+    '<div class="rpt-callout-grid">'
+    + '<div class="rpt-callout emph"><div class="ico">🎯</div><div class="t">' + pb.thisSeason + ' personal best' + (pb.thisSeason !== 1 ? 's' : '') + ' this season</div>'
+    + '<div class="s">Out of ' + pb.total + ' all-time</div></div>'
+    + '<div class="rpt-callout"><div class="ico">🏅</div>'
+    + (held.length
+      ? '<div class="t">' + held.length + ' age-group record' + (held.length !== 1 ? 's' : '') + ' held</div><div class="s">' + held.join(', ') + '</div>'
+      : '<div class="t">No age-group records held yet</div><div class="s">Keep racing!</div>')
+    + '</div>'
+    + '<div class="rpt-callout"><div class="ico">💪</div>'
+    + (stroke
+      ? '<div class="t">Strongest stroke: ' + stroke.best + '</div><div class="s">' + stroke.bestAvg + ' avg pts' + (stroke.single ? '' : ' · Weakest: ' + stroke.worst + ' (' + stroke.worstAvg + ' avg)') + '</div>'
+      : '<div class="t">Not enough data yet</div><div class="s"></div>')
+    + '</div>'
+    + '</div>';
+
+  var page2 =
+    '<div class="rpt-page">'
+    + '<div class="rpt-topline"><div class="rpt-brand">🏊‍♀️ SwimTrack</div><div class="rpt-date">' + sw.name + ' — continued</div></div>'
+    + '<div class="rpt-two-col">'
+    + '<div class="rpt-section"><div class="rpt-h2">Top 10 Events — Best Performances</div>' + bestHtml + '</div>'
+    + '<div class="rpt-section"><div class="rpt-h2">Top 10 Events — Most Improved</div>' + impHtml + '</div>'
+    + '</div>'
+    + '<div class="rpt-section"><div class="rpt-h2">Season Event Coverage — ' + (heat ? heat.season : '') + '</div>' + heatHtml + '</div>'
+    + '<div class="rpt-section"><div class="rpt-h2">Also Worth Knowing</div>' + calloutsHtml + '</div>'
+    + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page 2 of 2 · ' + meets.count + ' meet' + (meets.count !== 1 ? 's' : '') + ' this season</span></div>'
+    + '</div>';
+
+  root.innerHTML = page1 + page2;
+
+  // Charts need real <canvas> elements in the DOM before Chart.js can bind
+  // to them — build these only after the innerHTML above has been set.
+  var ar = allResults();
+  topEvents.forEach(function (evName, i) {
+    var evRes = ar.filter(function (r) { return r.event === evName; });
+    var sc25 = [], lc50 = [];
+    evRes.forEach(function (r) {
+      var ts = parseDate(r.date); if (!ts) return;
+      var pt = { x: ts, y: r.seconds, date: r.date, comp: r.competition || '' };
+      if (r.pool === '25') sc25.push(pt); else if (r.pool === '50') lc50.push(pt);
+    });
+    sc25.sort(function (a, b) { return a.x - b.x; }); lc50.sort(function (a, b) { return a.x - b.x; });
+    makeEvChart('rpt-evc-' + i, sc25, lc50);
+    var tblEl = document.getElementById('rpt-evt-' + i); if (tblEl) tblEl.innerHTML = makeEvTable(evRes);
+    var all = evRes.filter(function (r) { return parseDate(r.date); }).sort(function (a, b) { return parseDate(a.date) - parseDate(b.date); });
+    var subEl = document.getElementById('rpt-evt-sub-' + i);
+    if (subEl && all.length >= 2) {
+      var imp = (all[0].seconds - all[all.length - 1].seconds).toFixed(1);
+      var allT = all.map(function (p) { return p.seconds; });
+      var last = all[all.length - 1];
+      var isPB = Math.abs(last.seconds - Math.min.apply(null, allT)) < 0.01;
+      subEl.textContent = isPB && all.length > 1 ? ('PB on ' + last.date + (parseFloat(imp) > 0.1 ? ' · improved ' + imp + 's' : '')) : (parseFloat(imp) > 0.1 ? 'Improved ' + imp + 's from first to last result' : '');
+    }
+  });
+}
+
+function openPdfReport() {
+  try { buildPdfReport(); }
+  catch (e) { alert('Could not build the PDF report: ' + e.message); console.error('openPdfReport failed:', e); return; }
+  setTimeout(function () { window.print(); }, 50); // let charts finish a paint cycle before printing
+}
+window.openPdfReport = openPdfReport;
 
 // Groups coach accounts into "teams" via union-find over shared swimmers —
 // two coaches are the same team if they co-appear in any swimmer's
