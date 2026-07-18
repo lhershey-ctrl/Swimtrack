@@ -118,18 +118,39 @@ const tooltipStyle = (c) => ({ background: c.card2, border: `1px solid ${c.line}
 // ════════════════════════════════════════════════════════════════════
 //  Sign-in
 // ════════════════════════════════════════════════════════════════════
+const LANDING_FEATURES = [
+  { ico: "📈", title: "Progress, automatically", text: "Personal bests & points trends" },
+  { ico: "🏅", title: "Records & standards", text: "Israel, USA, Masters, Rudolph" },
+  { ico: "👥", title: "Team view", text: "Your whole roster, one screen" },
+];
 function SignIn({ onSignIn, error }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", padding: 28, background: GRAD }}>
-      <div style={{ fontSize: 64, marginBottom: 8 }}>🏊‍♀️</div>
-      <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-.5px", color: "#fff" }}>SwimTrack</div>
-      <div style={{ color: "rgba(255,255,255,.8)", marginTop: 8, marginBottom: 36 }}>Swim times, records & progress</div>
-      <button onClick={onSignIn} style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff",
-        color: "#1f2937", border: "none", borderRadius: 14, padding: "14px 22px", fontSize: 15, fontWeight: 700,
-        cursor: "pointer", boxShadow: "0 8px 24px rgba(0,0,0,.3)" }}>
+      padding: "56px 26px 30px", background: GRAD, textAlign: "center" }}>
+      <div style={{ fontSize: 52, marginBottom: 6 }}>🏊‍♀️</div>
+      <div style={{ fontSize: 25, fontWeight: 900, letterSpacing: "-.5px", color: "#fff" }}>SwimTrack</div>
+      <div style={{ color: "rgba(255,255,255,.82)", fontSize: 13, marginTop: 6, marginBottom: 30 }}>Swim times, records & progress</div>
+
+      <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, marginBottom: "auto" }}>
+        {LANDING_FEATURES.map((f) => (
+          <div key={f.title} style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left",
+            background: "rgba(255,255,255,.10)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 13, padding: "11px 13px" }}>
+            <span style={{ fontSize: 17, lineHeight: 1 }}>{f.ico}</span>
+            <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, lineHeight: 1.35 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800 }}>{f.title}</div>{f.text}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={onSignIn} style={{ width: "100%", marginTop: 26, display: "flex", alignItems: "center",
+        justifyContent: "center", gap: 10, background: "#fff", color: "#1f2937", border: "none", borderRadius: 14,
+        padding: 14, fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 8px 22px rgba(0,0,0,.28)" }}>
         <GoogleG /> Sign in with Google
       </button>
+      <div style={{ color: "rgba(255,255,255,.62)", fontSize: 10.5, marginTop: 12, lineHeight: 1.5 }}>
+        New coach? You'll enter a one-time invite code on the next screen.
+      </div>
       {error && <div style={{ color: "#fecaca", marginTop: 18, fontSize: 13, maxWidth: 320, textAlign: "center" }}>{error}</div>}
     </div>
   );

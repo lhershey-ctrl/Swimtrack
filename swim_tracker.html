@@ -160,9 +160,114 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   .steps,.metrics,.charts-2,.insights-grid,.tbl-2col,.comp-grid{grid-template-columns:1fr}
   .page{padding:16px}
 }
+
+/* ── Landing overlay (first visit only — see sw_landing_dismissed) ── */
+#landingOverlay{position:fixed;inset:0;z-index:9999;overflow-y:auto;background:var(--gray-50)}
+.ld-hero{background:radial-gradient(1100px 420px at 12% -10%,rgba(255,255,255,.10),transparent 60%),linear-gradient(120deg,var(--blue-dark) 0%,var(--blue) 62%,#1487c9 100%);padding:56px 56px 64px;display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center}
+.ld-logo{display:flex;align-items:center;gap:10px;color:#fff;font-weight:800;font-size:15px;letter-spacing:.01em;margin-bottom:34px}
+.ld-logo .mark{font-size:20px}
+.ld-eyebrow{color:#bfe0ff;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;margin-bottom:14px}
+.ld-h1{color:#fff;font-size:40px;line-height:1.12;font-weight:800;letter-spacing:-.015em;margin:0 0 16px}
+.ld-h1 em{font-style:normal;color:#a9dcff}
+.ld-sub{color:rgba(255,255,255,.82);font-size:15.5px;line-height:1.6;max-width:46ch;margin:0 0 30px}
+.ld-ctas{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.ld-btn-primary{display:inline-flex;align-items:center;gap:10px;background:#fff;color:var(--blue-dark);border:none;border-radius:10px;padding:13px 22px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 10px 24px rgba(0,0,0,.22);font-family:inherit}
+.ld-btn-primary svg{width:17px;height:17px}
+.ld-link-secondary{color:#fff;font-size:13.5px;font-weight:600;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.45);padding-bottom:2px;cursor:pointer;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit}
+.ld-hero-side{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:22px 22px 18px}
+.ld-hero-side-label{color:#bfe0ff;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px}
+.ld-mini-metric{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-top:1px solid rgba(255,255,255,.14)}
+.ld-mini-metric:first-of-type{border-top:none}
+.ld-mini-metric .k{color:rgba(255,255,255,.75);font-size:12.5px}
+.ld-mini-metric .v{color:#fff;font-weight:800;font-size:16px}
+.ld-body{padding:58px 56px 64px;max-width:1180px;margin:0 auto}
+.ld-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.ld-step{background:#fff;border:1px solid var(--gray-200);border-radius:16px;padding:22px;box-shadow:var(--shadow-sm)}
+.ld-step-num{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--blue-dark),var(--blue));color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:14px;box-shadow:0 2px 6px rgba(24,95,165,.35)}
+.ld-step h3{font-size:13.5px;font-weight:700;margin:0 0 6px;color:var(--gray-900)}
+.ld-step p{font-size:12.5px;color:var(--gray-500);line-height:1.6;margin:0}
+.ld-footnote{margin-top:36px;padding-top:22px;border-top:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.ld-footnote p{font-size:12px;color:var(--gray-500);margin:0;max-width:52ch}
+.ld-footnote strong{color:var(--gray-900)}
+@media(max-width:900px){
+  .ld-hero{grid-template-columns:1fr;padding:40px 26px 48px}
+  .ld-body{padding:40px 26px 48px}
+  .ld-steps{grid-template-columns:1fr 1fr}
+}
+@media(max-width:560px){
+  .ld-steps{grid-template-columns:1fr}
+  .ld-h1{font-size:30px}
+}
 </style>
 </head>
 <body>
+
+<!-- LANDING OVERLAY — shown once per browser until dismissed (sign in or "continue without an account") -->
+<div id="landingOverlay" style="display:none">
+  <div class="ld-hero">
+    <div>
+      <div class="ld-logo"><span class="mark">🏊‍♀️</span> SwimTrack</div>
+      <div class="ld-eyebrow">Meet results → progress you can see</div>
+      <h1 class="ld-h1">Every swim your team<br>has ever raced, <em>in one place.</em></h1>
+      <p class="ld-sub">Pull results straight from LogLig, track personal bests automatically, and see exactly where each swimmer stands against age-group records, USA Standards, and Rudolph age-graded scores.</p>
+      <div class="ld-ctas">
+        <button class="ld-btn-primary" onclick="landingSignIn()">
+          <svg viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.66 9c0-.59.1-1.16.29-1.7V4.97H.98A9 9 0 0 0 0 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .98 4.97l2.97 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+          Sign in with Google
+        </button>
+        <button class="ld-link-secondary" onclick="dismissLanding()">Continue without an account →</button>
+      </div>
+    </div>
+    <div class="ld-hero-side">
+      <div class="ld-hero-side-label">This season, at a glance</div>
+      <div class="ld-mini-metric"><span class="k">Personal bests</span><span class="v">312</span></div>
+      <div class="ld-mini-metric"><span class="k">Age-group records held</span><span class="v">4</span></div>
+      <div class="ld-mini-metric"><span class="k">Swimmers on roster</span><span class="v">18</span></div>
+    </div>
+  </div>
+  <div class="ld-body">
+    <div class="section-title">What SwimTrack does</div>
+    <div class="ld-steps">
+      <div class="ld-step">
+        <div class="ld-step-num">1</div>
+        <h3>Extract from LogLig</h3>
+        <p>A one-click bookmarklet pulls every result from a season — no manual entry.</p>
+      </div>
+      <div class="ld-step">
+        <div class="ld-step-num">2</div>
+        <h3>Track progress automatically</h3>
+        <p>Personal bests, season comparisons, and points trends update themselves as data comes in.</p>
+      </div>
+      <div class="ld-step">
+        <div class="ld-step-num">3</div>
+        <h3>Compare against records</h3>
+        <p>Israeli age-group records, USA Standards, Masters World Records, and Rudolph age-graded scores — all in one view.</p>
+      </div>
+      <div class="ld-step">
+        <div class="ld-step-num">4</div>
+        <h3>See the whole team</h3>
+        <p>Roster highlights, performance splits, and sync status for every swimmer you coach.</p>
+      </div>
+    </div>
+    <div class="ld-footnote">
+      <p><strong>Coaching a team?</strong> Sign in to sync results to the phone app and share access with a co-coach. The desktop tool itself works fully offline, no account needed.</p>
+      <p><strong>New coach?</strong> You'll need a one-time invite code from your team's owner after signing in.</p>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  try{ if(!localStorage.getItem('sw_landing_dismissed')) document.getElementById('landingOverlay').style.display=''; }catch(e){}
+})();
+function dismissLanding(){
+  try{ localStorage.setItem('sw_landing_dismissed','1'); }catch(e){}
+  var el=document.getElementById('landingOverlay'); if(el) el.style.display='none';
+}
+function landingSignIn(){
+  dismissLanding();
+  if(window.doSignIn) window.doSignIn();
+}
+</script>
 
 <!-- TOP BAR -->
 <div class="topbar">
@@ -4898,6 +5003,7 @@ async function doSignIn() {
     }
   }
 }
+window.doSignIn = doSignIn;
 
 async function doSync() {
   const st = statusEl();
