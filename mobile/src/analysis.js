@@ -803,8 +803,8 @@ export function teamUsaTierSummary(roster, table) {
 }
 
 // Rudolph age-graded score per swimmer (long-course only, same convention as
-// the per-swimmer Rudolph trend view) — latest scored swim's points, plus
-// the team average.
+// the per-swimmer Rudolph trend view) — each swimmer's own best-ever scored
+// swim, plus the team's overall best.
 // Rudolph is only calibrated through the junior/youth brackets — like USA
 // Standards, it isn't meaningful for masters swimmers, so anyone currently
 // over this age is excluded from the team summary entirely.
@@ -818,41 +818,11 @@ export function teamRudolphSummary(roster, table) {
     if (age != null && age > RUDOLPH_TEAM_MAX_AGE) return;
     const tr = rudolphTrend(D, table, swimmer.sex, swimmer.birthdate, { pool: "50" });
     if (!tr.points.length) return;
-    const latest = tr.points.reduce((a, b) => (b.x > a.x ? b : a));
-    perSwimmer.push({ swimmer, score: latest.y });
+    const top = tr.points.reduce((a, b) => (b.y > a.y ? b : a));
+    perSwimmer.push({ swimmer, score: top.y });
   });
   const best = perSwimmer.length ? perSwimmer.reduce((a, b) => (b.score > a.score ? b : a)) : null;
   return { best: best ? { swimmer: best.swimmer, score: best.score } : null, perSwimmer };
-}
-
-// Team-wide highlights, in the same { type, ico, title, text } shape
-// insights() already uses (so the existing insight-card UI renders these
-// unmodified), plus swimmerName. Most-improved event and biggest single PB
-// across the whole roster's latest season.
-export function teamHighlights(roster) {
-  const out = [];
-  let bestImp = null, bestPB = null, busiest = null;
-  roster.forEach(({ swimmer, D }) => {
-    const ss = seasons(D);
-    if (!ss.length) return;
-    const recap = seasonRecap(D, swimmer)[0]; // latest season first
-    if (recap && recap.impEv && (!bestImp || recap.impPct > bestImp.pct))
-      bestImp = { name: swimmer.name, event: recap.impEv, pct: recap.impPct };
-    if (recap && recap.bestPts && (!bestPB || recap.bestPts.points > bestPB.points))
-      bestPB = { name: swimmer.name, event: recap.bestPts.event, points: recap.bestPts.points };
-    if (recap && (!busiest || recap.nMeets > busiest.nMeets))
-      busiest = { name: swimmer.name, nMeets: recap.nMeets };
-  });
-  if (bestImp)
-    out.push({ type: "green", ico: "🚀", swimmerName: bestImp.name,
-      title: "Most improved: " + bestImp.name, text: bestImp.event + " · +" + bestImp.pct.toFixed(1) + "%" });
-  if (bestPB)
-    out.push({ type: "blue", ico: "🏅", swimmerName: bestPB.name,
-      title: "Top points swim: " + bestPB.name, text: bestPB.event + " · " + bestPB.points + " pts" });
-  if (busiest && busiest.nMeets > 0)
-    out.push({ type: "amber", ico: "📅", swimmerName: busiest.name,
-      title: "Busiest competitor: " + busiest.name, text: busiest.nMeets + " meet" + (busiest.nMeets !== 1 ? "s" : "") + " this season" });
-  return out;
 }
 
 // Event-coverage heat map for one season: stroke (rows) × distance (cols),

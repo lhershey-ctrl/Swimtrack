@@ -232,154 +232,6 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     </details>
   </div>
 
-  <div class="section-title" style="display:flex;align-items:center;gap:8px">
-    ③ Israeli Age Records
-    <button onclick="recShowInfo()" title="Where do these records come from?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
-  </div>
-  <details class="extract-panel">
-    <summary>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#185FA5">🏊 Israeli Age Records</div>
-        <div id="recStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
-      </div>
-      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
-    </summary>
-    <div class="extract-body">
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Official Israeli records (juniors + masters, long &amp; short course). Upload whichever PDF(s) changed — <strong>you don't need all four</strong>. Each file is parsed the moment you pick it and shows its own record count. Then <strong>Review changes vs cloud</strong> to see exactly what's new/updated, and upload only those.<br><span style="color:#9aa6b5">Source: the juniors, open and masters records are downloaded from <a href="https://isr.org.il/records.asp" target="_blank" rel="noopener" style="color:#185FA5">isr.org.il/records.asp</a>.</span></p>
-    <div style="font-weight:700;color:#374151;font-size:13px;margin-bottom:8px">Upload record PDFs (any subset)</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
-      <label class="rec-slot" data-slot="lcJ" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
-        <span style="font-size:13px;font-weight:700;color:#185FA5">🏊 Juniors · Long course (50m)</span>
-        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'lcJ')">
-      </label>
-      <label class="rec-slot" data-slot="scJ" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
-        <span style="font-size:13px;font-weight:700;color:#185FA5">🏊 Juniors · Short course (25m)</span>
-        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'scJ')">
-      </label>
-      <label class="rec-slot" data-slot="lcM" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
-        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Masters · Long course (50m)</span>
-        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'lcM')">
-      </label>
-      <label class="rec-slot" data-slot="scM" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
-        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Masters · Short course (25m)</span>
-        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'scM')">
-      </label>
-    </div>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <button id="recReviewBtn" onclick="recReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
-      <button id="recPublishBtn" onclick="recPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
-    </div>
-    <div id="recPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
-    <pre id="recPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
-
-    <details style="font-size:12px;color:#666;margin-top:14px">
-      <summary style="cursor:pointer;font-weight:600;color:#185FA5">Alternative: upload a pre-built records JSON</summary>
-      <div style="margin-top:10px">
-        <label style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;background:#6b7684;color:#fff;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">
-          📂 Choose records.json
-          <input type="file" accept=".json" style="display:none" onchange="recPickFile(event)">
-        </label>
-      </div>
-    </details>
-    </div>
-  </details>
-
-  <div class="section-title" style="display:flex;align-items:center;gap:8px">
-    ④ Rudolph Age-Score Table
-    <button onclick="rudShowInfo()" title="What is the Rudolph table?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
-  </div>
-  <details class="extract-panel">
-    <summary>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#185FA5">📄 Rudolph Age-Score Table</div>
-        <div id="rudStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published Rudolph table.</div>
-      </div>
-      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
-    </summary>
-    <div class="extract-body">
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Dr. Klaus Rudolph's German age-graded points table (8 Jahre through 18+/offen, both sexes). Turns any swim time into a 1-20 score <strong>for that specific age</strong>, so progress stays comparable across age-group jumps. Upload the official PDF whenever a new "Basis" year is published — it's parsed entirely in the browser.<br><span style="color:#9aa6b5">Source: the Rudolph table PDF was taken from <a href="https://share.google/HwtrWRPRZz1l11t5r" target="_blank" rel="noopener" style="color:#185FA5">this link</a>.</span></p>
-    <label class="rud-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
-      <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Rudolph points PDF (weiblich + männlich)</span>
-      <span id="rudFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-      <input type="file" accept=".pdf" style="display:none" onchange="rudPickPdf(event)">
-    </label>
-
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
-      <button id="rudReviewBtn" onclick="rudReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
-      <button id="rudPublishBtn" onclick="rudPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
-    </div>
-    <div id="rudPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
-    <pre id="rudPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
-    </div>
-  </details>
-
-  <div class="section-title" style="display:flex;align-items:center;gap:8px">
-    ⑤ USA Motivational Standards
-    <button onclick="usaShowInfo()" title="What are the USA Motivational Standards?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
-  </div>
-  <details class="extract-panel">
-    <summary>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#185FA5">📄 USA Motivational Standards</div>
-        <div id="usaStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published standards.</div>
-      </div>
-      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
-    </summary>
-    <div class="extract-body">
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">USA Swimming's junior age-group tiers (B / BB / A / AA / AAA / AAAA), ages 10-18, both sexes. Only the metric tables (SCM/LCM) are used — the source PDF's yards (SCY) tables are skipped since this app tracks meters only. Upload whenever new standards are published.<br><span style="color:#9aa6b5">Source: <a href="https://www.usaswimming.org/times/time-standards" target="_blank" rel="noopener" style="color:#185FA5">usaswimming.org/times/time-standards</a>.</span></p>
-    <label class="usa-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
-      <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Motivational Standards PDF (single age)</span>
-      <span id="usaFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-      <input type="file" accept=".pdf" style="display:none" onchange="usaPickPdf(event)">
-    </label>
-
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
-      <button id="usaReviewBtn" onclick="usaReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
-      <button id="usaPublishBtn" onclick="usaPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
-    </div>
-    <div id="usaPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
-    <pre id="usaPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
-    </div>
-  </details>
-
-  <div class="section-title" style="display:flex;align-items:center;gap:8px">
-    ⑥ Masters World Records
-    <button onclick="wrShowInfo()" title="What are the Masters World Records?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
-  </div>
-  <details class="extract-panel">
-    <summary>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#185FA5">🏅 Masters World Records</div>
-        <div id="wrStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
-      </div>
-      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
-    </summary>
-    <div class="extract-body">
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">World Aquatics Masters world records by 5-year age bracket (25-29 through 100+), both sexes, long &amp; short course meters. Upload whichever file changed — you don't need both.<br><span style="color:#9aa6b5">Source: <a href="https://www.worldaquatics.com/masters/records" target="_blank" rel="noopener" style="color:#185FA5">worldaquatics.com/masters/records</a>.</span></p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
-      <label class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
-        <span style="font-size:13px;font-weight:700;color:#185FA5">🏅 Long course (LCM)</span>
-        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-        <input type="file" accept=".pdf" style="display:none" onchange="wrPickPdf(event,'LCM')">
-      </label>
-      <label class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
-        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Short course (SCM)</span>
-        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
-        <input type="file" accept=".pdf" style="display:none" onchange="wrPickPdf(event,'SCM')">
-      </label>
-    </div>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <button id="wrReviewBtn" onclick="wrReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
-      <button id="wrPublishBtn" onclick="wrPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
-    </div>
-    <div id="wrPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
-    <pre id="wrPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
-    </div>
-  </details>
 
 </div>
 
@@ -443,6 +295,17 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     }).join('');
   }
 
+  // Cards default to collapsed (just the header) — only the swimmer(s) the
+  // user explicitly opens to edit expand, keyed by id so the open/closed
+  // state survives a renderSettingsUI() re-render (e.g. after editing a
+  // measurement) instead of every card snapping shut again.
+  window.__swExpanded=window.__swExpanded||{};
+  window.toggleSwimmerCard=function(i){
+    var sw=SWIMMERS[i];if(!sw)return;
+    var key=sw.id||i;
+    window.__swExpanded[key]=!window.__swExpanded[key];
+    renderSettingsUI();
+  };
   function renderSettingsUI(){
     var KNOWN={1715:'2025-2026',1605:'2024-2025',1533:'2023-2024',1396:'2022-2023',1284:'2021-2022',1164:'2020-2021'};
     var el=document.getElementById('settingsSwimmerList');if(!el)return;
@@ -450,6 +313,7 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
     el.innerHTML=SWIMMERS.map(function(sw,i){
       var sids=sw.seasonIds||[];
       var icon=sw.name==='Noga'?'🏊‍♀️':sw.name==='Gal'?'🏊':'🏊';
+      var isOpen=!!window.__swExpanded[sw.id||i];
 
       // Age line
       var ageLine='';
@@ -502,20 +366,24 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
         '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)">'
 
         // ── Header strip ──────────────────────────────────────────
-        +'<div style="display:flex;align-items:center;gap:14px;padding:16px 20px;background:linear-gradient(135deg,#1e3a5f 0%,#185FA5 100%);color:#fff">'
+        +'<div onclick="toggleSwimmerCard('+i+')" style="cursor:pointer;display:flex;align-items:center;gap:14px;padding:16px 20px;background:linear-gradient(135deg,#1e3a5f 0%,#185FA5 100%);color:#fff">'
           +'<span style="font-size:32px;line-height:1">'+icon+'</span>'
           +'<div style="flex:1">'
             +'<div style="font-size:20px;font-weight:800;letter-spacing:-.2px;line-height:1.1">'+sw.name+'</div>'
             +(ageLine?'<div style="margin-top:3px">'+ageLine+'</div>':'')
           +'</div>'
-          +'<button onclick="removeSettingsSwimmer('+i+')" title="Remove swimmer" '
+          +'<button onclick="event.stopPropagation();toggleSwimmerCard('+i+')" title="'+(isOpen?'Collapse':'Edit')+'" '
+            +'style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;'
+            +'border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin-right:8px">'
+            +(isOpen?'▲ Close':'✏️ Edit')+'</button>'
+          +'<button onclick="event.stopPropagation();removeSettingsSwimmer('+i+')" title="Remove swimmer" '
             +'style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;'
             +'border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">'
             +'✕ Remove</button>'
         +'</div>'
 
-        // ── Body ───────────────────────────────────────────────────
-        +'<div style="padding:18px 20px">'
+        // ── Body (collapsed by default — click the header or "Edit" to open) ──
+        +'<div style="padding:18px 20px;'+(isOpen?'':'display:none;')+'">'
 
           // Identity row
           +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">'
@@ -1172,6 +1040,16 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
 <!-- ══════════ TAB 4 · SETTINGS ══════════ -->
 <div id="tc-settings" class="page" style="display:none">
 
+  <div class="section-title">👥 Add a Viewer</div>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
+  <div id="viewerTeamList" style="margin-bottom:12px"></div>
+  <div class="card" style="padding:16px 20px;margin-bottom:28px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="viewerNote" placeholder="Note (e.g. their name) — optional" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-family:inherit">
+      <span id="viewerActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
+    </div>
+  </div>
+
   <div class="section-title">Swimmers</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Add a swimmer's name, their LogLig player ID (from the URL), and all their season IDs. Season IDs appear in the URL when you switch seasons on LogLig: <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;font-size:12px">?seasonId=<strong>1715</strong></code></p>
 
@@ -1189,16 +1067,6 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
   <p id="settingsCloudStatus" style="font-size:12px;margin-top:6px;font-weight:600"></p>
   <p id="settingsLoadStatus" style="font-size:12px;margin-top:6px"></p>
   <p style="font-size:12px;color:#aaa;margin-top:8px">Changes save automatically in this browser. Height, weight &amp; profile also save to the cloud (for the phone app) when you're signed in — use <strong>☁ Save to Cloud</strong> to sign in and push everything.</p>
-
-  <div class="section-title">👥 Add a Viewer</div>
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
-  <div id="viewerTeamList" style="margin-bottom:12px"></div>
-  <div class="card" style="padding:16px 20px">
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input id="viewerNote" placeholder="Note (e.g. their name) — optional" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-family:inherit">
-      <span id="viewerActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
-    </div>
-  </div>
 
 </div>
 
@@ -1228,12 +1096,161 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
 
   <div class="section-title">🔑 Invite a Coach</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time invite code for a new coach. They sign in with Google, then enter this code to activate their account — after that, just Google sign-in like everyone else. Each code works once.</p>
-  <div class="card" style="padding:16px 20px">
+  <div class="card" style="padding:16px 20px;margin-bottom:24px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input id="inviteNote" placeholder="Note (e.g. coach's name) — optional" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-family:inherit">
       <span id="inviteActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
     </div>
   </div>
+
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ③ Israeli Age Records
+    <button onclick="recShowInfo()" title="Where do these records come from?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">🏊 Israeli Age Records</div>
+        <div id="recStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Official Israeli records (juniors + masters, long &amp; short course). Upload whichever PDF(s) changed — <strong>you don't need all four</strong>. Each file is parsed the moment you pick it and shows its own record count. Then <strong>Review changes vs cloud</strong> to see exactly what's new/updated, and upload only those.<br><span style="color:#9aa6b5">Source: the juniors, open and masters records are downloaded from <a href="https://isr.org.il/records.asp" target="_blank" rel="noopener" style="color:#185FA5">isr.org.il/records.asp</a>.</span></p>
+    <div style="font-weight:700;color:#374151;font-size:13px;margin-bottom:8px">Upload record PDFs (any subset)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
+      <label class="rec-slot" data-slot="lcJ" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#185FA5">🏊 Juniors · Long course (50m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'lcJ')">
+      </label>
+      <label class="rec-slot" data-slot="scJ" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#185FA5">🏊 Juniors · Short course (25m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'scJ')">
+      </label>
+      <label class="rec-slot" data-slot="lcM" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Masters · Long course (50m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'lcM')">
+      </label>
+      <label class="rec-slot" data-slot="scM" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Masters · Short course (25m)</span>
+        <span class="rec-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="recPickPdf(event,'scM')">
+      </label>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button id="recReviewBtn" onclick="recReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="recPublishBtn" onclick="recPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="recPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="recPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+
+    <details style="font-size:12px;color:#666;margin-top:14px">
+      <summary style="cursor:pointer;font-weight:600;color:#185FA5">Alternative: upload a pre-built records JSON</summary>
+      <div style="margin-top:10px">
+        <label style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;background:#6b7684;color:#fff;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">
+          📂 Choose records.json
+          <input type="file" accept=".json" style="display:none" onchange="recPickFile(event)">
+        </label>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ④ Rudolph Age-Score Table
+    <button onclick="rudShowInfo()" title="What is the Rudolph table?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">📄 Rudolph Age-Score Table</div>
+        <div id="rudStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published Rudolph table.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Dr. Klaus Rudolph's German age-graded points table (8 Jahre through 18+/offen, both sexes). Turns any swim time into a 1-20 score <strong>for that specific age</strong>, so progress stays comparable across age-group jumps. Upload the official PDF whenever a new "Basis" year is published — it's parsed entirely in the browser.<br><span style="color:#9aa6b5">Source: the Rudolph table PDF was taken from <a href="https://share.google/HwtrWRPRZz1l11t5r" target="_blank" rel="noopener" style="color:#185FA5">this link</a>.</span></p>
+    <label class="rud-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
+      <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Rudolph points PDF (weiblich + männlich)</span>
+      <span id="rudFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+      <input type="file" accept=".pdf" style="display:none" onchange="rudPickPdf(event)">
+    </label>
+
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
+      <button id="rudReviewBtn" onclick="rudReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="rudPublishBtn" onclick="rudPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="rudPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="rudPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+    </div>
+  </details>
+
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ⑤ USA Motivational Standards
+    <button onclick="usaShowInfo()" title="What are the USA Motivational Standards?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">📄 USA Motivational Standards</div>
+        <div id="usaStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published standards.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">USA Swimming's junior age-group tiers (B / BB / A / AA / AAA / AAAA), ages 10-18, both sexes. Only the metric tables (SCM/LCM) are used — the source PDF's yards (SCY) tables are skipped since this app tracks meters only. Upload whenever new standards are published.<br><span style="color:#9aa6b5">Source: <a href="https://www.usaswimming.org/times/time-standards" target="_blank" rel="noopener" style="color:#185FA5">usaswimming.org/times/time-standards</a>.</span></p>
+    <label class="usa-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;max-width:340px">
+      <span style="font-size:13px;font-weight:700;color:#185FA5">📄 Motivational Standards PDF (single age)</span>
+      <span id="usaFname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+      <input type="file" accept=".pdf" style="display:none" onchange="usaPickPdf(event)">
+    </label>
+
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
+      <button id="usaReviewBtn" onclick="usaReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="usaPublishBtn" onclick="usaPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="usaPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="usaPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+    </div>
+  </details>
+
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    ⑥ Masters World Records
+    <button onclick="wrShowInfo()" title="What are the Masters World Records?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">🏅 Masters World Records</div>
+        <div id="wrStatus" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published records.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">World Aquatics Masters world records by 5-year age bracket (25-29 through 100+), both sexes, long &amp; short course meters. Upload whichever file changed — you don't need both.<br><span style="color:#9aa6b5">Source: <a href="https://www.worldaquatics.com/masters/records" target="_blank" rel="noopener" style="color:#185FA5">worldaquatics.com/masters/records</a>.</span></p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px">
+      <label class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#185FA5">🏅 Long course (LCM)</span>
+        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="wrPickPdf(event,'LCM')">
+      </label>
+      <label class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc">
+        <span style="font-size:13px;font-weight:700;color:#1D9E75">🏅 Short course (SCM)</span>
+        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="wrPickPdf(event,'SCM')">
+      </label>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button id="wrReviewBtn" onclick="wrReview()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="wrPublishBtn" onclick="wrPublish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="wrPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="wrPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+    </div>
+  </details>
 
 </div>
 
@@ -5297,17 +5314,16 @@ function _teamUsaTier(D, table, sex, bd, age) {
   });
   return { shortTier: shortTier, longTier: longTier };
 }
-// Latest scored swim's Rudolph points (long course only) — same "most
-// recent, not best-ever" convention as mobile's teamRudolphSummary.
+// Best-ever scored swim's Rudolph points (long course only).
 function _teamRudolphScore(D, table, sex, bd) {
-  var latest = null;
+  var best = null;
   _teamAllResults(D).filter(function (r) { return r.pool === '50'; }).forEach(function (r) {
     var ts = parseDate(r.date); if (!ts) return;
     var age = _recAge(bd, ts), score = _rudScore(table, sex, age, r.event, r.seconds);
     if (score == null) return;
-    if (!latest || ts > latest.ts) latest = { ts: ts, score: score };
+    if (best == null || score > best) best = score;
   });
-  return latest ? latest.score : null;
+  return best;
 }
 function _teamPBTimeline(D) {
   var ar = _teamAllResults(D).slice().sort(function (a, b) { return (parseDate(a.date) || 0) - (parseDate(b.date) || 0); });
