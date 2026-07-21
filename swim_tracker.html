@@ -705,7 +705,7 @@ function landingSignIn(){
       _autoImported:true // added by a cloud sync, not typed in by hand — see pruneAutoImportedSwimmers
     });
     saveSettings();
-    renderSwimmerMgmt();
+    renderSwimmerMgmt();renderSwimmerSelectors();
     if(typeof renderSettingsUI==='function')renderSettingsUI();
     if(typeof renderPhysStats==='function')renderPhysStats();
     return SWIMMERS.length-1;
@@ -4898,15 +4898,10 @@ function render() {
       (loadedName ? ' · <span style="color:#0f3d72">' + loadedName + "</span>" : "") +
       (lastSyncedAt ? ' · <span style="color:#666">Last synced ' + fmtWhen(lastSyncedAt) + "</span>" : "");
     st.style.color = "#1a7a4f";
-    if (cloudSwimmers.length) {
-      const lbl = document.createElement("span");
-      lbl.textContent = "☁ Load:";
-      lbl.style.cssText = "font-size:12px;color:#185FA5;font-weight:700;align-self:center";
-      ac.appendChild(lbl);
-      cloudSwimmers.forEach((s) => ac.appendChild(btn(swIcon(s.name) + s.name, () => doLoadFromCloud(s), "#185FA5")));
-    } else {
-      ac.appendChild(btn("☁ Load from cloud", () => doLoadFromCloud(), "#185FA5"));
-    }
+    // Per-swimmer cloud loading now happens from the "Loading data for:" picker
+    // above the drop zone (selectLoadSwimmer() already pulls from the cloud) —
+    // no need for a second, duplicate row of swimmer buttons down here too.
+    if (!cloudSwimmers.length) ac.appendChild(btn("☁ Load from cloud", () => doLoadFromCloud(), "#185FA5"));
     ac.appendChild(btn(loadedName ? ("☁ Sync " + loadedName) : "☁ Sync to cloud", () => doSync(), "#1D9E75"));
     ac.appendChild(btn("Sign out", () => signOut(auth), "#9aa6b5"));
   }
@@ -5548,6 +5543,18 @@ function _reportStrokeStrength() {
   return { best: sorted[0], bestAvg: avg[sorted[0]], worst: sorted[sorted.length - 1], worstAvg: avg[sorted[sorted.length - 1]], single: sorted.length === 1 };
 }
 
+// Per-stroke average points this season, in USA_STROKES order (0 for a
+// stroke never swum) — feeds the report's "Performance by Stroke" radar.
+function _reportStrokeRadarData() {
+  var sk = latest(); if (!sk) return null;
+  var bests = (D[sk].bests || []).filter(function (b) { return b.points > 0 && !isRelay(b.event); });
+  if (!bests.length) return null;
+  var sp = {}, cnt = {};
+  bests.forEach(function (b) { var st = getStroke(b.event); sp[st] = (sp[st] || 0) + b.points; cnt[st] = (cnt[st] || 0) + 1; });
+  var avg = USA_STROKES.map(function (s) { return cnt[s] ? Math.round(sp[s] / cnt[s]) : 0; });
+  return { labels: USA_STROKES, avg: avg, max: Math.max.apply(null, avg.concat([1])) };
+}
+
 function _reportMeetsThisSeason() {
   var sk = latest(); if (!sk) return { count: 0 };
   var res = (D[sk].results || []).filter(function (r) { return r.seconds > 0 && !isRelay(r.event); });
@@ -5584,35 +5591,53 @@ function buildPdfReport() {
   var pb = _reportPbCounts();
   var totalSwims = allResults().length;
 
-  // ── Page 1: header + progress in main events (same chart/table as ①) ──
+  // ── Event pages: header + progress in main events (same chart/table as ①).
+  // Split 2-per-page rather than cramming all 4 onto one sheet — a swimmer
+  // with several current-season meets can make a card tall enough that all 4
+  // no longer fit one printed page, and letting that overflow naturally spill
+  // left a near-empty page between page 1 and the summary page. Splitting
+  // explicitly means pagination is always clean, regardless of table length. ──
   var topEvents = _reportTopEvents(4);
-  var eventCardsHtml = topEvents.map(function (ev, i) {
-    return '<div class="rpt-evt-card">'
-      + '<div class="rpt-evt-head"><span class="rpt-evt-title">' + ev + '</span><span id="rpt-evt-sub-' + i + '" class="rpt-evt-sub"></span></div>'
-      + '<div class="rpt-evt-body">'
-      + '<div style="height:190px;position:relative"><canvas id="rpt-evc-' + i + '"></canvas></div>'
-      + '<div id="rpt-evt-' + i + '"></div>'
-      + '</div></div>';
-  }).join('');
+  var EVENTS_PER_PAGE = 2;
+  var eventChunks = [];
+  for (var ci = 0; ci < topEvents.length; ci += EVENTS_PER_PAGE) eventChunks.push(topEvents.slice(ci, ci + EVENTS_PER_PAGE));
+  if (!eventChunks.length) eventChunks = [[]];
+  var totalPages = eventChunks.length + 1; // + the top-10/heatmap/callouts summary page
 
-  var page1 =
-    '<div class="rpt-page">'
-    + '<div class="rpt-topline"><div class="rpt-brand">🏊‍♀️ SwimTrack</div><div class="rpt-date">Generated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + '</div></div>'
-    + '<div class="rpt-header">'
-    + '<div class="rpt-ico">🏊‍♀️</div>'
-    + '<div><div class="rpt-name">' + sw.name + '</div>'
-    + '<div class="rpt-meta">Player ID ' + sw.id + (age != null ? ' · Age ' + age : '') + (groupLabel ? ' · ' + groupLabel : '') + ' · ' + ss.length + ' season' + (ss.length !== 1 ? 's' : '') + ' tracked</div></div>'
-    + '<div class="rpt-kpis">'
-    + '<div class="rpt-kpi"><div class="v">' + totalSwims + '</div><div class="k">Total Swims</div></div>'
-    + '<div class="rpt-kpi"><div class="v">' + pb.total + '</div><div class="k">Personal Bests</div></div>'
-    + '<div class="rpt-kpi hi"><div class="v">' + pb.thisSeason + '</div><div class="k">PBs This Season</div></div>'
-    + '</div>'
-    + '</div>'
-    + '<div class="rpt-section"><div class="rpt-h2">Progress in Main Events</div>'
-    + (eventCardsHtml || '<p style="color:#aaa;font-size:12px">No results yet.</p>')
-    + '</div>'
-    + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page 1 of 2</span></div>'
-    + '</div>';
+  var eventPagesHtml = eventChunks.map(function (chunk, pageIdx) {
+    var cardsHtml = chunk.map(function (ev) {
+      var i = topEvents.indexOf(ev); // global index — canvas/table ids below key off the full topEvents list
+      return '<div class="rpt-evt-card">'
+        + '<div class="rpt-evt-head"><span class="rpt-evt-title">' + ev + '</span><span id="rpt-evt-sub-' + i + '" class="rpt-evt-sub"></span></div>'
+        + '<div class="rpt-evt-body">'
+        + '<div style="height:190px;position:relative"><canvas id="rpt-evc-' + i + '"></canvas></div>'
+        + '<div id="rpt-evt-' + i + '"></div>'
+        + '</div></div>';
+    }).join('');
+    var headerHtml = pageIdx === 0
+      ? ('<div class="rpt-header">'
+        + '<div class="rpt-ico">🏊‍♀️</div>'
+        + '<div><div class="rpt-name">' + sw.name + '</div>'
+        + '<div class="rpt-meta">Player ID ' + sw.id + (age != null ? ' · Age ' + age : '') + (groupLabel ? ' · ' + groupLabel : '') + ' · ' + ss.length + ' season' + (ss.length !== 1 ? 's' : '') + ' tracked</div></div>'
+        + '<div class="rpt-kpis">'
+        + '<div class="rpt-kpi"><div class="v">' + totalSwims + '</div><div class="k">Total Swims</div></div>'
+        + '<div class="rpt-kpi"><div class="v">' + pb.total + '</div><div class="k">Personal Bests</div></div>'
+        + '<div class="rpt-kpi hi"><div class="v">' + pb.thisSeason + '</div><div class="k">PBs This Season</div></div>'
+        + '</div>'
+        + '</div>')
+      : '';
+    var dateHtml = pageIdx === 0
+      ? 'Generated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+      : sw.name + ' — continued';
+    return '<div class="rpt-page">'
+      + '<div class="rpt-topline"><div class="rpt-brand">🏊‍♀️ SwimTrack</div><div class="rpt-date">' + dateHtml + '</div></div>'
+      + headerHtml
+      + '<div class="rpt-section"><div class="rpt-h2">Progress in Main Events' + (eventChunks.length > 1 ? ' (' + (pageIdx + 1) + '/' + eventChunks.length + ')' : '') + '</div>'
+      + (cardsHtml || '<p style="color:#aaa;font-size:12px">No results yet.</p>')
+      + '</div>'
+      + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page ' + (pageIdx + 1) + ' of ' + totalPages + '</span></div>'
+      + '</div>';
+  }).join('');
 
   // ── Page 2: top-10 tables + heat map + callouts ──
   var bestRows = _reportBestPerformances(10);
@@ -5676,6 +5701,12 @@ function buildPdfReport() {
       }).join('') + '</tbody></table>';
   }
 
+  var radar = _reportStrokeRadarData();
+  var radarHtml = radar
+    ? '<div style="height:200px;position:relative"><canvas id="rpt-stroke-radar"></canvas></div>'
+      + '<div style="text-align:center;font-size:10px;color:#999;margin-top:4px">Average points per stroke, this season</div>'
+    : '<p style="color:#aaa;font-size:12px">Not enough data yet.</p>';
+
   var held = _reportRecordsHeld(bd, sex, myName);
   var stroke = _reportStrokeStrength();
   var meets = _reportMeetsThisSeason();
@@ -5702,12 +5733,15 @@ function buildPdfReport() {
     + '<div class="rpt-section"><div class="rpt-h2">Top 10 Events — Best Performances</div>' + bestHtml + '</div>'
     + '<div class="rpt-section"><div class="rpt-h2">Top 10 Events — Most Improved</div>' + impHtml + '</div>'
     + '</div>'
+    + '<div class="rpt-two-col">'
+    + '<div class="rpt-section"><div class="rpt-h2">Performance by Stroke</div>' + radarHtml + '</div>'
     + '<div class="rpt-section"><div class="rpt-h2">Season Event Coverage — ' + (heat ? heat.season : '') + '</div>' + heatHtml + '</div>'
+    + '</div>'
     + '<div class="rpt-section"><div class="rpt-h2">Also Worth Knowing</div>' + calloutsHtml + '</div>'
-    + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page 2 of 2 · ' + meets.count + ' meet' + (meets.count !== 1 ? 's' : '') + ' this season</span></div>'
+    + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page ' + totalPages + ' of ' + totalPages + ' · ' + meets.count + ' meet' + (meets.count !== 1 ? 's' : '') + ' this season</span></div>'
     + '</div>';
 
-  root.innerHTML = page1 + page2;
+  root.innerHTML = eventPagesHtml + page2;
 
   // Charts need real <canvas> elements in the DOM before Chart.js can bind
   // to them — build these only after the innerHTML above has been set.
@@ -5735,11 +5769,35 @@ function buildPdfReport() {
       subEl.textContent = isPB && all.length > 1 ? ('PB on ' + last.date + (parseFloat(imp) > 0.1 ? ' · improved ' + imp + 's' : '')) : (parseFloat(imp) > 0.1 ? 'Improved ' + imp + 's from first to last result' : '');
     }
   });
+
+  if (radar) {
+    var radarCanvas = document.getElementById('rpt-stroke-radar');
+    if (radarCanvas) {
+      new Chart(radarCanvas.getContext('2d'), {
+        type: 'radar',
+        data: { labels: radar.labels, datasets: [{ label: 'Avg points', data: radar.avg, backgroundColor: 'rgba(200,150,31,.25)', borderColor: '#c8961f', pointBackgroundColor: '#c8961f' }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false, // noAnim — printing captures whatever's painted at print() time
+          plugins: { legend: { display: false } },
+          scales: { r: { min: 0, suggestedMax: radar.max, ticks: { display: false }, pointLabels: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,.06)' } } }
+        }
+      });
+    }
+  }
 }
 
 function openPdfReport() {
   try { buildPdfReport(); }
   catch (e) { alert('Could not build the PDF report: ' + e.message); console.error('openPdfReport failed:', e); return; }
+  // Chrome's "Save as PDF" suggests document.title as the filename — swap it
+  // to "<swimmer> - <current season>" for the duration of the print dialog,
+  // then restore so the browser tab title doesn't stay changed afterward.
+  var sw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
+  var ss = seasons(); var curSeason = ss[ss.length - 1] || '';
+  var prevTitle = document.title;
+  if (sw) document.title = sw.name + (curSeason ? ' - ' + curSeason : '');
+  var restore = function () { document.title = prevTitle; window.removeEventListener('afterprint', restore); };
+  window.addEventListener('afterprint', restore);
   setTimeout(function () { window.print(); }, 250); // let Chart.js finish its (now non-animated) initial paint before printing
 }
 window.openPdfReport = openPdfReport;
