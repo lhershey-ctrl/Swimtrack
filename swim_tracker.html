@@ -5148,8 +5148,11 @@ window.swimCloudSaveProfile = async function (sw) {
 window.swimCloudSaveAll = async function (swimmers) {
   if (!currentUser) { try { await doSignIn(); } catch (e) { return "error:" + e.message; } }
   if (!currentUser) return "error:not signed in";
-  try { for (const sw of swimmers || []) { if (sw && sw.id) await swimSaveProfile(sw); } return "saved"; }
-  catch (e) { return "error:" + e.message; }
+  try {
+    for (const sw of swimmers || []) { if (sw && sw.id) await swimSaveProfile(sw); }
+    refreshCloudSwimmers(); // so the "☁ Load:" pills pick up a renamed swimmer right away, not just on next sign-in
+    return "saved";
+  } catch (e) { return "error:" + e.message; }
 };
 
 // ── Israeli age records (config/records) ────────────────────────────────
@@ -5709,6 +5712,7 @@ function buildPdfReport() {
   // Charts need real <canvas> elements in the DOM before Chart.js can bind
   // to them — build these only after the innerHTML above has been set.
   var ar = allResults();
+  var ss = seasons(); var curSeason = ss[ss.length - 1] || null; // table below is current-season-only; the chart stays full history to show long-term progress
   topEvents.forEach(function (evName, i) {
     var evRes = ar.filter(function (r) { return r.event === evName; });
     var sc25 = [], lc50 = [];
@@ -5719,7 +5723,8 @@ function buildPdfReport() {
     });
     sc25.sort(function (a, b) { return a.x - b.x; }); lc50.sort(function (a, b) { return a.x - b.x; });
     makeEvChart('rpt-evc-' + i, sc25, lc50, true); // noAnim — printing captures whatever's painted at print() time
-    var tblEl = document.getElementById('rpt-evt-' + i); if (tblEl) tblEl.innerHTML = makeEvTable(evRes);
+    var tblRes = curSeason ? evRes.filter(function (r) { return r.season === curSeason; }) : evRes;
+    var tblEl = document.getElementById('rpt-evt-' + i); if (tblEl) tblEl.innerHTML = makeEvTable(tblRes);
     var all = evRes.filter(function (r) { return parseDate(r.date); }).sort(function (a, b) { return parseDate(a.date) - parseDate(b.date); });
     var subEl = document.getElementById('rpt-evt-sub-' + i);
     if (subEl && all.length >= 2) {
