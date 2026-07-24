@@ -263,10 +263,12 @@ function TeamPickerModal({ clusters, activeKey, onPick, onClose }) {
 // ════════════════════════════════════════════════════════════════════
 //  Top bar + bottom nav
 // ════════════════════════════════════════════════════════════════════
-function TopBar({ user, swimmer, swimmers, onPick, onSignOut }) {
+function TopBar({ user, swimmer, swimmers, onPick, onSignOut, teamClusters, selectedTeamKey, onSwitchAccount }) {
   const { c, dark, toggle } = useUI();
   const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const icon = swimmer?.name === "Noga" ? "🏊‍♀️" : "🏊";
+  const activeCluster = (teamClusters || []).find((cl) => cl.key === selectedTeamKey);
   return (
     <div style={{ position: "sticky", top: 0, zIndex: 30, background: GRAD, padding: "12px 14px",
       display: "flex", alignItems: "center", gap: 10, boxShadow: "0 2px 14px rgba(0,0,0,.35)" }}>
@@ -279,10 +281,28 @@ function TopBar({ user, swimmer, swimmers, onPick, onSignOut }) {
       </button>
       <button onClick={toggle} title="Toggle theme" style={{ width: 34, height: 34, borderRadius: 999, border: "none",
         cursor: "pointer", background: "rgba(255,255,255,.2)", color: "#fff", fontSize: 15 }}>{dark ? "☀️" : "🌙"}</button>
-      <button onClick={onSignOut} title={user?.email} style={{ width: 34, height: 34, borderRadius: 999, border: "none",
-        cursor: "pointer", background: "rgba(255,255,255,.2)", color: "#fff", fontWeight: 700 }}>
-        {(user?.displayName || user?.email || "?")[0].toUpperCase()}
-      </button>
+      <div style={{ position: "relative" }}>
+        <button onClick={() => setMenuOpen((o) => !o)} title={user?.email} style={{ width: 34, height: 34, borderRadius: 999, border: "none",
+          cursor: "pointer", background: "rgba(255,255,255,.2)", color: "#fff", fontWeight: 700 }}>
+          {(user?.displayName || user?.email || "?")[0].toUpperCase()}
+        </button>
+        {menuOpen && (
+          <div style={{ position: "absolute", top: 40, right: 0, minWidth: 200, background: c.card2, border: `1px solid ${c.line}`,
+            borderRadius: 12, overflow: "hidden", zIndex: 40, boxShadow: "0 12px 30px rgba(0,0,0,.45)" }}>
+            <div style={{ padding: "10px 14px", fontSize: 11.5, color: c.dim, borderBottom: `1px solid ${c.line}`, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email}</div>
+            {teamClusters && teamClusters.length > 1 && (
+              <button onClick={() => { setMenuOpen(false); onSwitchAccount(); }} style={{ display: "block", width: "100%", textAlign: "left",
+                padding: "12px 14px", background: "none", border: "none", borderBottom: `1px solid ${c.line}`, color: c.text, cursor: "pointer", fontSize: 14 }}>
+                👥 Switch account{activeCluster ? " (" + activeCluster.name + ")" : ""}
+              </button>
+            )}
+            <button onClick={() => { setMenuOpen(false); onSignOut(); }} style={{ display: "block", width: "100%", textAlign: "left",
+              padding: "12px 14px", background: "none", border: "none", color: c.text, cursor: "pointer", fontSize: 14 }}>
+              🚪 Sign out
+            </button>
+          </div>
+        )}
+      </div>
       {open && (
         <div style={{ position: "absolute", top: 58, left: 14, right: 14, background: c.card2, border: `1px solid ${c.line}`,
           borderRadius: 14, overflow: "hidden", zIndex: 40, boxShadow: "0 12px 30px rgba(0,0,0,.45)" }}>
@@ -2093,7 +2113,8 @@ export default function App() {
 
   return (
     <div style={s.app}>
-      <TopBar user={user} swimmer={swimmer} swimmers={swimmers} onPick={setSwimmerId} onSignOut={signOut} />
+      <TopBar user={user} swimmer={swimmer} swimmers={swimmers} onPick={setSwimmerId} onSignOut={signOut}
+        teamClusters={teamClusters} selectedTeamKey={selectedTeamKey} onSwitchAccount={() => setTeamSwitcherOpen(true)} />
       {tab === "settings" ? (
         <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers}
           teamClusters={teamClusters} selectedTeamKey={selectedTeamKey}
@@ -2196,26 +2217,36 @@ async function nameClusters(clusters) {
 // Owner-only cross-coach view — deliberately separate from every other
 // query in the app, which is always scoped to the signed-in account's own
 // roster. This is the one place seeing "everyone" is the point.
-// Groups coaches into "teams" — connected components of the graph where an
-// edge exists between two coaches if they share at least one swimmer (e.g.
-// lhershey + sharos88, who co-manage Noga/Gal). A coach with no shared
-// swimmers is its own team of one. This matches how the app is actually
-// used far better than one row per raw account/uid.
+// Groups coaches into "teams" by each swimmer's ROOT coach (whichever of its
+// coachUids has the earliest coaches/{uid}.createdAt — usually whoever
+// created the roster and invited the others in), NOT by naive connected-
+// components-via-any-shared-swimmer. That distinction matters as soon as one
+// coach is a viewer on two otherwise-unrelated rosters (e.g. lhershey is a
+// viewer on both his own Har-Shai roster AND nogaharshai's separate roster)
+// — plain graph connectivity would merge those into one giant "team" via
+// the shared viewer, when they're genuinely two different accounts. See
+// clusterMySwimmers, the per-coach twin of this same distinction.
 function groupCoachesIntoTeams(coaches, swimmers) {
-  const parent = {};
-  coaches.forEach((co) => { parent[co.uid] = co.uid; });
-  const find = (x) => { while (parent[x] && parent[x] !== x) x = parent[x]; return x; };
-  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  const byUid = {};
+  coaches.forEach((co) => { byUid[co.uid] = co; });
+  const groups = {}; // keyed by root uid -> { swimmers:[], uids:Set }
   swimmers.forEach((sw) => {
-    const uids = (sw.coachUids || []).filter((uid) => uid in parent);
-    for (let i = 1; i < uids.length; i++) union(uids[0], uids[i]);
+    const uids = (sw.coachUids || []).filter((uid) => uid in byUid);
+    if (!uids.length) return;
+    const root = uids.reduce((a, b) => (byUid[a].createdAt || 0) <= (byUid[b].createdAt || 0) ? a : b);
+    if (!groups[root]) groups[root] = { swimmers: [], uids: new Set() };
+    groups[root].swimmers.push(sw);
+    uids.forEach((u) => groups[root].uids.add(u));
   });
-  const teamsByRoot = {};
-  coaches.forEach((co) => { (teamsByRoot[find(co.uid)] = teamsByRoot[find(co.uid)] || []).push(co); });
-  return Object.values(teamsByRoot).map((members) => {
-    const memberUids = new Set(members.map((m) => m.uid));
-    const swimmerCount = swimmers.filter((sw) => (sw.coachUids || []).some((uid) => memberUids.has(uid))).length;
-    return { members, swimmerCount };
+  const covered = new Set();
+  Object.values(groups).forEach((g) => g.uids.forEach((u) => covered.add(u)));
+  // Any coach untouched by every swimmer (no roster of their own, never
+  // invited anywhere) still gets a "team of one, 0 swimmers" row.
+  coaches.forEach((co) => { if (!covered.has(co.uid)) groups[co.uid] = groups[co.uid] || { swimmers: [], uids: new Set([co.uid]) }; });
+  return Object.keys(groups).map((root) => {
+    const g = groups[root];
+    const members = Array.from(g.uids).map((uid) => byUid[uid]).filter(Boolean);
+    return { members, swimmerCount: g.swimmers.length };
   }).sort((a, b) => b.swimmerCount - a.swimmerCount);
 }
 
