@@ -1,0 +1,11 @@
+{
+  "name": "swimtrack-tests",
+  "private": true,
+  "description": "Regression suite for swim_tracker.html — drives the real app headless with Firebase calls mocked. See README.md.",
+  "scripts": {
+    "test": "node run-all.js"
+  },
+  "dependencies": {
+    "playwright": "1.55.0"
+  }
+}
