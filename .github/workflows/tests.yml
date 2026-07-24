@@ -1,0 +1,36 @@
+name: Regression suite
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Mobile's node_modules provides the vite binary tests/lib/mobile-harness.js
+      # spawns to serve the app under test — needed even though this workflow
+      # doesn't build/deploy mobile itself.
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Install Playwright's Chromium
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run regression suite
+        working-directory: tests
+        run: node run-all.js
