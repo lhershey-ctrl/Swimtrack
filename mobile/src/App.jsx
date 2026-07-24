@@ -2265,34 +2265,47 @@ function defaultTeamName(email) {
 // excluding my own uid — see below). Unlike groupCoachesIntoTeams (admin-
 // only, needs every coach's doc), this only needs swimmers the signed-in
 // coach can already read, so any coach can compute it for themselves.
+// A swimmer can belong to more than one team at once (e.g. Liron is shared
+// with sharos88 on Team Har-Shai AND was separately added to a brand-new
+// team) — teamIds is an ARRAY, and a swimmer with entries in it appears in
+// EACH of those teams' clusters (duplicated across them on purpose), not
+// moved exclusively into one. They can ALSO still appear in their legacy
+// coachUids-based cluster alongside that — the two aren't mutually
+// exclusive, UNLESS they have no other coach at all AND already have an
+// explicit team (nothing left for the legacy "solo" bucket to add).
 function clusterMySwimmers(mySwimmers, myUid) {
-  const withTeam = mySwimmers.filter((sw) => sw.teamId);
-  const legacy = mySwimmers.filter((sw) => !sw.teamId);
-
   const teamGroups = {};
-  withTeam.forEach((sw) => { (teamGroups[sw.teamId] = teamGroups[sw.teamId] || []).push(sw); });
+  mySwimmers.forEach((sw) => {
+    (sw.teamIds || []).forEach((tid) => { (teamGroups[tid] = teamGroups[tid] || []).push(sw); });
+  });
   const teamClusters = Object.keys(teamGroups).map((teamId) => ({ key: "team:" + teamId, teamId, swimmers: teamGroups[teamId], coachUids: [] }));
 
   const parent = {};
   const find = (x) => { while (parent[x] && parent[x] !== x) x = parent[x]; return x; };
   const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
-  legacy.forEach((sw) => { parent[sw.id] = sw.id; });
+  mySwimmers.forEach((sw) => { parent[sw.id] = sw.id; });
   // Union swimmers that share any OTHER coach — deliberately excluding my own
   // uid, which by definition is on every swimmer I can see; using it would
   // trivially merge everything into one cluster and defeat the whole point.
   // Swimmers with NO other coach at all ("solo", mine alone) are unioned
   // together separately below — otherwise each would end up its own
-  // singleton cluster instead of one combined "my own account".
+  // singleton cluster instead of one combined "my own account" — UNLESS
+  // they already have an explicit team, which already gives them an
+  // unambiguous home (no implicit default one needed).
   const swimmerIdsByCoach = {}, soloIds = [];
-  legacy.forEach((sw) => {
+  mySwimmers.forEach((sw) => {
     const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
-    if (!others.length) { soloIds.push(sw.id); return; }
+    if (!others.length) { if (!(sw.teamIds && sw.teamIds.length)) soloIds.push(sw.id); return; }
     others.forEach((uid) => { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
   });
   Object.values(swimmerIdsByCoach).forEach((ids) => { for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
   for (let i = 1; i < soloIds.length; i++) union(soloIds[0], soloIds[i]);
   const groups = {};
-  legacy.forEach((sw) => { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
+  mySwimmers.forEach((sw) => {
+    const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
+    if (!others.length && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no legacy home needed
+    (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw);
+  });
   const legacyClusters = Object.values(groups).map((swArr) => {
     const coachUids = new Set();
     swArr.forEach((sw) => (sw.coachUids || []).forEach((u) => coachUids.add(u)));
@@ -2341,18 +2354,19 @@ function groupCoachesIntoTeams(coaches, swimmers) {
   const groups = {}; // keyed by "team:<id>" or a root uid -> { swimmers:[], uids:Set, name? }
   swimmers.forEach((sw) => {
     const uids = (sw.coachUids || []).filter((uid) => uid in byUid);
-    if (sw.teamId) {
-      // Explicit team (see clusterMySwimmers) — unambiguous, group by teamId
-      // directly rather than guessing a root coach. Admin doesn't currently
-      // fetch teams/{id} for the real name here, so it still falls back to
-      // the joined-members label the render already uses for legacy groups.
-      const key = "team:" + sw.teamId;
+    // Explicit team(s) (see clusterMySwimmers) — unambiguous, group by each
+    // teamId directly. A swimmer can belong to more than one team AND still
+    // show in its root-coach group below (not mutually exclusive) — only
+    // skipped from the root-coach pass if it has no other coach at all AND
+    // already has an explicit team (nothing left for that pass to add).
+    (sw.teamIds || []).forEach((teamId) => {
+      const key = "team:" + teamId;
       if (!groups[key]) groups[key] = { swimmers: [], uids: new Set() };
       groups[key].swimmers.push(sw);
       uids.forEach((u) => groups[key].uids.add(u));
-      return;
-    }
+    });
     if (!uids.length) return;
+    if (uids.length === 1 && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no root-coach home needed
     const root = uids.reduce((a, b) => (byUid[a].createdAt || 0) <= (byUid[b].createdAt || 0) ? a : b);
     if (!groups[root]) groups[root] = { swimmers: [], uids: new Set() };
     groups[root].swimmers.push(sw);

@@ -716,23 +716,21 @@ function landingSignIn(){
   // from before per-coach isolation existed, or another coach's swimmer that
   // briefly leaked in during an earlier bug. Never touches a swimmer the
   // user actually typed in by hand (no _autoImported flag).
-  window.pruneAutoImportedSwimmers=function(validIds){
+  // `validIds` = belongs in the CURRENTLY active team/view (per the fresh
+  // clustering computation, which already resolves multi-team membership —
+  // see clusterMySwimmers). `allCloudIds` = every swimmer this coach can
+  // see across ALL their teams, regardless of which is active — used only
+  // to tell "safe to hide, it's saved in the cloud under some team, switch
+  // back to see it again" apart from "never saved anywhere, hiding it now
+  // would be silent permanent data loss" for a swimmer just typed in by hand.
+  window.pruneAutoImportedSwimmers=function(validIds,allCloudIds){
     var valid={};validIds.forEach(function(id){valid[String(id)]=true;});
+    var allCloud={};(allCloudIds||[]).forEach(function(id){allCloud[String(id)]=true;});
     var before=SWIMMERS.length;
-    // Keep anything explicitly added by hand (even if not synced to the
-    // cloud yet), or anything present in the fresh, correctly-scoped cloud
-    // result. Drop everything else — this also retroactively cleans up
-    // entries that leaked in via the OLD unfiltered sync, before
-    // _autoImported/_manuallyAdded existed to tell them apart.
-    // EXCEPT: a swimmer explicitly tagged with a team (see createTeam)
-    // other than the one currently active never belongs in this session's
-    // picker, manually added or not — team-scoping always wins over the
-    // "don't silently drop something I typed in by hand" exemption below,
-    // otherwise switching teams would never actually hide a swimmer you'd
-    // added directly (as opposed to one that only ever arrived via cloud sync).
     SWIMMERS=SWIMMERS.filter(function(sw){
-      if(sw.teamId&&sw.teamId!==window.currentTeamId)return false;
-      return sw._manuallyAdded||valid[String(sw.id)];
+      if(valid[String(sw.id)])return true; // belongs in the current view — always keep
+      if(allCloud[String(sw.id)])return false; // exists in the cloud under a different team — safe to hide, recoverable by switching back
+      return sw._manuallyAdded; // never confirmed saved anywhere — protect it, no cloud copy to recover from
     });
     if(SWIMMERS.length!==before){
       if(activeSwimmer>=SWIMMERS.length)activeSwimmer=Math.max(0,SWIMMERS.length-1);
@@ -861,10 +859,12 @@ function landingSignIn(){
 
   window.addSettingsSwimmer=function(){
     var sw={name:'New Swimmer',id:'',seasonIds:[],_manuallyAdded:true};
-    // If currently viewing an explicit team (see createTeam), tag the new
-    // swimmer into it so it groups there instead of the legacy coachUids
-    // heuristic. Never applied to already-existing swimmers.
-    if(window.currentTeamId)sw.teamId=window.currentTeamId;
+    // If currently viewing an explicit team (see createTeam), add it to
+    // this swimmer's teamIds — additive (a swimmer can belong to more than
+    // one team/cluster at once), never a move: an already-existing swimmer
+    // (e.g. typing in a real player ID that already belongs elsewhere)
+    // keeps showing in its other team(s)/legacy grouping too.
+    if(window.currentTeamId)sw.teamIds=[window.currentTeamId];
     SWIMMERS.push(sw);
     saveSettings();renderSettingsUI();renderSwimmerMgmt();renderSwimmerSelectors();
   };
@@ -5119,12 +5119,13 @@ async function doSync() {
       coachEmails: arrayUnion(currentUser.email),
     };
     if (Object.keys(seasons).length) payload.seasons = seasons;
-    // Only stamped for a swimmer created while an explicit team (see
-    // createTeam) was active locally — never retroactively added to an
-    // existing swimmer, which would wrongly pull it out of its legacy
-    // coachUids-based cluster (see clusterMySwimmers).
-    if (sw.teamId) payload.teamId = sw.teamId;
+    // Additive — arrayUnion so this never overwrites teamIds this swimmer
+    // already has (e.g. from another team they were separately added to);
+    // a swimmer can belong to more than one team/cluster at once (see
+    // clusterMySwimmers), so this is never a "move," only an "also add."
+    if (sw.teamIds && sw.teamIds.length) payload.teamIds = arrayUnion.apply(null, sw.teamIds);
     await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
+    await refreshTeamFilterForCurrentTeam();
     lastSyncedAt = payload.updatedAt;
     const nSeasons = Object.keys(seasons).length;
     if (st) { st.style.color = "#1a7a4f"; st.textContent = "✅ Synced " + sw.name + " — " + nSeasons + " season(s) · " + payload.heights.length + " height / " + payload.weights.length + " weight. Open the phone app."; }
@@ -5155,11 +5156,11 @@ async function swimSaveProfile(sw) {
     coachUids: arrayUnion(currentUser.uid),
     coachEmails: arrayUnion(currentUser.email),
   };
-  // Only stamped for a swimmer created while an explicit team (see
-  // createTeam) was active locally — never retroactively added to an
-  // existing swimmer, which would wrongly pull it out of its legacy
-  // coachUids-based cluster (see clusterMySwimmers).
-  if (sw.teamId) payload.teamId = sw.teamId;
+  // Additive — arrayUnion so this never overwrites teamIds this swimmer
+  // already has (e.g. from another team they were separately added to); a
+  // swimmer can belong to more than one team/cluster at once (see
+  // clusterMySwimmers), so this is never a "move," only an "also add."
+  if (sw.teamIds && sw.teamIds.length) payload.teamIds = arrayUnion.apply(null, sw.teamIds);
   await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
 }
 
@@ -5169,7 +5170,7 @@ window.swimCloudReady = () => !!currentUser;
 // Auto-save one swimmer if already signed in (silent no-op otherwise).
 window.swimCloudSaveProfile = async function (sw) {
   if (!currentUser) return "offline";
-  try { await swimSaveProfile(sw); return "saved"; }
+  try { await swimSaveProfile(sw); await refreshTeamFilterForCurrentTeam(); return "saved"; }
   catch (e) { return "error:" + e.message; }
 };
 // Save ALL swimmers, signing in first if needed (triggered by the button).
@@ -5178,6 +5179,7 @@ window.swimCloudSaveAll = async function (swimmers) {
   if (!currentUser) return "error:not signed in";
   try {
     for (const sw of swimmers || []) { if (sw && sw.id) await swimSaveProfile(sw); }
+    await refreshTeamFilterForCurrentTeam(); // keep the current team's filter in sync with what was just saved (see comment above the function)
     refreshCloudSwimmers(); // so the "☁ Load:" pills pick up a renamed swimmer right away, not just on next sign-in
     return "saved";
   } catch (e) { return "error:" + e.message; }
@@ -5337,6 +5339,10 @@ window.clearLoadedData = function () {
   const an = document.getElementById("analysis"); if (an) an.style.display = "none";
   const ph = document.getElementById("ph2"); if (ph) ph.style.display = "";
   const ls = document.getElementById("loadStatus"); if (ls) { ls.className = ""; ls.innerText = ""; }
+  // The swimmer banner (name/seasons/swims/PDF Summary) reads window.D
+  // directly and was left showing stale data — it hides itself once D is
+  // actually empty, but only if told to re-render.
+  if (typeof renderSwimmerBanner === "function") renderSwimmerBanner();
   render();
 };
 
@@ -5363,7 +5369,7 @@ async function autoSyncProfilesFromCloud() {
     });
     // Clean up anything auto-imported by a past (possibly wrongly-scoped)
     // sync that isn't actually in this account's roster anymore.
-    if (window.pruneAutoImportedSwimmers) window.pruneAutoImportedSwimmers(docs.map((d) => d.id));
+    if (window.pruneAutoImportedSwimmers) window.pruneAutoImportedSwimmers(docs.map((d) => d.id), snap.docs.map((d) => d.id));
   } catch (e) { /* not signed in / no access yet — ignore */ }
 }
 
@@ -5413,12 +5419,19 @@ function defaultTeamName(email) {
   var local = (email || '').split('@')[0] || 'Coach';
   return local.charAt(0).toUpperCase() + local.slice(1) + "'s Team";
 }
+// A swimmer can belong to more than one team at once (e.g. Liron is shared
+// with sharos88 on Team Har-Shai AND was separately added to a brand-new
+// team) — teamIds is an ARRAY, and a swimmer with entries in it appears in
+// EACH of those teams' clusters (duplicated across them on purpose), not
+// moved exclusively into one. They can ALSO still appear in their legacy
+// coachUids-based cluster alongside that — the two aren't mutually
+// exclusive, UNLESS they have no other coach at all AND already have an
+// explicit team (nothing left for the legacy "solo" bucket to add).
 function clusterMySwimmers(mySwimmers, myUid) {
-  var withTeam = mySwimmers.filter(function (sw) { return sw.teamId; });
-  var legacy = mySwimmers.filter(function (sw) { return !sw.teamId; });
-
   var teamGroups = {};
-  withTeam.forEach(function (sw) { (teamGroups[sw.teamId] = teamGroups[sw.teamId] || []).push(sw); });
+  mySwimmers.forEach(function (sw) {
+    (sw.teamIds || []).forEach(function (tid) { (teamGroups[tid] = teamGroups[tid] || []).push(sw); });
+  });
   var teamClusters = Object.keys(teamGroups).map(function (teamId) {
     return { key: 'team:' + teamId, teamId: teamId, swimmers: teamGroups[teamId], coachUids: [] };
   });
@@ -5426,23 +5439,29 @@ function clusterMySwimmers(mySwimmers, myUid) {
   var parent = {};
   function find(x) { while (parent[x] && parent[x] !== x) x = parent[x]; return x; }
   function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
-  legacy.forEach(function (sw) { parent[sw.id] = sw.id; });
+  mySwimmers.forEach(function (sw) { parent[sw.id] = sw.id; });
   // Union swimmers that share any OTHER coach — deliberately excluding my own
   // uid, which by definition is on every swimmer I can see; using it would
   // trivially merge everything into one cluster and defeat the whole point.
   // Swimmers with NO other coach at all ("solo", mine alone) are unioned
   // together separately below — otherwise each would end up its own
-  // singleton cluster instead of one combined "my own account".
+  // singleton cluster instead of one combined "my own account" — UNLESS
+  // they already have an explicit team, which already gives them an
+  // unambiguous home (no implicit default one needed).
   var swimmerIdsByCoach = {}, soloIds = [];
-  legacy.forEach(function (sw) {
+  mySwimmers.forEach(function (sw) {
     var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
-    if (!others.length) { soloIds.push(sw.id); return; }
+    if (!others.length) { if (!(sw.teamIds && sw.teamIds.length)) soloIds.push(sw.id); return; }
     others.forEach(function (uid) { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
   });
   Object.values(swimmerIdsByCoach).forEach(function (ids) { for (var i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
   for (var si = 1; si < soloIds.length; si++) union(soloIds[0], soloIds[si]);
   var groups = {};
-  legacy.forEach(function (sw) { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
+  mySwimmers.forEach(function (sw) {
+    var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
+    if (!others.length && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no legacy home needed
+    (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw);
+  });
   var legacyClusters = Object.values(groups).map(function (swArr) {
     var coachUids = new Set();
     swArr.forEach(function (sw) { (sw.coachUids || []).forEach(function (u) { coachUids.add(u); }); });
@@ -5476,6 +5495,29 @@ var teamFilterIds = null; // Set of swimmer ids, or null = no filtering needed
 var myTeamClusters = [];
 var selectedTeamKey = null;
 var currentTeamId = null; // explicit team (see createTeam) a new swimmer should be tagged into; null = legacy/no explicit team
+// teamFilterIds is a snapshot taken whenever applyTeamChoice runs — saving
+// swimmers into the CURRENT team afterward (e.g. Save All in Settings) never
+// updates that snapshot on its own, so without this, pruneAutoImportedSwimmers
+// would see those swimmers as "belongs to no team I'm viewing" on the very
+// next switch away-and-back and wipe them locally (they'd still be in Firestore,
+// just hidden — but from the user's seat this used to look identical to data loss).
+// Call this right after any cloud save so the current team's filter — and the
+// switcher's per-team swimmer counts — reflect what was just saved.
+async function refreshTeamFilterForCurrentTeam() {
+  if (!currentUser) return;
+  try {
+    var q = query(collection(db, 'swimmers'), where('coachUids', 'array-contains', currentUser.uid));
+    var snap = await getDocs(q);
+    var mySwimmers = snap.docs.map(function (d) { return { id: d.id, coachUids: d.data().coachUids || [], teamIds: d.data().teamIds || [] }; });
+    var clusters = clusterMySwimmers(mySwimmers, currentUser.uid);
+    var match = clusters.filter(function (cl) { return (cl.teamId || null) === currentTeamId; })[0];
+    teamFilterIds = match ? new Set(match.swimmers.map(function (sw) { return sw.id; })) : (currentTeamId ? new Set() : null);
+    if (myTeamClusters.length) {
+      var named = await nameClusters(clusters);
+      myTeamClusters = named;
+    }
+  } catch (e) { console.error('refreshTeamFilterForCurrentTeam failed:', e); }
+}
 function applyTeamChoice(cluster) {
   try { localStorage.setItem('swimtrack:teamKey', cluster.key); } catch (e) {}
   selectedTeamKey = cluster.key;
@@ -5489,7 +5531,7 @@ async function resolveTeamAndProceed(user) {
   try {
     var q = query(collection(db, 'swimmers'), where('coachUids', 'array-contains', user.uid));
     var snap = await getDocs(q);
-    var mySwimmers = snap.docs.map(function (d) { return { id: d.id, coachUids: d.data().coachUids || [], teamId: d.data().teamId || null }; });
+    var mySwimmers = snap.docs.map(function (d) { return { id: d.id, coachUids: d.data().coachUids || [], teamIds: d.data().teamIds || [] }; });
     var clusters = clusterMySwimmers(mySwimmers, user.uid);
     // Teams this coach created themselves that have zero swimmers so far
     // (clustering above is swimmer-driven, so a brand-new empty team
@@ -6348,16 +6390,19 @@ function groupCoachesIntoTeams(coaches, swimmers) {
   const groups = {}; // keyed by "team:<id>" or a root uid -> { swimmers:[], uids:Set }
   swimmers.forEach((sw) => {
     const uids = (sw.coachUids || []).filter((uid) => uid in byUid);
-    if (sw.teamId) {
-      // Explicit team (see clusterMySwimmers) — unambiguous, group by teamId
-      // directly rather than guessing a root coach.
-      const key = "team:" + sw.teamId;
+    // Explicit team(s) (see clusterMySwimmers) — unambiguous, group by each
+    // teamId directly. A swimmer can belong to more than one team AND still
+    // show in its root-coach group below (not mutually exclusive) — only
+    // skipped from the root-coach pass if it has no other coach at all AND
+    // already has an explicit team (nothing left for that pass to add).
+    (sw.teamIds || []).forEach((teamId) => {
+      const key = "team:" + teamId;
       if (!groups[key]) groups[key] = { swimmers: [], uids: new Set() };
       groups[key].swimmers.push(sw);
       uids.forEach((u) => groups[key].uids.add(u));
-      return;
-    }
+    });
     if (!uids.length) return;
+    if (uids.length === 1 && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no root-coach home needed
     const root = uids.reduce((a, b) => (byUid[a].createdAt || 0) <= (byUid[b].createdAt || 0) ? a : b);
     if (!groups[root]) groups[root] = { swimmers: [], uids: new Set() };
     groups[root].swimmers.push(sw);

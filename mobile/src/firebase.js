@@ -148,12 +148,15 @@ export async function saveSwimmerProfile(swimmerId, profile) {
 // coachUids are safe to always re-stamp; seasons is desktop-sync-owned and
 // must be left untouched here).
 // `teamId` is optional — set it when the coach is currently viewing an
-// explicit team (see createTeam) so the new swimmer joins that team; omit
-// it to fall back to the legacy coachUids-only behavior (unchanged from
-// before teams existed).
+// explicit team (see createTeam) so the new swimmer ALSO joins that team;
+// omit it to fall back to the legacy coachUids-only behavior (unchanged
+// from before teams existed). Additive (arrayUnion) — a swimmer can belong
+// to more than one team/cluster at once (see clusterMySwimmers), so typing
+// in an already-existing player ID here never "moves" them out of wherever
+// else they already show, only adds this team alongside it.
 export async function createSwimmer(swimmerId, name, coachUid, coachEmail, teamId) {
   const payload = { id: String(swimmerId), name, createdAt: Date.now(), coachUids: arrayUnion(coachUid), coachEmails: arrayUnion(coachEmail) };
-  if (teamId) payload.teamId = teamId;
+  if (teamId) payload.teamIds = arrayUnion(teamId);
   await setDoc(doc(db, "swimmers", String(swimmerId)), payload, { merge: true });
 }
 
