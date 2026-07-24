@@ -22,7 +22,7 @@ import {
   lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
   recordKey, rudolphTrend, usaStandardsForAge, USA_TIERS, USA_STROKES,
   wrAgeGroup, wrAvailableGroups, wrGapColor, wrGapRows,
-  teamUsaTierSummary, teamRudolphSummary,
+  teamUsaTierSummary, teamRudolphSummary, teamWrGapSummary, teamBestPoints,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
 import { percentileFor, valueAtBand, PCTL_BANDS, CDC_AGE_MIN, CDC_AGE_MAX } from "./cdcGrowth.js";
@@ -2380,7 +2380,11 @@ function groupCoachesIntoTeams(coaches, swimmers) {
   return Object.keys(groups).map((root) => {
     const g = groups[root];
     const members = Array.from(g.uids).map((uid) => byUid[uid]).filter(Boolean);
-    return { members, swimmerCount: g.swimmers.length };
+    // root is either "team:<id>" (explicit team) or a coach uid (legacy
+    // root-coach cluster) — surface teamId/coachUids too so callers can name
+    // the group the same way the sign-in picker does (see nameClusters).
+    const teamId = root.indexOf("team:") === 0 ? root.slice(5) : null;
+    return { members, swimmerCount: g.swimmers.length, swimmers: g.swimmers, teamId, coachUids: Array.from(g.uids) };
   }).sort((a, b) => b.swimmerCount - a.swimmerCount);
 }
 
@@ -2397,6 +2401,69 @@ function teamTopEvents(D, n) {
   return Object.values(byEvent).sort((a, b) => b.points - a.points).slice(0, n || 2);
 }
 
+// One row per swimmer with either a Rudolph score / USA Standards tier
+// (juniors) or a FINA score / % off World Record (seniors, age > 30 — same
+// cutoff as teamWrGapSummary/MastersWrPanel; neither Rudolph nor USA
+// Standards is calibrated that far). A swimmer only ever has one pair
+// populated, so the shared "Rudolph / FINA" and "USA Std / WR Gap" columns
+// are never ambiguous per row.
+function perfSplitRows(roster, usaTable, rudTable, mastersTable) {
+  const usaSummary = teamUsaTierSummary(roster, usaTable);
+  const rudSummary = teamRudolphSummary(roster, rudTable);
+  const wrSummary = teamWrGapSummary(roster, mastersTable);
+  const byName = {};
+  roster.forEach((r) => {
+    const top = teamTopEvents(r.D, 2);
+    if (top.length) (byName[r.swimmer.name] = byName[r.swimmer.name] || { name: r.swimmer.name }).topEvents = top;
+  });
+  usaSummary.perSwimmer.forEach((p) => { (byName[p.swimmer.name] = byName[p.swimmer.name] || { name: p.swimmer.name }).usaTier = p.tier; });
+  rudSummary.perSwimmer.forEach((p) => { (byName[p.swimmer.name] = byName[p.swimmer.name] || { name: p.swimmer.name }).rudScore = p.score; });
+  wrSummary.perSwimmer.forEach((p) => {
+    const row = (byName[p.swimmer.name] = byName[p.swimmer.name] || { name: p.swimmer.name });
+    row.wrGapPct = p.pct;
+    row.finaPts = teamBestPoints(roster.find((r) => r.swimmer.name === p.swimmer.name)?.D || {});
+  });
+  return Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function PerfSplitTable({ title, rows, c }) {
+  return (
+    <>
+      <div style={{ fontSize: 13, fontWeight: 800, color: c.blue, margin: "10px 2px 6px" }}>{title}</div>
+      <Card style={{ marginBottom: 14, padding: 6 }}>
+        {rows.length ? (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>
+              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Swimmer</th>
+              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Top Events</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Rudolph / FINA</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>USA Std / WR Gap</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.name} style={{ borderTop: i > 0 ? `1px solid ${c.line}` : "none" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5 }}>{r.name}</td>
+                  <td style={{ padding: "7px 8px", fontSize: 11.5, lineHeight: 1.5 }}>
+                    {r.topEvents && r.topEvents.length
+                      ? r.topEvents.map((t, j) => <div key={j}>{t.event} <span style={{ color: c.dim }}>({t.points})</span></div>)
+                      : "—"}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700 }}>
+                    {r.rudScore != null ? r.rudScore.toFixed(1) + " pts" : r.finaPts != null ? r.finaPts + " pts (FINA)" : "—"}
+                  </td>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700, color: c.blue }}>
+                    {r.usaTier || (r.wrGapPct != null ? "+" + r.wrGapPct.toFixed(1) + "% off WR" : "—")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <div style={{ fontSize: 12.5, color: c.dim, padding: 8 }}>No performance data yet.</div>}
+      </Card>
+    </>
+  );
+}
+
 function AdminStatsPanel({ owner }) {
   const { c, s } = useUI();
   const [coaches, setCoaches] = useState(null);
@@ -2404,36 +2471,34 @@ function AdminStatsPanel({ owner }) {
   const [codes, setCodes] = useState(null);
   const [rudolphDoc, setRudolphDoc] = useState(null);
   const [usaStandardsDoc, setUsaStandardsDoc] = useState(null);
+  const [mastersRecordsDoc, setMastersRecordsDoc] = useState(null);
+  const [namedTeams, setNamedTeams] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     if (!owner) return;
-    Promise.all([fetchAllCoaches(), fetchAllSwimmersAdmin(), fetchAllInviteCodes(), fetchRudolph(), fetchUsaStandards()])
-      .then(([co, sw, cd, rud, usa]) => { setCoaches(co); setSwimmers(sw); setCodes(cd); setRudolphDoc(rud); setUsaStandardsDoc(usa); })
+    Promise.all([fetchAllCoaches(), fetchAllSwimmersAdmin(), fetchAllInviteCodes(), fetchRudolph(), fetchUsaStandards(), fetchMastersRecords()])
+      .then(([co, sw, cd, rud, usa, masters]) => { setCoaches(co); setSwimmers(sw); setCodes(cd); setRudolphDoc(rud); setUsaStandardsDoc(usa); setMastersRecordsDoc(masters); })
       .catch((e) => setErr(e.message));
   }, [owner]);
 
+  // Named the same way the sign-in picker names clusters (nameClusters only
+  // reads .teamId/.coachUids off each entry — .members/.swimmers/
+  // .swimmerCount ride along unchanged via the spread in nameClusters).
+  useEffect(() => {
+    if (!coaches || !swimmers) return;
+    nameClusters(groupCoachesIntoTeams(coaches, swimmers)).then(setNamedTeams).catch((e) => setErr(e.message));
+  }, [coaches, swimmers]);
+
   if (!owner) return null;
   if (err) return <><div style={s.h2}>Stats</div><Card style={{ borderColor: c.red }}>Failed to load: {err}</Card></>;
-  if (!coaches) return <><div style={s.h2}>Stats</div><Center>Loading…</Center></>;
+  if (!coaches || !namedTeams) return <><div style={s.h2}>Stats</div><Center>Loading…</Center></>;
 
-  const teams = groupCoachesIntoTeams(coaches, swimmers);
+  const teams = namedTeams;
   const openCodes = codes.filter((cd) => !cd.usedBy);
   const usedCodes = codes.filter((cd) => cd.usedBy);
-  const roster = swimmers.map((sw) => ({ swimmer: sw, D: sw.seasons || {} }));
-  const usaSummary = teamUsaTierSummary(roster, usaStandardsDoc && usaStandardsDoc.table);
-  const rudSummary = teamRudolphSummary(roster, rudolphDoc && rudolphDoc.table);
   const stalest = swimmers.slice().sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0)).slice(0, 8);
-  // One row per swimmer with either a Rudolph score or a USA Standards tier
-  // (or both) — a single table instead of two separate lists.
-  const perfByName = {};
-  roster.forEach((r) => {
-    const top = teamTopEvents(r.D, 2);
-    if (top.length) (perfByName[r.swimmer.name] = perfByName[r.swimmer.name] || { name: r.swimmer.name }).topEvents = top;
-  });
-  usaSummary.perSwimmer.forEach((p) => { (perfByName[p.swimmer.name] = perfByName[p.swimmer.name] || { name: p.swimmer.name }).usaTier = p.tier; });
-  rudSummary.perSwimmer.forEach((p) => { (perfByName[p.swimmer.name] = perfByName[p.swimmer.name] || { name: p.swimmer.name }).rudScore = p.score; });
-  const perfRows = Object.values(perfByName).sort((a, b) => a.name.localeCompare(b.name));
+  const usaTable = usaStandardsDoc && usaStandardsDoc.table, rudTable = rudolphDoc && rudolphDoc.table, mastersTable = mastersRecordsDoc && mastersRecordsDoc.table;
 
   return (
     <>
@@ -2448,7 +2513,8 @@ function AdminStatsPanel({ owner }) {
           <div key={team.members[0].uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
             padding: "9px 10px", borderBottom: i < teams.length - 1 ? `1px solid ${c.line}` : "none" }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: c.blue }}>{team.name}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 1 }}>
                 {team.members.map((m) => m.name || m.email).join(" + ")}
               </div>
               <div style={{ fontSize: 11, color: c.dim }}>{team.members.map((m) => m.email).join(" · ")}</div>
@@ -2476,33 +2542,11 @@ function AdminStatsPanel({ owner }) {
         )}
       </Card>
 
-      <div style={s.h2}>Performance Split (all coaches)</div>
-      <Card style={{ marginBottom: 14, padding: 6 }}>
-        {perfRows.length ? (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>
-              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Swimmer</th>
-              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Top Events</th>
-              <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Rudolph</th>
-              <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>USA Standard</th>
-            </tr></thead>
-            <tbody>
-              {perfRows.map((r, i) => (
-                <tr key={r.name} style={{ borderTop: i > 0 ? `1px solid ${c.line}` : "none" }}>
-                  <td style={{ padding: "7px 8px", fontSize: 12.5 }}>{r.name}</td>
-                  <td style={{ padding: "7px 8px", fontSize: 11.5, lineHeight: 1.5 }}>
-                    {r.topEvents && r.topEvents.length
-                      ? r.topEvents.map((t, j) => <div key={j}>{t.event} <span style={{ color: c.dim }}>({t.points})</span></div>)
-                      : "—"}
-                  </td>
-                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700 }}>{r.rudScore != null ? r.rudScore.toFixed(1) + " pts" : "—"}</td>
-                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700, color: c.blue }}>{r.usaTier || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : <div style={{ fontSize: 12.5, color: c.dim, padding: 8 }}>No performance data yet.</div>}
-      </Card>
+      <div style={s.h2}>Performance Split</div>
+      {teams.map((team) => {
+        const teamRoster = team.swimmers.map((sw) => ({ swimmer: sw, D: sw.seasons || {} }));
+        return <PerfSplitTable key={team.members[0].uid} title={team.name} rows={perfSplitRows(teamRoster, usaTable, rudTable, mastersTable)} c={c} />;
+      })}
 
       <div style={s.h2}>Least Recently Synced</div>
       <Card style={{ padding: 6 }}>

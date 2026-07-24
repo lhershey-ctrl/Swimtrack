@@ -825,6 +825,35 @@ export function teamRudolphSummary(roster, table) {
   return { best: best ? { swimmer: best.swimmer, score: best.score } : null, perSwimmer };
 }
 
+// Senior/masters twin of teamRudolphSummary/teamUsaTierSummary above — same
+// threshold as MastersWrPanel's own single-swimmer chart (age > 30), since
+// neither Rudolph nor USA Standards is calibrated that far. Each swimmer's
+// row is their single best (smallest) % gap across whichever events have a
+// WR match in their current age bracket.
+export const SENIOR_MASTERS_MIN_AGE = 30;
+export function teamWrGapSummary(roster, table) {
+  const perSwimmer = [];
+  if (!table) return { perSwimmer };
+  roster.forEach(({ swimmer, D }) => {
+    if (!swimmer || !swimmer.birthdate) return;
+    const age = recordAge(swimmer.birthdate, null);
+    if (age == null || age <= SENIOR_MASTERS_MIN_AGE) return;
+    const S = sexNorm(swimmer.sex), group = wrAgeGroup(age);
+    if (!S || !group) return;
+    const rows = wrGapRows(table, S, group, D, swimmer.birthdate);
+    if (rows.length) perSwimmer.push({ swimmer, pct: rows[0].pct });
+  });
+  return { perSwimmer };
+}
+// Swimmer's single best-ever points swim (LogLig's own FINA-style points) —
+// the "FINA score" a masters swimmer's Performance Split row shows instead
+// of Rudolph, not a separately-computed points system.
+export function teamBestPoints(D) {
+  let best = null;
+  allResults(D).forEach((r) => { if (r.points > 0 && (best == null || r.points > best)) best = r.points; });
+  return best;
+}
+
 // Event-coverage heat map for one season: stroke (rows) × distance (cols),
 // value = number of swims. Used to see which events were raced and how often.
 export function eventHeatmap(D, seasonKey) {
