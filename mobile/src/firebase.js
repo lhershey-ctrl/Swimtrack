@@ -169,6 +169,13 @@ export async function fetchCoach(uid) {
   return snap.exists() ? snap.data() : null;
 }
 
+// Self-service rename of a coach's own account/team display name — the only
+// field of another coach's own doc a non-owner may ever write (see
+// firestore.rules: coaches/{uid} update carve-out).
+export async function saveTeamName(uid, teamName) {
+  await setDoc(doc(db, "coaches", uid), { teamName }, { merge: true });
+}
+
 async function createCoachDoc(user) {
   await setDoc(doc(db, "coaches", user.uid), {
     email: user.email, name: user.displayName || "", createdAt: Date.now(),

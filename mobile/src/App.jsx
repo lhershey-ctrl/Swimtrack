@@ -10,7 +10,7 @@ import {
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
   migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers,
-  fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes,
+  fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes, saveTeamName,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -197,6 +197,65 @@ function InviteGate({ user, onRedeemed, onSignOut }) {
         color: "rgba(255,255,255,.7)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>
         Sign in with a different account
       </button>
+    </div>
+  );
+}
+
+// Full-screen, first-time forced choice — shown when this coach's email is
+// tied to 2+ unconnected swimmer rosters ("accounts") and there's no
+// remembered choice yet (or the remembered one no longer matches). Styled
+// to match InviteGate, the other "you must resolve this before the app is
+// usable" screen.
+function TeamGate({ clusters, onPick, onSignOut }) {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center",
+      justifyContent: "center", padding: 28, background: GRAD }}>
+      <div style={{ fontSize: 48, marginBottom: 8 }}>👥</div>
+      <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-.5px", color: "#fff", textAlign: "center" }}>Which account?</div>
+      <div style={{ color: "rgba(255,255,255,.8)", marginTop: 8, marginBottom: 20, textAlign: "center", maxWidth: 320 }}>
+        Your email has access to more than one roster. Pick which one to view — you can switch anytime from Settings.
+      </div>
+      <div style={{ width: "100%", maxWidth: 320, display: "flex", flexDirection: "column", gap: 10 }}>
+        {clusters.map((cl) => (
+          <button key={cl.key} onClick={() => onPick(cl)} style={{ background: "#fff", color: "#1f2937", border: "none",
+            borderRadius: 14, padding: "14px 18px", fontSize: 15, fontWeight: 700, cursor: "pointer",
+            boxShadow: "0 8px 24px rgba(0,0,0,.3)", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{cl.name}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "#6b7280" }}>{cl.swimmers.length} swimmer{cl.swimmers.length !== 1 ? "s" : ""}</span>
+          </button>
+        ))}
+      </div>
+      <button onClick={onSignOut} style={{ marginTop: 28, background: "none", border: "none",
+        color: "rgba(255,255,255,.7)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>
+        Sign in with a different account
+      </button>
+    </div>
+  );
+}
+
+// Dismissable re-pick, reachable from Settings once a coach already has a
+// choice in place — styled like InfoModal (the app's standard popup card).
+function TeamPickerModal({ clusters, activeKey, onPick, onClose }) {
+  const { c } = useUI();
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div style={{ background: c.card, borderRadius: 14, padding: "18px 20px", maxWidth: 380, width: "100%", boxShadow: "0 10px 40px rgba(0,0,0,.35)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <div style={{ flex: 1, fontWeight: 800, fontSize: 16, color: c.text }}>Switch account</div>
+          <button onClick={onClose} style={{ background: c.card2, border: `1px solid ${c.line}`, color: c.text, borderRadius: 999, width: 30, height: 30, fontSize: 14, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {clusters.map((cl) => (
+            <button key={cl.key} onClick={() => onPick(cl)} style={{
+              background: cl.key === activeKey ? c.blue : c.card2, color: cl.key === activeKey ? "#fff" : c.text,
+              border: `1px solid ${cl.key === activeKey ? c.blue : c.line}`, borderRadius: 12, padding: "12px 14px",
+              fontSize: 14, fontWeight: 700, cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>{cl.name}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, opacity: .8 }}>{cl.swimmers.length} swimmer{cl.swimmers.length !== 1 ? "s" : ""}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1487,7 +1546,46 @@ function SeasonReport({ season, recap, D, swimmer, recordsDoc, onClose }) {
 // ════════════════════════════════════════════════════════════════════
 const DEFAULT_SEED = ["lhershey@gmail.com", "sharos88@gmail.com"];
 
-function SettingsTab({ user, swimmers, reloadSwimmers }) {
+function TeamNameEditor({ user }) {
+  const { c } = useUI();
+  const [value, setValue] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCoach(user.uid).then((coach) => {
+      if (cancelled) return;
+      setValue((coach && coach.teamName) || defaultTeamName(user.email));
+      setLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [user.uid]);
+
+  async function save() {
+    const name = value.trim();
+    if (!name) { setStatus("Enter a name."); return; }
+    setStatus("Saving…");
+    try { await saveTeamName(user.uid, name); setStatus("✅ Saved"); setTimeout(() => setStatus(""), 2500); }
+    catch (e) { setStatus("❌ " + e.message); }
+  }
+
+  if (!loaded) return null;
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Team / Account Name</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input value={value} onChange={(e) => setValue(e.target.value)}
+          style={{ flex: 1, padding: "9px 12px", borderRadius: 10, background: c.card2, color: c.text, border: `1px solid ${c.line}`, fontSize: 14 }} />
+        <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
+      </div>
+      {status && <div style={{ fontSize: 12, color: c.dim, marginTop: 6 }}>{status}</div>}
+      <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>Shown to teammates and used to tell accounts apart if your email ever has access to more than one roster.</div>
+    </div>
+  );
+}
+
+function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTeamKey, onOpenTeamSwitcher }) {
   const { c, s, dark, setDark } = useUI();
   const owner = isOwner(user);
 
@@ -1517,7 +1615,14 @@ function SettingsTab({ user, swimmers, reloadSwimmers }) {
           </div>
           {owner && <span style={{ fontSize: 11, fontWeight: 800, color: c.amber, border: `1px solid ${c.amber}`, borderRadius: 999, padding: "3px 9px" }}>OWNER</span>}
         </div>
-        <button onClick={signOut} style={{ marginTop: 14, width: "100%", padding: 11, borderRadius: 12, border: `1px solid ${c.line}`,
+        <TeamNameEditor user={user} />
+        {teamClusters.length > 1 && (
+          <button onClick={onOpenTeamSwitcher} style={{ marginTop: 10, width: "100%", padding: 11, borderRadius: 12, border: `1px solid ${c.line}`,
+            background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>
+            👥 Switch account ({(teamClusters.find((cl) => cl.key === selectedTeamKey) || {}).name || "…"})
+          </button>
+        )}
+        <button onClick={signOut} style={{ marginTop: 10, width: "100%", padding: 11, borderRadius: 12, border: `1px solid ${c.line}`,
           background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>Sign out</button>
       </Card>
 
@@ -1882,6 +1987,10 @@ export default function App() {
   const [usaStandardsDoc, setUsaStandardsDoc] = useState(null);
   const [mastersRecordsDoc, setMastersRecordsDoc] = useState(null);
   const [coachStatus, setCoachStatus] = useState("checking"); // "checking" | "needsInvite" | "ok"
+  const [teamClusters, setTeamClusters] = useState([]); // only >1 entry when this email spans multiple accounts
+  const [selectedTeamKey, setSelectedTeamKey] = useState(null);
+  const [teamGateOpen, setTeamGateOpen] = useState(false); // forced first-time/stale-choice picker
+  const [teamSwitcherOpen, setTeamSwitcherOpen] = useState(false); // dismissable re-pick from Settings
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
@@ -1895,12 +2004,37 @@ export default function App() {
   useEffect(() => { if (user && coachStatus === "ok") fetchUsaStandards().then(setUsaStandardsDoc).catch(() => setUsaStandardsDoc(null)); }, [user, coachStatus]);
   useEffect(() => { if (user && coachStatus === "ok") fetchMastersRecords().then(setMastersRecordsDoc).catch(() => setMastersRecordsDoc(null)); }, [user, coachStatus]);
 
+  // Applies a chosen cluster: filters `swimmers` down to just that account's
+  // roster and remembers the choice so future sign-ins don't re-ask.
+  function applyTeamChoice(cluster) {
+    try { localStorage.setItem("swimtrack:teamKey", cluster.key); } catch {}
+    setSelectedTeamKey(cluster.key);
+    setSwimmers(cluster.swimmers);
+    setSwimmerId((prev) => (prev && cluster.swimmers.some((sw) => sw.id === prev)) ? prev : (cluster.swimmers[0] && cluster.swimmers[0].id) || null);
+    setLoadErr(cluster.swimmers.length ? "" : "No swimmers yet — add one in Settings.");
+    setTeamGateOpen(false);
+    setTeamSwitcherOpen(false);
+  }
+
   function loadSwimmers() {
     return fetchSwimmers(user)
-      .then((list) => {
-        setSwimmers(list);
-        setSwimmerId((prev) => prev || (list[0] && list[0].id) || null);
-        setLoadErr(list.length ? "" : "No swimmers yet — add one in Settings.");
+      .then(async (list) => {
+        const clusters = clusterMySwimmers(list, user.uid);
+        if (clusters.length <= 1) {
+          // Common case, unchanged from before this feature existed.
+          setTeamClusters([]);
+          setSwimmers(list);
+          setSwimmerId((prev) => prev || (list[0] && list[0].id) || null);
+          setLoadErr(list.length ? "" : "No swimmers yet — add one in Settings.");
+          return;
+        }
+        const named = await nameClusters(clusters);
+        setTeamClusters(named);
+        let storedKey = null;
+        try { storedKey = localStorage.getItem("swimtrack:teamKey"); } catch {}
+        const match = named.find((cl) => cl.key === storedKey);
+        if (match) applyTeamChoice(match);
+        else setTeamGateOpen(true); // ambiguous and never resolved (or team membership changed) — must pick
       })
       .catch((e) => setLoadErr(/permission/i.test(e.message)
         ? "Your account isn't recognized. Ask the owner for an invite code."
@@ -1950,6 +2084,9 @@ export default function App() {
     return <InviteGate user={user} onSignOut={signOut}
       onRedeemed={() => { setCoachStatus("ok"); loadSwimmers(); }} />;
   }
+  if (teamGateOpen) {
+    return <TeamGate clusters={teamClusters} onPick={applyTeamChoice} onSignOut={signOut} />;
+  }
 
   const D = swimmer?.seasons || {};
   const hasData = swimmer && Object.keys(D).length > 0;
@@ -1958,7 +2095,9 @@ export default function App() {
     <div style={s.app}>
       <TopBar user={user} swimmer={swimmer} swimmers={swimmers} onPick={setSwimmerId} onSignOut={signOut} />
       {tab === "settings" ? (
-        <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers} />
+        <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers}
+          teamClusters={teamClusters} selectedTeamKey={selectedTeamKey}
+          onOpenTeamSwitcher={() => setTeamSwitcherOpen(true)} />
       ) : (
         <>
           {loadErr && <div style={s.pad}><Card style={{ borderColor: "#ef4444" }}>{loadErr}</Card></div>}
@@ -1977,6 +2116,10 @@ export default function App() {
         </>
       )}
       <BottomNav tab={tab} setTab={setTab} />
+      {teamSwitcherOpen && (
+        <TeamPickerModal clusters={teamClusters} activeKey={selectedTeamKey}
+          onPick={applyTeamChoice} onClose={() => setTeamSwitcherOpen(false)} />
+      )}
     </div>
   );
 }
@@ -1991,6 +2134,63 @@ function relTime(ts) {
   const months = Math.floor(days / 30);
   if (months < 12) return months + "mo ago";
   return Math.floor(months / 12) + "y ago";
+}
+
+// Default account/team display name for a coach who hasn't set one —
+// derived from their email so two different coaches only ever collide if
+// they later rename to the exact same thing on purpose.
+function defaultTeamName(email) {
+  const local = (email || "").split("@")[0] || "Coach";
+  return local.charAt(0).toUpperCase() + local.slice(1) + "'s Team";
+}
+
+// Clusters the CURRENT coach's own accessible swimmers by shared coachUids —
+// two swimmers are the "same account/team" if their coachUids overlap
+// (transitively, via union-find). Unlike groupCoachesIntoTeams below (admin-
+// only, needs every coach's doc), this only needs swimmers the signed-in
+// coach can already read, so any coach can compute it for themselves.
+function clusterMySwimmers(mySwimmers, myUid) {
+  const parent = {};
+  const find = (x) => { while (parent[x] && parent[x] !== x) x = parent[x]; return x; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  mySwimmers.forEach((sw) => { parent[sw.id] = sw.id; });
+  // Union swimmers that share any OTHER coach — deliberately excluding my own
+  // uid, which by definition is on every swimmer I can see; using it would
+  // trivially merge everything into one cluster and defeat the whole point.
+  // Swimmers with NO other coach at all ("solo", mine alone) are unioned
+  // together separately below — otherwise each would end up its own
+  // singleton cluster instead of one combined "my own account".
+  const swimmerIdsByCoach = {}, soloIds = [];
+  mySwimmers.forEach((sw) => {
+    const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
+    if (!others.length) { soloIds.push(sw.id); return; }
+    others.forEach((uid) => { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
+  });
+  Object.values(swimmerIdsByCoach).forEach((ids) => { for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
+  for (let i = 1; i < soloIds.length; i++) union(soloIds[0], soloIds[i]);
+  const groups = {};
+  mySwimmers.forEach((sw) => { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
+  return Object.values(groups).map((swArr) => {
+    const coachUids = new Set();
+    swArr.forEach((sw) => (sw.coachUids || []).forEach((u) => coachUids.add(u)));
+    return { key: Array.from(coachUids).sort().join(","), swimmers: swArr, coachUids: Array.from(coachUids) };
+  });
+}
+
+// Labels each cluster with its earliest-created member's team name (usually
+// whoever created the roster and invited the others in) — requires reading
+// those coaches' docs, which any signed-in coach may now do (see
+// firestore.rules: coaches/{uid} read).
+async function nameClusters(clusters) {
+  const allUids = Array.from(new Set(clusters.flatMap((cl) => cl.coachUids)));
+  const fetched = await Promise.all(allUids.map((uid) => fetchCoach(uid).then((d) => d && { uid, ...d }).catch(() => null)));
+  const byUid = {};
+  fetched.forEach((d) => { if (d) byUid[d.uid] = d; });
+  return clusters.map((cl) => {
+    const members = cl.coachUids.map((uid) => byUid[uid]).filter(Boolean);
+    const owner = members.length ? members.reduce((a, b) => (a.createdAt || 0) <= (b.createdAt || 0) ? a : b) : null;
+    return { ...cl, name: owner ? (owner.teamName || defaultTeamName(owner.email)) : "Team", memberCount: cl.coachUids.length };
+  });
 }
 
 // Owner-only cross-coach view — deliberately separate from every other

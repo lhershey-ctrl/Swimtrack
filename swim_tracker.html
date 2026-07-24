@@ -1209,6 +1209,9 @@ function landingSignIn(){
 <!-- ══════════ TAB 4 · SETTINGS ══════════ -->
 <div id="tc-settings" class="page" style="display:none">
 
+  <div class="section-title">👤 Account</div>
+  <div id="accountCard" class="card" style="padding:16px 20px;margin-bottom:28px">Sign in (Analyze tab) to edit your account.</div>
+
   <div class="section-title">👥 Add a Viewer</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
   <div id="viewerTeamList" style="margin-bottom:12px"></div>
@@ -1812,6 +1815,7 @@ function switchTab(n){
   if(n==='settings'){
     if(typeof renderSettingsUI==='function'){renderSettingsUI();renderPhysStats();}
     if(typeof window.renderViewerBar==='function')window.renderViewerBar();
+    if(typeof window.renderAccountCard==='function')window.renderAccountCard();
   }
   if(n==='race') initRaceTab();
   if(n==='analyze') setTimeout(function(){window.dispatchEvent(new Event('resize'));},50);
@@ -4988,9 +4992,9 @@ async function refreshCloudSwimmers() {
     // coach's newly-added swimmers never bleed into another's picker.
     const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
     const snap = await getDocs(q);
-    cloudSwimmers = snap.docs
-      .map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)), coachEmails: d.data().coachEmails || [] }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    let docs = snap.docs.map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)), coachEmails: d.data().coachEmails || [], coachUids: d.data().coachUids || [] }));
+    if (teamFilterIds) docs = docs.filter((d) => teamFilterIds.has(d.id));
+    cloudSwimmers = docs.sort((a, b) => a.name.localeCompare(b.name));
   } catch (e) { cloudSwimmers = []; }
   render();
 }
@@ -5318,8 +5322,11 @@ async function autoSyncProfilesFromCloud() {
     // Always scoped to this account's own roster — see refreshCloudSwimmers().
     const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
     const snap = await getDocs(q);
+    // If this coach's email spans more than one account, only sync/import the
+    // one currently selected (see resolveTeamAndProceed / teamFilterIds).
+    const docs = teamFilterIds ? snap.docs.filter((d) => teamFilterIds.has(d.id)) : snap.docs;
     const locals = window.getAllSwimmers ? window.getAllSwimmers() : [];
-    snap.docs.forEach((d) => {
+    docs.forEach((d) => {
       const data = d.data();
       const isLocal = locals.some((sw) => String(sw.id) === d.id);
       if (isLocal) { if (window.applyCloudProfile) window.applyCloudProfile(d.id, data); }
@@ -5327,7 +5334,7 @@ async function autoSyncProfilesFromCloud() {
     });
     // Clean up anything auto-imported by a past (possibly wrongly-scoped)
     // sync that isn't actually in this account's roster anymore.
-    if (window.pruneAutoImportedSwimmers) window.pruneAutoImportedSwimmers(snap.docs.map((d) => d.id));
+    if (window.pruneAutoImportedSwimmers) window.pruneAutoImportedSwimmers(docs.map((d) => d.id));
   } catch (e) { /* not signed in / no access yet — ignore */ }
 }
 
@@ -5341,6 +5348,152 @@ async function fetchCoach(uid) {
 async function createCoachDoc(user) {
   await setDoc(doc(db, "coaches", user.uid), { email: user.email, name: user.displayName || "", createdAt: Date.now() });
 }
+async function saveTeamName(uid, teamName) {
+  await setDoc(doc(db, "coaches", uid), { teamName: teamName }, { merge: true });
+}
+
+// ── Account/team switcher — mirrors mobile's clusterMySwimmers/nameClusters
+// (App.jsx). A coach's email can be shared into more than one otherwise-
+// unrelated swimmer roster (two separate "join my team" invites); when that
+// happens, this groups the coach's own accessible swimmers by shared
+// coachUids and asks which one to view. Everyday case (one roster) never
+// triggers any of this. ──
+function defaultTeamName(email) {
+  var local = (email || '').split('@')[0] || 'Coach';
+  return local.charAt(0).toUpperCase() + local.slice(1) + "'s Team";
+}
+function clusterMySwimmers(mySwimmers, myUid) {
+  var parent = {};
+  function find(x) { while (parent[x] && parent[x] !== x) x = parent[x]; return x; }
+  function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+  mySwimmers.forEach(function (sw) { parent[sw.id] = sw.id; });
+  // Union swimmers that share any OTHER coach — deliberately excluding my own
+  // uid, which by definition is on every swimmer I can see; using it would
+  // trivially merge everything into one cluster and defeat the whole point.
+  // Swimmers with NO other coach at all ("solo", mine alone) are unioned
+  // together separately below — otherwise each would end up its own
+  // singleton cluster instead of one combined "my own account".
+  var swimmerIdsByCoach = {}, soloIds = [];
+  mySwimmers.forEach(function (sw) {
+    var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
+    if (!others.length) { soloIds.push(sw.id); return; }
+    others.forEach(function (uid) { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
+  });
+  Object.values(swimmerIdsByCoach).forEach(function (ids) { for (var i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
+  for (var si = 1; si < soloIds.length; si++) union(soloIds[0], soloIds[si]);
+  var groups = {};
+  mySwimmers.forEach(function (sw) { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
+  return Object.values(groups).map(function (swArr) {
+    var coachUids = new Set();
+    swArr.forEach(function (sw) { (sw.coachUids || []).forEach(function (u) { coachUids.add(u); }); });
+    var uidsSorted = Array.from(coachUids).sort();
+    return { key: uidsSorted.join(','), swimmers: swArr, coachUids: uidsSorted };
+  });
+}
+async function nameClusters(clusters) {
+  var allUids = Array.from(new Set(clusters.reduce(function (a, cl) { return a.concat(cl.coachUids); }, [])));
+  var fetched = await Promise.all(allUids.map(function (uid) {
+    return fetchCoach(uid).then(function (d) { return d && Object.assign({ uid: uid }, d); }).catch(function () { return null; });
+  }));
+  var byUid = {};
+  fetched.forEach(function (d) { if (d) byUid[d.uid] = d; });
+  return clusters.map(function (cl) {
+    var members = cl.coachUids.map(function (uid) { return byUid[uid]; }).filter(Boolean);
+    var owner = members.length ? members.reduce(function (a, b) { return (a.createdAt || 0) <= (b.createdAt || 0) ? a : b; }) : null;
+    return Object.assign({}, cl, { name: owner ? (owner.teamName || defaultTeamName(owner.email)) : 'Team' });
+  });
+}
+var teamFilterIds = null; // Set of swimmer ids, or null = no filtering needed
+var myTeamClusters = [];
+var selectedTeamKey = null;
+function applyTeamChoice(cluster) {
+  try { localStorage.setItem('swimtrack:teamKey', cluster.key); } catch (e) {}
+  selectedTeamKey = cluster.key;
+  teamFilterIds = new Set(cluster.swimmers.map(function (sw) { return sw.id; }));
+  closeTeamGate();
+  refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables();
+  renderAccountCard();
+}
+async function resolveTeamAndProceed(user) {
+  try {
+    var q = query(collection(db, 'swimmers'), where('coachUids', 'array-contains', user.uid));
+    var snap = await getDocs(q);
+    var mySwimmers = snap.docs.map(function (d) { return { id: d.id, coachUids: d.data().coachUids || [] }; });
+    var clusters = clusterMySwimmers(mySwimmers, user.uid);
+    if (clusters.length <= 1) {
+      teamFilterIds = null; myTeamClusters = []; selectedTeamKey = null;
+      refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables();
+      renderAccountCard();
+      return;
+    }
+    var named = await nameClusters(clusters);
+    myTeamClusters = named;
+    var storedKey = null;
+    try { storedKey = localStorage.getItem('swimtrack:teamKey'); } catch (e) {}
+    var match = named.filter(function (cl) { return cl.key === storedKey; })[0];
+    if (match) { applyTeamChoice(match); return; }
+    openTeamGate(named, true);
+  } catch (e) {
+    console.error('resolveTeamAndProceed failed:', e);
+    refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables();
+  }
+}
+function openTeamGate(clusters, forced) {
+  var el = document.getElementById('teamGate'); if (!el) return;
+  var body = document.getElementById('teamGateBody');
+  body.innerHTML = clusters.map(function (cl, i) {
+    return '<button data-cluster-idx="' + i + '" ' +
+      'style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;padding:14px 18px;margin-bottom:10px;' +
+      'border:1px solid #e5e7eb;border-radius:12px;background:#fff;cursor:pointer;font-size:14px;font-weight:700">' +
+      '<span>' + cl.name + '</span>' +
+      '<span style="font-size:12px;color:#888;font-weight:600">' + cl.swimmers.length + ' swimmer' + (cl.swimmers.length !== 1 ? 's' : '') + '</span>' +
+      '</button>';
+  }).join('');
+  Array.prototype.forEach.call(body.querySelectorAll('button[data-cluster-idx]'), function (btn) {
+    btn.addEventListener('click', function () { applyTeamChoice(clusters[+btn.dataset.clusterIdx]); });
+  });
+  document.getElementById('teamGateClose').style.display = forced ? 'none' : '';
+  el.style.display = '';
+}
+function closeTeamGate() { var el = document.getElementById('teamGate'); if (el) el.style.display = 'none'; }
+window.openTeamSwitcher = function () { openTeamGate(myTeamClusters, false); };
+window.closeTeamGate = closeTeamGate;
+
+// Settings tab's "Account" card — email + editable team name + (only when
+// this coach's email spans multiple rosters) a Switch Account button.
+async function renderAccountCard() {
+  var el = document.getElementById('accountCard'); if (!el) return;
+  if (!currentUser) { el.innerHTML = 'Sign in (Analyze tab) to edit your account.'; return; }
+  var coach = await fetchCoach(currentUser.uid).catch(function () { return null; });
+  var teamName = (coach && coach.teamName) || defaultTeamName(currentUser.email);
+  var activeCluster = myTeamClusters.filter(function (c) { return c.key === selectedTeamKey; })[0];
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+    '<div style="width:40px;height:40px;border-radius:999px;background:#0f3d72;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px">' + (currentUser.email || '?')[0].toUpperCase() + '</div>' +
+    '<div style="flex:1;min-width:0"><div style="font-weight:700">' + (currentUser.displayName || 'Signed in') + '</div>' +
+    '<div style="font-size:12.5px;color:#888;overflow:hidden;text-overflow:ellipsis">' + currentUser.email + '</div></div>' +
+    '</div>' +
+    '<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Team / Account Name</label>' +
+    '<div style="display:flex;gap:8px;margin-bottom:6px">' +
+    '<input id="teamNameInput" value="' + teamName.replace(/"/g, '&quot;') + '" style="flex:1;padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box">' +
+    '<button onclick="saveMyTeamName()" style="padding:9px 16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Save</button>' +
+    '</div>' +
+    '<div id="teamNameStatus" style="font-size:12px;color:#888;margin-bottom:4px"></div>' +
+    '<div style="font-size:11.5px;color:#999;' + (myTeamClusters.length > 1 ? 'margin-bottom:12px' : '') + '">Shown to teammates and used to tell accounts apart if your email ever has access to more than one roster.</div>' +
+    (myTeamClusters.length > 1
+      ? '<button onclick="window.openTeamSwitcher()" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f5f4f0;font-weight:700;cursor:pointer">👥 Switch Account (' + (activeCluster ? activeCluster.name : '…') + ')</button>'
+      : '');
+}
+async function saveMyTeamName() {
+  var input = document.getElementById('teamNameInput'), status = document.getElementById('teamNameStatus');
+  var name = (input.value || '').trim();
+  if (!name) { status.textContent = 'Enter a name.'; return; }
+  status.textContent = 'Saving…';
+  try { await saveTeamName(currentUser.uid, name); status.textContent = '✅ Saved'; setTimeout(function () { status.textContent = ''; }, 2500); }
+  catch (e) { status.textContent = '❌ ' + e.message; }
+}
+window.renderAccountCard = renderAccountCard;
+window.saveMyTeamName = saveMyTeamName;
 
 // One-time bridge for the two pre-multi-coach family accounts (lhershey,
 // sharos88) who already had full shared access to Noga/Gal under the old
@@ -6149,12 +6302,13 @@ onAuthStateChanged(auth, (u) => {
     (isOwner(u) ? claimOrphanedSwimmers(u).then(() => backfillCoachEmails(u)) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
       .then((coach) => {
         coachStatus = (isOwner(u) || coach) ? "ok" : "needsInvite";
-        if (coachStatus === "ok") { refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables(); }
+        if (coachStatus === "ok") resolveTeamAndProceed(u);
         render();
       })
       .catch((e) => { console.error("Coach status check failed:", e); coachStatus = "needsInvite"; render(); });
   } else {
     cloudSwimmers = []; coachStatus = "checking";
+    teamFilterIds = null; myTeamClusters = []; selectedTeamKey = null; closeTeamGate();
     refreshSharedTables(); // resets each status line back to "sign in…"
   }
   render();
@@ -6170,6 +6324,20 @@ window.refreshCloudBar = render;
 // cloud" click after switching.
 window.doLoadFromCloud = doLoadFromCloud;
 </script>
+
+<!-- Account/team picker — shown when a coach's email spans 2+ unrelated
+     rosters (see resolveTeamAndProceed). Forced (no close button) the first
+     time; re-openable and dismissable afterward via Settings "Switch Account". -->
+<div id="teamGate" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999">
+  <div style="max-width:420px;margin:12vh auto;background:#fff;border-radius:14px;max-height:70vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #eee">
+      <strong style="flex:1;font-size:16px;color:#0f3d72">Which account?</strong>
+      <button id="teamGateClose" onclick="closeTeamGate()" style="background:#f0f2f5;border:none;border-radius:999px;width:30px;height:30px;font-size:15px;cursor:pointer">✕</button>
+    </div>
+    <p style="margin:0;padding:14px 20px 0;font-size:13px;color:#666;line-height:1.6">Your email has access to more than one roster. Pick which one to view — you can switch anytime from Settings.</p>
+    <div id="teamGateBody" style="overflow:auto;padding:16px 20px 20px"></div>
+  </div>
+</div>
 
 <!-- All-records browser modal -->
 <div id="recBrowser" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999">

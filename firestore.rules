@@ -47,15 +47,23 @@ service cloud.firestore {
     }
 
     match /coaches/{uid} {
-      // A coach can read their own doc (and the owner can read any, for the
-      // admin stats panel). Self-registration only: you may create your own
-      // doc (after redeeming an invite code client-side) with your own email
-      // — you can never create one for someone else. Only the owner can
-      // later edit/remove a coach.
-      allow read: if isOwner() || request.auth.uid == uid;
+      // Any registered coach can read any coach doc (needed to show a
+      // teammate's team name when grouping shared swimmers into accounts —
+      // see groupCoachesIntoTeams). Not a meaningful new exposure: co-coaches
+      // can already see each other's emails via shared swimmers' coachEmails.
+      allow read: if isOwner() || request.auth.uid == uid || isCoach();
+      // Self-registration only: you may create your own doc (after redeeming
+      // an invite code client-side) with your own email — you can never
+      // create one for someone else.
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.email == request.auth.token.email;
-      allow update, delete: if isOwner();
+      // Only the owner can edit/remove a coach in general, EXCEPT a coach
+      // may self-update just their own teamName (account/team display name,
+      // set from Settings) — nothing else about another coach's doc.
+      allow update: if isOwner()
+        || (request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName']));
+      allow delete: if isOwner();
     }
 
     match /inviteCodes/{code} {
