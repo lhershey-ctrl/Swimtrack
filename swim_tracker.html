@@ -724,7 +724,16 @@ function landingSignIn(){
     // result. Drop everything else — this also retroactively cleans up
     // entries that leaked in via the OLD unfiltered sync, before
     // _autoImported/_manuallyAdded existed to tell them apart.
-    SWIMMERS=SWIMMERS.filter(function(sw){return sw._manuallyAdded||valid[String(sw.id)];});
+    // EXCEPT: a swimmer explicitly tagged with a team (see createTeam)
+    // other than the one currently active never belongs in this session's
+    // picker, manually added or not — team-scoping always wins over the
+    // "don't silently drop something I typed in by hand" exemption below,
+    // otherwise switching teams would never actually hide a swimmer you'd
+    // added directly (as opposed to one that only ever arrived via cloud sync).
+    SWIMMERS=SWIMMERS.filter(function(sw){
+      if(sw.teamId&&sw.teamId!==window.currentTeamId)return false;
+      return sw._manuallyAdded||valid[String(sw.id)];
+    });
     if(SWIMMERS.length!==before){
       if(activeSwimmer>=SWIMMERS.length)activeSwimmer=Math.max(0,SWIMMERS.length-1);
       saveSettings();
@@ -851,7 +860,12 @@ function landingSignIn(){
     };
 
   window.addSettingsSwimmer=function(){
-    SWIMMERS.push({name:'New Swimmer',id:'',seasonIds:[],_manuallyAdded:true});
+    var sw={name:'New Swimmer',id:'',seasonIds:[],_manuallyAdded:true};
+    // If currently viewing an explicit team (see createTeam), tag the new
+    // swimmer into it so it groups there instead of the legacy coachUids
+    // heuristic. Never applied to already-existing swimmers.
+    if(window.currentTeamId)sw.teamId=window.currentTeamId;
+    SWIMMERS.push(sw);
     saveSettings();renderSettingsUI();renderSwimmerMgmt();renderSwimmerSelectors();
   };
 
@@ -1211,6 +1225,9 @@ function landingSignIn(){
 
   <div class="section-title">👤 Account</div>
   <div id="accountCard" class="card" style="padding:16px 20px;margin-bottom:28px">Sign in (Analyze tab) to edit your account.</div>
+
+  <div class="section-title">Start Another Team</div>
+  <div id="createTeamCard" class="card" style="padding:16px 20px;margin-bottom:28px"></div>
 
   <div class="section-title">👥 Add a Viewer</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
@@ -1816,6 +1833,7 @@ function switchTab(n){
     if(typeof renderSettingsUI==='function'){renderSettingsUI();renderPhysStats();}
     if(typeof window.renderViewerBar==='function')window.renderViewerBar();
     if(typeof window.renderAccountCard==='function')window.renderAccountCard();
+    if(typeof window.renderCreateTeamCard==='function')window.renderCreateTeamCard();
   }
   if(n==='race') initRaceTab();
   if(n==='analyze') setTimeout(function(){window.dispatchEvent(new Event('resize'));},50);
@@ -5101,6 +5119,11 @@ async function doSync() {
       coachEmails: arrayUnion(currentUser.email),
     };
     if (Object.keys(seasons).length) payload.seasons = seasons;
+    // Only stamped for a swimmer created while an explicit team (see
+    // createTeam) was active locally — never retroactively added to an
+    // existing swimmer, which would wrongly pull it out of its legacy
+    // coachUids-based cluster (see clusterMySwimmers).
+    if (sw.teamId) payload.teamId = sw.teamId;
     await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
     lastSyncedAt = payload.updatedAt;
     const nSeasons = Object.keys(seasons).length;
@@ -5120,7 +5143,7 @@ async function doSync() {
 async function swimSaveProfile(sw) {
   if (!sw || !sw.id) throw new Error("missing swimmer id");
   if (!currentUser) throw new Error("not signed in");
-  await setDoc(doc(db, "swimmers", String(sw.id)), {
+  var payload = {
     name: sw.name || ("Swimmer " + sw.id),
     id: String(sw.id),
     birthdate: sw.birthdate || "",
@@ -5131,7 +5154,13 @@ async function swimSaveProfile(sw) {
     updatedAt: Date.now(),
     coachUids: arrayUnion(currentUser.uid),
     coachEmails: arrayUnion(currentUser.email),
-  }, { merge: true });
+  };
+  // Only stamped for a swimmer created while an explicit team (see
+  // createTeam) was active locally — never retroactively added to an
+  // existing swimmer, which would wrongly pull it out of its legacy
+  // coachUids-based cluster (see clusterMySwimmers).
+  if (sw.teamId) payload.teamId = sw.teamId;
+  await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
 }
 
 // Public hooks for the Settings tab (IIFE). Return codes are strings so the
@@ -5352,6 +5381,28 @@ async function saveTeamName(uid, teamName) {
   await setDoc(doc(db, "coaches", uid), { teamName: teamName }, { merge: true });
 }
 
+// ── Explicit teams (teams/{id} = {name, createdBy, createdAt}) ─────────
+// A real, nameable roster a coach creates under their OWN login — distinct
+// from the older, purely-inferred coachUids-based grouping (how Team
+// Har-Shai / Team KFS work, unaffected by any of this). Lets one email own
+// more than one independent, empty-to-start roster with no second Google
+// account. See clusterMySwimmers/groupCoachesIntoTeams for how swimmers
+// carrying a teamId get grouped ahead of the legacy coachUids heuristic.
+async function createTeam(user, name) {
+  var ref = doc(collection(db, 'teams'));
+  var team = { name: name, createdBy: user.uid, createdAt: Date.now() };
+  await setDoc(ref, team);
+  return Object.assign({ id: ref.id }, team);
+}
+async function fetchTeam(teamId) {
+  var snap = await getDoc(doc(db, 'teams', teamId));
+  return snap.exists() ? Object.assign({ id: snap.id }, snap.data()) : null;
+}
+async function fetchMyTeams(uid) {
+  var snap = await getDocs(query(collection(db, 'teams'), where('createdBy', '==', uid)));
+  return snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+}
+
 // ── Account/team switcher — mirrors mobile's clusterMySwimmers/nameClusters
 // (App.jsx). A coach's email can be shared into more than one otherwise-
 // unrelated swimmer roster (two separate "join my team" invites); when that
@@ -5363,10 +5414,19 @@ function defaultTeamName(email) {
   return local.charAt(0).toUpperCase() + local.slice(1) + "'s Team";
 }
 function clusterMySwimmers(mySwimmers, myUid) {
+  var withTeam = mySwimmers.filter(function (sw) { return sw.teamId; });
+  var legacy = mySwimmers.filter(function (sw) { return !sw.teamId; });
+
+  var teamGroups = {};
+  withTeam.forEach(function (sw) { (teamGroups[sw.teamId] = teamGroups[sw.teamId] || []).push(sw); });
+  var teamClusters = Object.keys(teamGroups).map(function (teamId) {
+    return { key: 'team:' + teamId, teamId: teamId, swimmers: teamGroups[teamId], coachUids: [] };
+  });
+
   var parent = {};
   function find(x) { while (parent[x] && parent[x] !== x) x = parent[x]; return x; }
   function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
-  mySwimmers.forEach(function (sw) { parent[sw.id] = sw.id; });
+  legacy.forEach(function (sw) { parent[sw.id] = sw.id; });
   // Union swimmers that share any OTHER coach — deliberately excluding my own
   // uid, which by definition is on every swimmer I can see; using it would
   // trivially merge everything into one cluster and defeat the whole point.
@@ -5374,7 +5434,7 @@ function clusterMySwimmers(mySwimmers, myUid) {
   // together separately below — otherwise each would end up its own
   // singleton cluster instead of one combined "my own account".
   var swimmerIdsByCoach = {}, soloIds = [];
-  mySwimmers.forEach(function (sw) {
+  legacy.forEach(function (sw) {
     var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
     if (!others.length) { soloIds.push(sw.id); return; }
     others.forEach(function (uid) { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
@@ -5382,22 +5442,31 @@ function clusterMySwimmers(mySwimmers, myUid) {
   Object.values(swimmerIdsByCoach).forEach(function (ids) { for (var i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
   for (var si = 1; si < soloIds.length; si++) union(soloIds[0], soloIds[si]);
   var groups = {};
-  mySwimmers.forEach(function (sw) { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
-  return Object.values(groups).map(function (swArr) {
+  legacy.forEach(function (sw) { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
+  var legacyClusters = Object.values(groups).map(function (swArr) {
     var coachUids = new Set();
     swArr.forEach(function (sw) { (sw.coachUids || []).forEach(function (u) { coachUids.add(u); }); });
     var uidsSorted = Array.from(coachUids).sort();
     return { key: uidsSorted.join(','), swimmers: swArr, coachUids: uidsSorted };
   });
+  return teamClusters.concat(legacyClusters);
 }
 async function nameClusters(clusters) {
-  var allUids = Array.from(new Set(clusters.reduce(function (a, cl) { return a.concat(cl.coachUids); }, [])));
-  var fetched = await Promise.all(allUids.map(function (uid) {
+  var legacyUids = Array.from(new Set(clusters.filter(function (cl) { return !cl.teamId; })
+    .reduce(function (a, cl) { return a.concat(cl.coachUids); }, [])));
+  var teamIds = clusters.filter(function (cl) { return cl.teamId; }).map(function (cl) { return cl.teamId; });
+  var fetchedCoaches = await Promise.all(legacyUids.map(function (uid) {
     return fetchCoach(uid).then(function (d) { return d && Object.assign({ uid: uid }, d); }).catch(function () { return null; });
   }));
+  var fetchedTeams = await Promise.all(teamIds.map(function (id) {
+    return fetchTeam(id).catch(function () { return null; });
+  }));
   var byUid = {};
-  fetched.forEach(function (d) { if (d) byUid[d.uid] = d; });
+  fetchedCoaches.forEach(function (d) { if (d) byUid[d.uid] = d; });
+  var byTeamId = {};
+  fetchedTeams.forEach(function (d) { if (d) byTeamId[d.id] = d; });
   return clusters.map(function (cl) {
+    if (cl.teamId) return Object.assign({}, cl, { name: (byTeamId[cl.teamId] && byTeamId[cl.teamId].name) || 'Team' });
     var members = cl.coachUids.map(function (uid) { return byUid[uid]; }).filter(Boolean);
     var owner = members.length ? members.reduce(function (a, b) { return (a.createdAt || 0) <= (b.createdAt || 0) ? a : b; }) : null;
     return Object.assign({}, cl, { name: owner ? (owner.teamName || defaultTeamName(owner.email)) : 'Team' });
@@ -5406,27 +5475,39 @@ async function nameClusters(clusters) {
 var teamFilterIds = null; // Set of swimmer ids, or null = no filtering needed
 var myTeamClusters = [];
 var selectedTeamKey = null;
+var currentTeamId = null; // explicit team (see createTeam) a new swimmer should be tagged into; null = legacy/no explicit team
 function applyTeamChoice(cluster) {
   try { localStorage.setItem('swimtrack:teamKey', cluster.key); } catch (e) {}
   selectedTeamKey = cluster.key;
+  currentTeamId = cluster.teamId || null; window.currentTeamId = currentTeamId;
   teamFilterIds = new Set(cluster.swimmers.map(function (sw) { return sw.id; }));
   closeTeamGate();
   refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables();
-  renderAccountCard();
+  renderAccountCard(); renderCreateTeamCard();
 }
 async function resolveTeamAndProceed(user) {
   try {
     var q = query(collection(db, 'swimmers'), where('coachUids', 'array-contains', user.uid));
     var snap = await getDocs(q);
-    var mySwimmers = snap.docs.map(function (d) { return { id: d.id, coachUids: d.data().coachUids || [] }; });
+    var mySwimmers = snap.docs.map(function (d) { return { id: d.id, coachUids: d.data().coachUids || [], teamId: d.data().teamId || null }; });
     var clusters = clusterMySwimmers(mySwimmers, user.uid);
-    if (clusters.length <= 1) {
+    // Teams this coach created themselves that have zero swimmers so far
+    // (clustering above is swimmer-driven, so a brand-new empty team
+    // wouldn't otherwise surface anywhere) still need to show up as a
+    // pickable — if empty — option.
+    var myTeams = await fetchMyTeams(user.uid).catch(function () { return []; });
+    var emptyTeams = myTeams
+      .filter(function (t) { return !clusters.some(function (cl) { return cl.teamId === t.id; }); })
+      .map(function (t) { return { key: 'team:' + t.id, teamId: t.id, swimmers: [], coachUids: [] }; });
+    var allClusters = clusters.concat(emptyTeams);
+    if (allClusters.length <= 1) {
       teamFilterIds = null; myTeamClusters = []; selectedTeamKey = null;
+      currentTeamId = (allClusters[0] && allClusters[0].teamId) || null; window.currentTeamId = currentTeamId;
       refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables();
-      renderAccountCard();
+      renderAccountCard(); renderCreateTeamCard();
       return;
     }
-    var named = await nameClusters(clusters);
+    var named = await nameClusters(allClusters);
     myTeamClusters = named;
     var storedKey = null;
     try { storedKey = localStorage.getItem('swimtrack:teamKey'); } catch (e) {}
@@ -5438,6 +5519,19 @@ async function resolveTeamAndProceed(user) {
     refreshCloudSwimmers(); autoSyncProfilesFromCloud(); refreshSharedTables();
   }
 }
+// Creates a brand-new, empty, explicitly-named team under this SAME login
+// (no second Google account needed) and immediately switches into it —
+// bypassing the picker gate since the user just explicitly asked for this
+// one. resolveTeamAndProceed afterward refreshes myTeamClusters with the
+// real cluster list (harmlessly re-applies the same choice via the now-
+// stored key) so "Switch Account" picks it up going forward.
+async function createNewTeam(name) {
+  var team = await createTeam(currentUser, name);
+  applyTeamChoice({ key: 'team:' + team.id, teamId: team.id, swimmers: [], coachUids: [] });
+  resolveTeamAndProceed(currentUser);
+  return team;
+}
+window.createNewTeam = createNewTeam;
 function openTeamGate(clusters, forced) {
   var el = document.getElementById('teamGate'); if (!el) return;
   var body = document.getElementById('teamGateBody');
@@ -5492,8 +5586,47 @@ async function saveMyTeamName() {
   try { await saveTeamName(currentUser.uid, name); status.textContent = '✅ Saved'; setTimeout(function () { status.textContent = ''; }, 2500); }
   catch (e) { status.textContent = '❌ ' + e.message; }
 }
+
+// A brand-new, empty, independently-named roster under this SAME login —
+// distinct from "Add a Viewer" (which shares your EXISTING roster with
+// someone else's login, not create a new one). Collapsed by default so it
+// doesn't compete for attention with the everyday actions above it.
+var createTeamFormOpen = false;
+function renderCreateTeamCard() {
+  var el = document.getElementById('createTeamCard'); if (!el || !currentUser) return;
+  var activeCluster = myTeamClusters.filter(function (c) { return c.key === selectedTeamKey; })[0];
+  var activeName = activeCluster ? activeCluster.name : 'your current team';
+  if (!createTeamFormOpen) {
+    el.innerHTML =
+      '<div style="font-size:12.5px;color:#666;margin-bottom:10px;line-height:1.6">A second, completely separate, empty roster under this same sign-in — for a different group of swimmers you coach, kept apart from "' + activeName + '". You\'ll pick between them next time you sign in.</div>' +
+      '<button onclick="window.openCreateTeamForm()" style="width:100%;padding:10px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">+ Create a New Team</button>';
+  } else {
+    el.innerHTML =
+      '<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">New Team Name</label>' +
+      '<div style="display:flex;gap:8px">' +
+      '<input id="newTeamNameInput" placeholder="e.g. Summer Camp Group" style="flex:1;padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box">' +
+      '<button onclick="window.submitCreateTeam()" style="padding:9px 16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Create</button>' +
+      '<button onclick="window.closeCreateTeamForm()" style="padding:9px 14px;background:none;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer">Cancel</button>' +
+      '</div>' +
+      '<div id="createTeamStatus" style="font-size:12px;color:#9a6b00;margin-top:6px"></div>';
+  }
+}
+window.openCreateTeamForm = function () { createTeamFormOpen = true; renderCreateTeamCard(); };
+window.closeCreateTeamForm = function () { createTeamFormOpen = false; renderCreateTeamCard(); };
+window.submitCreateTeam = async function () {
+  var input = document.getElementById('newTeamNameInput'), status = document.getElementById('createTeamStatus');
+  var name = (input.value || '').trim();
+  if (!name) { status.textContent = 'Enter a name for the new team.'; return; }
+  status.textContent = 'Creating…';
+  try {
+    await createNewTeam(name);
+    createTeamFormOpen = false;
+    renderCreateTeamCard();
+  } catch (e) { status.textContent = '❌ ' + e.message; }
+};
 window.renderAccountCard = renderAccountCard;
 window.saveMyTeamName = saveMyTeamName;
+window.renderCreateTeamCard = renderCreateTeamCard;
 
 // One-time bridge for the two pre-multi-coach family accounts (lhershey,
 // sharos88) who already had full shared access to Noga/Gal under the old
@@ -6212,9 +6345,18 @@ window.renderTeamStats = renderTeamStats;
 function groupCoachesIntoTeams(coaches, swimmers) {
   const byUid = {};
   coaches.forEach((co) => { byUid[co.uid] = co; });
-  const groups = {}; // keyed by root uid -> { swimmers:[], uids:Set }
+  const groups = {}; // keyed by "team:<id>" or a root uid -> { swimmers:[], uids:Set }
   swimmers.forEach((sw) => {
     const uids = (sw.coachUids || []).filter((uid) => uid in byUid);
+    if (sw.teamId) {
+      // Explicit team (see clusterMySwimmers) — unambiguous, group by teamId
+      // directly rather than guessing a root coach.
+      const key = "team:" + sw.teamId;
+      if (!groups[key]) groups[key] = { swimmers: [], uids: new Set() };
+      groups[key].swimmers.push(sw);
+      uids.forEach((u) => groups[key].uids.add(u));
+      return;
+    }
     if (!uids.length) return;
     const root = uids.reduce((a, b) => (byUid[a].createdAt || 0) <= (byUid[b].createdAt || 0) ? a : b);
     if (!groups[root]) groups[root] = { swimmers: [], uids: new Set() };
@@ -6321,7 +6463,7 @@ onAuthStateChanged(auth, (u) => {
       .catch((e) => { console.error("Coach status check failed:", e); coachStatus = "needsInvite"; render(); });
   } else {
     cloudSwimmers = []; coachStatus = "checking";
-    teamFilterIds = null; myTeamClusters = []; selectedTeamKey = null; closeTeamGate();
+    teamFilterIds = null; myTeamClusters = []; selectedTeamKey = null; currentTeamId = null; window.currentTeamId = null; closeTeamGate();
     refreshSharedTables(); // resets each status line back to "sign in…"
   }
   render();

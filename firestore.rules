@@ -66,6 +66,23 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
+    // A "team" is an explicit, nameable roster a coach creates under their
+    // OWN login (see teamId on swimmers below) — distinct from the older,
+    // purely-inferred coachUids-based grouping (which is how Team Har-Shai /
+    // Team KFS work, and keeps working unchanged). Lets one email own more
+    // than one independent, empty-to-start roster without a second Google
+    // account. Read is any coach (needed to label a shared swimmer's team
+    // for a viewer who didn't create it); only the creator may rename.
+    match /teams/{teamId} {
+      allow read: if isOwner() || isCoach();
+      allow create: if request.auth != null && isCoach()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isOwner()
+        || (isCoach() && resource.data.createdBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+      allow delete: if isOwner();
+    }
+
     match /inviteCodes/{code} {
       // Any signed-in user may fetch a SPECIFIC code (they already have to
       // know the exact string) to check validity before redeeming it — but

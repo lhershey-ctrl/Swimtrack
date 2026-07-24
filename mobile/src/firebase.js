@@ -147,12 +147,14 @@ export async function saveSwimmerProfile(swimmerId, profile) {
 // season data, including on a re-add of an already-tracked ID (id/name/
 // coachUids are safe to always re-stamp; seasons is desktop-sync-owned and
 // must be left untouched here).
-export async function createSwimmer(swimmerId, name, coachUid, coachEmail) {
-  await setDoc(
-    doc(db, "swimmers", String(swimmerId)),
-    { id: String(swimmerId), name, createdAt: Date.now(), coachUids: arrayUnion(coachUid), coachEmails: arrayUnion(coachEmail) },
-    { merge: true }
-  );
+// `teamId` is optional — set it when the coach is currently viewing an
+// explicit team (see createTeam) so the new swimmer joins that team; omit
+// it to fall back to the legacy coachUids-only behavior (unchanged from
+// before teams existed).
+export async function createSwimmer(swimmerId, name, coachUid, coachEmail, teamId) {
+  const payload = { id: String(swimmerId), name, createdAt: Date.now(), coachUids: arrayUnion(coachUid), coachEmails: arrayUnion(coachEmail) };
+  if (teamId) payload.teamId = teamId;
+  await setDoc(doc(db, "swimmers", String(swimmerId)), payload, { merge: true });
 }
 
 export async function deleteSwimmer(swimmerId) {
@@ -174,6 +176,31 @@ export async function fetchCoach(uid) {
 // firestore.rules: coaches/{uid} update carve-out).
 export async function saveTeamName(uid, teamName) {
   await setDoc(doc(db, "coaches", uid), { teamName }, { merge: true });
+}
+
+// ── Explicit teams (teams/{id} = {name, createdBy, createdAt}) ─────────
+// A real, nameable roster a coach creates under their OWN login — distinct
+// from the older, purely-inferred coachUids-based grouping (how Team
+// Har-Shai / Team KFS work, unaffected by any of this). Lets one email own
+// more than one independent, empty-to-start roster with no second Google
+// account. See clusterMySwimmers/groupCoachesIntoTeams for how swimmers
+// carrying a teamId get grouped ahead of the legacy coachUids heuristic.
+export async function createTeam(user, name) {
+  const ref = doc(collection(db, "teams"));
+  const team = { name, createdBy: user.uid, createdAt: Date.now() };
+  await setDoc(ref, team);
+  return { id: ref.id, ...team };
+}
+export async function fetchTeam(teamId) {
+  const snap = await getDoc(doc(db, "teams", teamId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+// Teams this coach created themselves — including ones with zero swimmers
+// so far, which otherwise wouldn't surface anywhere (clustering is swimmer-
+// driven; an empty team has no swimmer to derive it from).
+export async function fetchMyTeams(uid) {
+  const snap = await getDocs(query(collection(db, "teams"), where("createdBy", "==", uid)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 async function createCoachDoc(user) {

@@ -11,6 +11,7 @@ import {
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
   migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers,
   fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes, saveTeamName,
+  createTeam, fetchTeam, fetchMyTeams,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
@@ -1605,9 +1606,64 @@ function TeamNameEditor({ user }) {
   );
 }
 
-function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTeamKey, onOpenTeamSwitcher }) {
+// A brand-new, empty, independently-named roster under this SAME login —
+// distinct from "Add a Viewer" below (which shares your EXISTING roster
+// with someone else's login, not create a new one). Collapsed by default
+// so it doesn't compete for attention with the everyday actions above it.
+function CreateTeamCard({ onCreateTeam, activeTeamName }) {
+  const { c } = useUI();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  async function create() {
+    const trimmed = name.trim();
+    if (!trimmed) { setStatus("Enter a name for the new team."); return; }
+    setBusy(true); setStatus("");
+    try {
+      await onCreateTeam(trimmed);
+      setName(""); setOpen(false); setStatus("");
+    } catch (e) { setStatus("❌ " + e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <>
+      <div style={{ fontSize: 12, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", margin: "20px 4px 10px" }}>Start Another Team</div>
+      <Card>
+        {!open ? (
+          <>
+            <div style={{ fontSize: 12.5, color: c.dim, marginBottom: 10 }}>
+              A second, completely separate, empty roster under this same sign-in — for a different group of swimmers you coach,
+              kept apart from {activeTeamName ? "\"" + activeTeamName + "\"" : "your current team"}. You'll pick between them next time you sign in.
+            </div>
+            <button onClick={() => setOpen(true)} style={{ width: "100%", padding: 11, borderRadius: 12, border: "none",
+              background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>+ Create a New Team</button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>New Team Name</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Summer Camp Group"
+                style={{ flex: 1, padding: "9px 12px", borderRadius: 10, background: c.card2, color: c.text, border: `1px solid ${c.line}`, fontSize: 14 }} />
+              <button onClick={create} disabled={busy} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>
+                {busy ? "…" : "Create"}
+              </button>
+              <button onClick={() => { setOpen(false); setStatus(""); }} style={{ padding: "9px 14px", borderRadius: 10, border: `1px solid ${c.line}`, background: "none", color: c.text, cursor: "pointer" }}>Cancel</button>
+            </div>
+            {status && <div style={{ fontSize: 12, color: c.amber, marginTop: 6 }}>{status}</div>}
+          </>
+        )}
+      </Card>
+    </>
+  );
+}
+
+function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTeamKey, currentTeamId, onOpenTeamSwitcher, onCreateTeam }) {
   const { c, s, dark, setDark } = useUI();
   const owner = isOwner(user);
+  const activeClusterName = (teamClusters.find((cl) => cl.key === selectedTeamKey) || {}).name;
 
   return (
     <div style={s.pad}>
@@ -1639,14 +1695,22 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
         {teamClusters.length > 1 && (
           <button onClick={onOpenTeamSwitcher} style={{ marginTop: 10, width: "100%", padding: 11, borderRadius: 12, border: `1px solid ${c.line}`,
             background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>
-            👥 Switch account ({(teamClusters.find((cl) => cl.key === selectedTeamKey) || {}).name || "…"})
+            👥 Switch account ({activeClusterName || "…"})
           </button>
         )}
         <button onClick={signOut} style={{ marginTop: 10, width: "100%", padding: 11, borderRadius: 12, border: `1px solid ${c.line}`,
           background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>Sign out</button>
       </Card>
 
-      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} coachEmail={user.email} />
+      <CreateTeamCard onCreateTeam={onCreateTeam} activeTeamName={activeClusterName} />
+
+      {currentTeamId && (
+        <div style={{ fontSize: 11.5, color: c.dim, margin: "4px 4px 14px" }}>
+          Swimmers you add below go into <strong>{activeClusterName || "this team"}</strong>.
+        </div>
+      )}
+
+      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} coachEmail={user.email} currentTeamId={currentTeamId} />
 
       <TeamViewerManager user={user} swimmers={swimmers} />
 
@@ -1666,7 +1730,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
   );
 }
 
-function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail }) {
+function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail, currentTeamId }) {
   const { c, s } = useUI();
   const [editing, setEditing] = useState(null); // swimmer id
   const [newName, setNewName] = useState("");
@@ -1678,7 +1742,7 @@ function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail }) {
     const name = newName.trim();
     if (!name || !id) { setStatus("Enter a name and numeric Player ID."); return; }
     try {
-      await createSwimmer(id, name, coachUid, coachEmail);
+      await createSwimmer(id, name, coachUid, coachEmail, currentTeamId);
       setNewName(""); setNewId(""); setStatus("✅ Added " + name);
       reloadSwimmers();
     } catch (e) {
@@ -2009,6 +2073,7 @@ export default function App() {
   const [coachStatus, setCoachStatus] = useState("checking"); // "checking" | "needsInvite" | "ok"
   const [teamClusters, setTeamClusters] = useState([]); // only >1 entry when this email spans multiple accounts
   const [selectedTeamKey, setSelectedTeamKey] = useState(null);
+  const [currentTeamId, setCurrentTeamId] = useState(null); // explicit team (see createTeam) a new swimmer should be tagged into; null = legacy/no explicit team
   const [teamGateOpen, setTeamGateOpen] = useState(false); // forced first-time/stale-choice picker
   const [teamSwitcherOpen, setTeamSwitcherOpen] = useState(false); // dismissable re-pick from Settings
   const unsubRef = useRef(null);
@@ -2029,6 +2094,7 @@ export default function App() {
   function applyTeamChoice(cluster) {
     try { localStorage.setItem("swimtrack:teamKey", cluster.key); } catch {}
     setSelectedTeamKey(cluster.key);
+    setCurrentTeamId(cluster.teamId || null);
     setSwimmers(cluster.swimmers);
     setSwimmerId((prev) => (prev && cluster.swimmers.some((sw) => sw.id === prev)) ? prev : (cluster.swimmers[0] && cluster.swimmers[0].id) || null);
     setLoadErr(cluster.swimmers.length ? "" : "No swimmers yet — add one in Settings.");
@@ -2040,15 +2106,27 @@ export default function App() {
     return fetchSwimmers(user)
       .then(async (list) => {
         const clusters = clusterMySwimmers(list, user.uid);
-        if (clusters.length <= 1) {
-          // Common case, unchanged from before this feature existed.
+        // Teams this coach created themselves that have zero swimmers so far
+        // (clustering above is swimmer-driven, so a brand-new empty team
+        // wouldn't otherwise surface anywhere) still need to show up as a
+        // pickable — if empty — option.
+        const myTeams = await fetchMyTeams(user.uid).catch(() => []);
+        const emptyTeams = myTeams
+          .filter((t) => !clusters.some((cl) => cl.teamId === t.id))
+          .map((t) => ({ key: "team:" + t.id, teamId: t.id, swimmers: [], coachUids: [] }));
+        const allClusters = [...clusters, ...emptyTeams];
+        if (allClusters.length <= 1) {
+          // Common case, unchanged from before this feature existed —
+          // except a lone cluster might now be a just-created empty
+          // explicit team, so still track its teamId for "+ Add Swimmer".
           setTeamClusters([]);
+          setCurrentTeamId((allClusters[0] && allClusters[0].teamId) || null);
           setSwimmers(list);
           setSwimmerId((prev) => prev || (list[0] && list[0].id) || null);
           setLoadErr(list.length ? "" : "No swimmers yet — add one in Settings.");
           return;
         }
-        const named = await nameClusters(clusters);
+        const named = await nameClusters(allClusters);
         setTeamClusters(named);
         let storedKey = null;
         try { storedKey = localStorage.getItem("swimtrack:teamKey"); } catch {}
@@ -2059,6 +2137,19 @@ export default function App() {
       .catch((e) => setLoadErr(/permission/i.test(e.message)
         ? "Your account isn't recognized. Ask the owner for an invite code."
         : "Could not load data: " + e.message));
+  }
+
+  // Creates a brand-new, empty, explicitly-named team under this SAME login
+  // (no second Google account needed) and immediately switches into it —
+  // bypassing the picker gate since the user just explicitly asked for this
+  // one. loadSwimmers() afterward refreshes teamClusters with the real
+  // cluster list (harmlessly re-applies the same choice via the now-stored
+  // key) so "Switch account" picks it up going forward.
+  async function createNewTeam(name) {
+    const team = await createTeam(user, name);
+    applyTeamChoice({ key: "team:" + team.id, teamId: team.id, swimmers: [], coachUids: [] });
+    loadSwimmers();
+    return team;
   }
 
   // Gate: owners always have access; everyone else needs a coaches/{uid} doc,
@@ -2117,8 +2208,8 @@ export default function App() {
         teamClusters={teamClusters} selectedTeamKey={selectedTeamKey} onSwitchAccount={() => setTeamSwitcherOpen(true)} />
       {tab === "settings" ? (
         <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers}
-          teamClusters={teamClusters} selectedTeamKey={selectedTeamKey}
-          onOpenTeamSwitcher={() => setTeamSwitcherOpen(true)} />
+          teamClusters={teamClusters} selectedTeamKey={selectedTeamKey} currentTeamId={currentTeamId}
+          onOpenTeamSwitcher={() => setTeamSwitcherOpen(true)} onCreateTeam={createNewTeam} />
       ) : (
         <>
           {loadErr && <div style={s.pad}><Card style={{ borderColor: "#ef4444" }}>{loadErr}</Card></div>}
@@ -2165,16 +2256,27 @@ function defaultTeamName(email) {
   return local.charAt(0).toUpperCase() + local.slice(1) + "'s Team";
 }
 
-// Clusters the CURRENT coach's own accessible swimmers by shared coachUids —
-// two swimmers are the "same account/team" if their coachUids overlap
-// (transitively, via union-find). Unlike groupCoachesIntoTeams below (admin-
+// Clusters the CURRENT coach's own accessible swimmers into "accounts".
+// Swimmers carrying an explicit `teamId` (added via the "+ Create a new
+// team" flow) are grouped by that id directly — unambiguous, no heuristic
+// needed. Everything else falls back to the original coachUids-based
+// grouping (how Team Har-Shai / Team KFS work): two swimmers are the same
+// legacy account if their coachUids overlap (transitively, via union-find,
+// excluding my own uid — see below). Unlike groupCoachesIntoTeams (admin-
 // only, needs every coach's doc), this only needs swimmers the signed-in
 // coach can already read, so any coach can compute it for themselves.
 function clusterMySwimmers(mySwimmers, myUid) {
+  const withTeam = mySwimmers.filter((sw) => sw.teamId);
+  const legacy = mySwimmers.filter((sw) => !sw.teamId);
+
+  const teamGroups = {};
+  withTeam.forEach((sw) => { (teamGroups[sw.teamId] = teamGroups[sw.teamId] || []).push(sw); });
+  const teamClusters = Object.keys(teamGroups).map((teamId) => ({ key: "team:" + teamId, teamId, swimmers: teamGroups[teamId], coachUids: [] }));
+
   const parent = {};
   const find = (x) => { while (parent[x] && parent[x] !== x) x = parent[x]; return x; };
   const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
-  mySwimmers.forEach((sw) => { parent[sw.id] = sw.id; });
+  legacy.forEach((sw) => { parent[sw.id] = sw.id; });
   // Union swimmers that share any OTHER coach — deliberately excluding my own
   // uid, which by definition is on every swimmer I can see; using it would
   // trivially merge everything into one cluster and defeat the whole point.
@@ -2182,7 +2284,7 @@ function clusterMySwimmers(mySwimmers, myUid) {
   // together separately below — otherwise each would end up its own
   // singleton cluster instead of one combined "my own account".
   const swimmerIdsByCoach = {}, soloIds = [];
-  mySwimmers.forEach((sw) => {
+  legacy.forEach((sw) => {
     const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
     if (!others.length) { soloIds.push(sw.id); return; }
     others.forEach((uid) => { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
@@ -2190,24 +2292,31 @@ function clusterMySwimmers(mySwimmers, myUid) {
   Object.values(swimmerIdsByCoach).forEach((ids) => { for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
   for (let i = 1; i < soloIds.length; i++) union(soloIds[0], soloIds[i]);
   const groups = {};
-  mySwimmers.forEach((sw) => { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
-  return Object.values(groups).map((swArr) => {
+  legacy.forEach((sw) => { (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw); });
+  const legacyClusters = Object.values(groups).map((swArr) => {
     const coachUids = new Set();
     swArr.forEach((sw) => (sw.coachUids || []).forEach((u) => coachUids.add(u)));
     return { key: Array.from(coachUids).sort().join(","), swimmers: swArr, coachUids: Array.from(coachUids) };
   });
+  return [...teamClusters, ...legacyClusters];
 }
 
-// Labels each cluster with its earliest-created member's team name (usually
-// whoever created the roster and invited the others in) — requires reading
-// those coaches' docs, which any signed-in coach may now do (see
-// firestore.rules: coaches/{uid} read).
+// Labels each cluster. Explicit teams (cl.teamId set) use the real teams/{id}
+// name, no guessing needed. Legacy clusters use the earliest-created
+// member's team name (usually whoever created the roster and invited the
+// others in) — requires reading those coaches' docs, which any signed-in
+// coach may now do (see firestore.rules: coaches/{uid} read).
 async function nameClusters(clusters) {
-  const allUids = Array.from(new Set(clusters.flatMap((cl) => cl.coachUids)));
-  const fetched = await Promise.all(allUids.map((uid) => fetchCoach(uid).then((d) => d && { uid, ...d }).catch(() => null)));
-  const byUid = {};
-  fetched.forEach((d) => { if (d) byUid[d.uid] = d; });
+  const legacyUids = Array.from(new Set(clusters.filter((cl) => !cl.teamId).flatMap((cl) => cl.coachUids)));
+  const teamIds = clusters.filter((cl) => cl.teamId).map((cl) => cl.teamId);
+  const [fetchedCoaches, fetchedTeams] = await Promise.all([
+    Promise.all(legacyUids.map((uid) => fetchCoach(uid).then((d) => d && { uid, ...d }).catch(() => null))),
+    Promise.all(teamIds.map((id) => fetchTeam(id).catch(() => null))),
+  ]);
+  const byUid = {}; fetchedCoaches.forEach((d) => { if (d) byUid[d.uid] = d; });
+  const byTeamId = {}; fetchedTeams.forEach((d) => { if (d) byTeamId[d.id] = d; });
   return clusters.map((cl) => {
+    if (cl.teamId) return { ...cl, name: (byTeamId[cl.teamId] && byTeamId[cl.teamId].name) || "Team" };
     const members = cl.coachUids.map((uid) => byUid[uid]).filter(Boolean);
     const owner = members.length ? members.reduce((a, b) => (a.createdAt || 0) <= (b.createdAt || 0) ? a : b) : null;
     return { ...cl, name: owner ? (owner.teamName || defaultTeamName(owner.email)) : "Team", memberCount: cl.coachUids.length };
@@ -2229,9 +2338,20 @@ async function nameClusters(clusters) {
 function groupCoachesIntoTeams(coaches, swimmers) {
   const byUid = {};
   coaches.forEach((co) => { byUid[co.uid] = co; });
-  const groups = {}; // keyed by root uid -> { swimmers:[], uids:Set }
+  const groups = {}; // keyed by "team:<id>" or a root uid -> { swimmers:[], uids:Set, name? }
   swimmers.forEach((sw) => {
     const uids = (sw.coachUids || []).filter((uid) => uid in byUid);
+    if (sw.teamId) {
+      // Explicit team (see clusterMySwimmers) — unambiguous, group by teamId
+      // directly rather than guessing a root coach. Admin doesn't currently
+      // fetch teams/{id} for the real name here, so it still falls back to
+      // the joined-members label the render already uses for legacy groups.
+      const key = "team:" + sw.teamId;
+      if (!groups[key]) groups[key] = { swimmers: [], uids: new Set() };
+      groups[key].swimmers.push(sw);
+      uids.forEach((u) => groups[key].uids.add(u));
+      return;
+    }
     if (!uids.length) return;
     const root = uids.reduce((a, b) => (byUid[a].createdAt || 0) <= (byUid[b].createdAt || 0) ? a : b);
     if (!groups[root]) groups[root] = { swimmers: [], uids: new Set() };
