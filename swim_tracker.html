@@ -5916,10 +5916,23 @@ function _teamHighlights(roster) {
 // Standards, it isn't meaningful for masters swimmers, so anyone currently
 // over this age is excluded from the team summary entirely.
 var RUDOLPH_TEAM_MAX_AGE = 20;
+// Best-ever points swim per event, top N — independent of age/Rudolph/USA
+// eligibility, so every swimmer (including masters) gets a Performance
+// Split row even when neither of those apply to them.
+function _teamTopEvents(D, n) {
+  var byEvent = {};
+  _teamAllResults(D).forEach(function (r) {
+    if (!(r.points > 0)) return;
+    if (!byEvent[r.event] || r.points > byEvent[r.event].points) byEvent[r.event] = { event: r.event, points: r.points };
+  });
+  return Object.values(byEvent).sort(function (a, b) { return b.points - a.points; }).slice(0, n || 2);
+}
 function groupTeamStats(roster, usaTable, rudTable) {
   var usaHist = {}; USA_TIERS.forEach(function (t) { usaHist[t] = 0; });
-  var usaPer = [], rudPer = [];
+  var usaPer = [], rudPer = [], topEvPer = [];
   roster.forEach(function (r) {
+    var top = _teamTopEvents(r.D, 2);
+    if (top.length) topEvPer.push({ name: r.swimmer.name, top: top });
     if (!r.swimmer.birthdate) return;
     var age = _recAge(r.swimmer.birthdate, null);
     if (usaTable && age >= 10 && age <= 18) {
@@ -5934,26 +5947,32 @@ function groupTeamStats(roster, usaTable, rudTable) {
     }
   });
   var rudBest = rudPer.length ? rudPer.reduce(function (a, b) { return b.score > a.score ? b : a; }) : null;
-  return { usaHistogram: usaHist, usaPerSwimmer: usaPer, rudBest: rudBest, rudPerSwimmer: rudPer };
+  return { usaHistogram: usaHist, usaPerSwimmer: usaPer, rudBest: rudBest, rudPerSwimmer: rudPer, topEventsPerSwimmer: topEvPer };
 }
 // One row per swimmer with either a Rudolph score or a USA Standards tier
 // (or both) — a single table instead of two separate lists, so a coach can
 // scan a roster's performance in one place.
 function perfTableHtml(stats) {
   var byName = {};
+  (stats.topEventsPerSwimmer || []).forEach(function (p) { (byName[p.name] = byName[p.name] || { name: p.name }).topEvents = p.top; });
   stats.usaPerSwimmer.forEach(function (p) { (byName[p.name] = byName[p.name] || { name: p.name }).usaTier = p.tier; });
   stats.rudPerSwimmer.forEach(function (p) { (byName[p.name] = byName[p.name] || { name: p.name }).rudScore = p.score; });
   var rows = Object.values(byName).sort(function (a, b) { return a.name.localeCompare(b.name); });
-  if (!rows.length) return '<div style="font-size:12.5px;color:#aaa">No Rudolph or USA Standards data yet.</div>';
+  if (!rows.length) return '<div style="font-size:12.5px;color:#aaa">No performance data yet.</div>';
   return '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="text-align:left;padding:6px 4px;font-size:10px;font-weight:700;color:#999;text-transform:uppercase">Swimmer</th>' +
+    '<th style="text-align:left;padding:6px 4px;font-size:10px;font-weight:700;color:#999;text-transform:uppercase">Top Events</th>' +
     '<th style="text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:#999;text-transform:uppercase">Rudolph</th>' +
     '<th style="text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:#999;text-transform:uppercase">USA Standard</th>' +
     '</tr></thead><tbody>' +
     rows.map(function (r) {
+      var topHtml = (r.topEvents && r.topEvents.length)
+        ? r.topEvents.map(function (t) { return t.event + ' <span style="color:#999">(' + t.points + ')</span>'; }).join('<br>')
+        : '—';
       return '<tr style="border-top:1px solid #f0efe9">' +
         '<td style="padding:7px 4px;font-size:12.5px">' + r.name + '</td>' +
+        '<td style="padding:7px 4px;font-size:11.5px;line-height:1.5">' + topHtml + '</td>' +
         '<td style="padding:7px 4px;font-size:12.5px;text-align:right;font-weight:700">' + (r.rudScore != null ? r.rudScore.toFixed(1) + ' pts' : '—') + '</td>' +
         '<td style="padding:7px 4px;font-size:12.5px;text-align:right;font-weight:700;color:#185FA5">' + (r.usaTier || '—') + '</td>' +
         '</tr>';

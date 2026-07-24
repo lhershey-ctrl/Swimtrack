@@ -2019,6 +2019,19 @@ function groupCoachesIntoTeams(coaches, swimmers) {
   }).sort((a, b) => b.swimmerCount - a.swimmerCount);
 }
 
+// Best-ever points swim per event, top N — independent of age/Rudolph/USA
+// eligibility, so every swimmer (including masters) gets a Performance
+// Split row even when neither of those apply to them. Mirrors desktop's
+// _teamTopEvents (swim_tracker.html).
+function teamTopEvents(D, n) {
+  const byEvent = {};
+  allResults(D).forEach((r) => {
+    if (!(r.points > 0)) return;
+    if (!byEvent[r.event] || r.points > byEvent[r.event].points) byEvent[r.event] = { event: r.event, points: r.points };
+  });
+  return Object.values(byEvent).sort((a, b) => b.points - a.points).slice(0, n || 2);
+}
+
 function AdminStatsPanel({ owner }) {
   const { c, s } = useUI();
   const [coaches, setCoaches] = useState(null);
@@ -2049,6 +2062,10 @@ function AdminStatsPanel({ owner }) {
   // One row per swimmer with either a Rudolph score or a USA Standards tier
   // (or both) — a single table instead of two separate lists.
   const perfByName = {};
+  roster.forEach((r) => {
+    const top = teamTopEvents(r.D, 2);
+    if (top.length) (perfByName[r.swimmer.name] = perfByName[r.swimmer.name] || { name: r.swimmer.name }).topEvents = top;
+  });
   usaSummary.perSwimmer.forEach((p) => { (perfByName[p.swimmer.name] = perfByName[p.swimmer.name] || { name: p.swimmer.name }).usaTier = p.tier; });
   rudSummary.perSwimmer.forEach((p) => { (perfByName[p.swimmer.name] = perfByName[p.swimmer.name] || { name: p.swimmer.name }).rudScore = p.score; });
   const perfRows = Object.values(perfByName).sort((a, b) => a.name.localeCompare(b.name));
@@ -2100,6 +2117,7 @@ function AdminStatsPanel({ owner }) {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>
               <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Swimmer</th>
+              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Top Events</th>
               <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>Rudolph</th>
               <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 700, color: c.dim, textTransform: "uppercase" }}>USA Standard</th>
             </tr></thead>
@@ -2107,13 +2125,18 @@ function AdminStatsPanel({ owner }) {
               {perfRows.map((r, i) => (
                 <tr key={r.name} style={{ borderTop: i > 0 ? `1px solid ${c.line}` : "none" }}>
                   <td style={{ padding: "7px 8px", fontSize: 12.5 }}>{r.name}</td>
+                  <td style={{ padding: "7px 8px", fontSize: 11.5, lineHeight: 1.5 }}>
+                    {r.topEvents && r.topEvents.length
+                      ? r.topEvents.map((t, j) => <div key={j}>{t.event} <span style={{ color: c.dim }}>({t.points})</span></div>)
+                      : "—"}
+                  </td>
                   <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700 }}>{r.rudScore != null ? r.rudScore.toFixed(1) + " pts" : "—"}</td>
                   <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700, color: c.blue }}>{r.usaTier || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        ) : <div style={{ fontSize: 12.5, color: c.dim, padding: 8 }}>No Rudolph or USA Standards data yet.</div>}
+        ) : <div style={{ fontSize: 12.5, color: c.dim, padding: 8 }}>No performance data yet.</div>}
       </Card>
 
       <div style={s.h2}>Least Recently Synced</div>
