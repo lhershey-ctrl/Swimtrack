@@ -1065,12 +1065,12 @@ function landingSignIn(){
     <div class="section-title">③ Personal Records</div>
     <div id="recGapHint" style="font-size:12px;color:#888;margin-bottom:10px"></div>
     <button onclick="openRecordsBrowser()" style="background:#185FA5;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:12px">📖 Browse all Israeli records</button>
-    <div class="tbl-card">
-      <table><thead><tr><th>🏊 25m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
+    <div class="tbl-card" style="overflow-x:auto">
+      <table><thead id="rec25Head"><tr><th>🏊 25m Pool</th></tr></thead>
       <tbody id="rec25"></tbody></table>
     </div>
-    <div class="tbl-card">
-      <table><thead><tr><th>🏊 50m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
+    <div class="tbl-card" style="overflow-x:auto">
+      <table><thead id="rec50Head"><tr><th>🏊 50m Pool</th></tr></thead>
       <tbody id="rec50"></tbody></table>
     </div>
 
@@ -3511,33 +3511,83 @@ function refreshAllNameSuggestions(){
 }
 window.refreshAllNameSuggestions=refreshAllNameSuggestions;
 function _lookupRec(recs,S,age,pool,ev){var cat=_recCat(age),key=_recKey(ev);if(!recs||!S||!cat||!key)return null;var r=(((recs[pool]||{})[S]||{})[cat]||{})[key];return r&&r.sec?r:null;}
+function _lookupRecByCat(recs,S,cat,pool,ev){var key=_recKey(ev);if(!recs||!S||!cat||!key)return null;var r=(((recs[pool]||{})[S]||{})[cat]||{})[key];return r&&r.sec?r:null;}
 function _bestInGroup(pool,bd,cat){var range=_recRange(cat),out={};seasons().forEach(function(sk){(D[sk].bests||[]).forEach(function(b){if(!b.event||!b.seconds||isRelay(b.event)||poolNorm(b.pool)!==pool)return;if(range){var a=_recAge(bd,parseDate(b.date));if(a==null||a<range[0]||a>range[1])return;}if(!out[b.event]||b.seconds<out[b.event].seconds)out[b.event]={seconds:b.seconds,time:b.time};});});return out;}
+function _catSortKey(c){return c==='open'?24.5:parseInt(c,10);}
+function _isMastersCat(c){return!!c&&/^\d{2,3}-\d{2,3}$/.test(c);} // 5-year masters bracket, not a junior single-age or "open"
+
 // bestEver = this event's overall/lifetime-best entry ({seconds,time,...}
-// from rec25/rec50 — same one shown in the BEST column), compared against
-// the record for the swimmer's CURRENT/latest age group regardless of how
-// old they were when they actually swam that best. Previously this only
-// compared a swim performed while literally inside that exact age bracket
-// (_bestInGroup) — correct in spirit, but meant a swimmer who just aged up
-// into a new bracket (e.g. just turned 18) with no meet yet at that age
-// showed "no in-group swim" for every single event, even though their
-// existing PB might already beat the record. Real user report, not a
-// design call: the PB is always what should be judged against the current
-// bracket's record.
+// from rec25/rec50), compared against the record for the swimmer's
+// CURRENT/latest age group regardless of how old they were when they swam
+// that best. Junior/open path only — masters uses buildRecordsGrid below.
 function _gapCells(recs,S,age,pool,ev,bestEver,myName){
   var rec=_lookupRec(recs,S,age,pool,ev); if(!rec)return['<span style="color:#bbb">—</span>','<span style="color:#bbb">—</span>'];
   var recTxt=fmtT(rec.sec)+' <span style="color:#999;font-size:11px">'+rec.name+'</span>';
   var nameOwn=myName&&_nameMatch(rec.name,myName), gapTxt;
   if(bestEver){
     var g=+(bestEver.seconds-rec.sec).toFixed(2), pct=+((g/rec.sec)*100).toFixed(1);
-    if(nameOwn||Math.abs(g)<=0.005)gapTxt='<span style="color:#c8961f;font-weight:700">🏅 you hold it</span>';
+    if(nameOwn||Math.abs(g)<=0.005)gapTxt='<span style="color:#c8961f;font-weight:700">🏅 '+(myName||'held')+'</span>';
     else if(g<-0.005)gapTxt='<span style="color:#1D9E75;font-weight:700">🏅 faster!</span>';
     else gapTxt='<span style="color:'+(pct<=5?'#1D9E75':pct<=15?'#9b7a0b':'#a32d2d')+';font-weight:700">+'+g+'s · '+pct+'%</span>';
-  } else if(nameOwn){ gapTxt='<span style="color:#c8961f;font-weight:700">🏅 you hold it</span>'; }
+  } else if(nameOwn){ gapTxt='<span style="color:#c8961f;font-weight:700">🏅 '+(myName||'held')+'</span>'; }
   else { gapTxt='<span style="color:#bbb">no swim yet</span>'; }
   return[recTxt,gapTxt];
 }
 
-function buildRecords(){
+// Masters Personal Records grid: rows = events, columns = every 5-year age
+// GROUP the swimmer has actually competed in (not just their current one —
+// a swimmer aging from 40-44 into 45-49 sees their whole history at a
+// glance instead of only today's snapshot, and comparing a PB swum at one
+// age against a DIFFERENT bracket's record — confusing, reported live —
+// never happens since each cell is scoped to its own bracket). Each cell
+// shows the swimmer's best time in that bracket (line 1) and who holds
+// that bracket's record (line 2, smaller) — gold background if it's this
+// swimmer, plain otherwise. Juniors keep the older single-bracket table
+// (buildRecordsLegacy) — this grid is masters-only per user request.
+function buildRecordsGrid(bd,S,myName,recs){
+  var ss=seasons();
+  function catsFor(pool){
+    var seen={};
+    ss.forEach(function(sk){(D[sk].bests||[]).forEach(function(b){
+      if(!b.event||!b.seconds||isRelay(b.event)||poolNorm(b.pool)!==pool)return;
+      var cat=_recCat(_recAge(bd,parseDate(b.date)));
+      if(_isMastersCat(cat))seen[cat]=true;
+    });});
+    return Object.keys(seen).sort(function(a,b){return _catSortKey(a)-_catSortKey(b);});
+  }
+  function eventsFor(pool){
+    var seen={};
+    ss.forEach(function(sk){(D[sk].bests||[]).forEach(function(b){if(b.event&&b.seconds&&!isRelay(b.event)&&poolNorm(b.pool)===pool)seen[b.event]=true;});});
+    return Object.keys(seen).sort(function(a,b){return parseInt(a)-parseInt(b)||a.localeCompare(b);});
+  }
+  function renderPool(tbodyId,theadId,pool){
+    var cats=catsFor(pool), evts=eventsFor(pool);
+    var theadEl=document.getElementById(theadId);
+    if(theadEl)theadEl.innerHTML='<tr><th>Event</th>'+cats.map(function(c){return'<th>'+_catLbl(c)+'</th>';}).join('')+'</tr>';
+    if(!cats.length){document.getElementById(tbodyId).innerHTML='<tr><td style="color:#bbb;font-style:italic;padding:14px">No results yet.</td></tr>';return;}
+    var byCat={};cats.forEach(function(c){byCat[c]=_bestInGroup(pool,bd,c);});
+    var rows=evts.map(function(ev){
+      var cells=cats.map(function(c){
+        var mine=byCat[c][ev];
+        if(!mine)return'<td><span style="color:#ddd">—</span></td>';
+        var rec=(recs&&S)?_lookupRecByCat(recs,S,c,pool,ev):null;
+        var holderLine,cellStyle='';
+        if(rec){
+          var isMine=myName&&_nameMatch(rec.name,myName);
+          holderLine=rec.name;
+          cellStyle=isMine?'background:#fdf3d9':'';
+        } else { holderLine='<span style="color:#ccc">no record data</span>'; }
+        return'<td style="'+cellStyle+'"><div style="font-weight:700">'+fmtT(mine.seconds)+'</div><div style="font-size:10.5px;color:#8a8a8a;margin-top:2px;white-space:nowrap">'+holderLine+'</div></td>';
+      }).join('');
+      return'<tr><td><strong>'+ev+'</strong></td>'+cells+'</tr>';
+    }).join('');
+    document.getElementById(tbodyId).innerHTML=rows;
+  }
+  renderPool('rec25','rec25Head','25');
+  renderPool('rec50','rec50Head','50');
+}
+
+function buildRecordsLegacy(bd,S,myName,recs,age,cat){
   var ss=seasons();
   var rec25={},rec50={};
   ss.forEach(function(s){
@@ -3549,17 +3599,10 @@ function buildRecords(){
         store[b.event]={seconds:b.seconds,time:b.time,points:b.points,season:s};
     });
   });
-  // Age-group record context (needs published records + swimmer sex/birthdate).
-  var prof=window.__recProfile||{}, sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
-  var bd=prof.birthdate||sw.birthdate||'', S=_sexN(prof.sex||sw.sex), myName=prof.recordName||'';
-  var recs=window.__records||null, age=bd?_recAge(bd):null, cat=_recCat(age);
   var canGap=!!(recs&&S&&cat);
-  var hint=document.getElementById('recGapHint');
-  if(hint){
-    if(!recs)hint.innerHTML='Load Israeli records (Extract tab ③) to see the gap to each age-group record.';
-    else if(!S||!cat)hint.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see age-group record gaps.';
-    else hint.innerHTML='Gaps vs <b>'+(cat==='open'?'Open/National':'age '+cat)+'</b> records ('+(S==='F'?'women':'men')+'), the swimmer\'s current age group — each event\'s all-time personal best (left) vs. that record.';
-  }
+  var fixedHead='<tr><th>Event</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr>';
+  var h25=document.getElementById('rec25Head'),h50=document.getElementById('rec50Head');
+  if(h25)h25.innerHTML=fixedHead; if(h50)h50.innerHTML=fixedHead;
   function renderRec(store,tbodyId,pool){
     var rows=Object.entries(store).sort(function(a,b){return parseInt(a[0])-parseInt(b[0])||a[0].localeCompare(b[0]);})
       .map(function(e){
@@ -3570,6 +3613,28 @@ function buildRecords(){
   }
   renderRec(rec25,'rec25','25');
   renderRec(rec50,'rec50','50');
+}
+
+function buildRecords(){
+  var prof=window.__recProfile||{}, sw=(window.getActiveSwimmerData&&window.getActiveSwimmerData())||{};
+  var bd=prof.birthdate||sw.birthdate||'', S=_sexN(prof.sex||sw.sex), myName=prof.recordName||'';
+  var recs=window.__records||null, age=bd?_recAge(bd):null, cat=_recCat(age);
+  var hint=document.getElementById('recGapHint');
+  if(_isMastersCat(cat)){
+    if(hint){
+      if(!recs)hint.innerHTML='Load Israeli records (Extract tab ③) to see each age-group\'s record.';
+      else if(!S)hint.innerHTML='Set this swimmer\'s <b>sex</b> in ⚙ Settings to see age-group records.';
+      else hint.innerHTML='Personal best per event, one column per age group this swimmer has competed in ('+(S==='F'?'women':'men')+'). <span style="color:#c8961f;font-weight:700">Gold</span> = this swimmer holds that age-group record.';
+    }
+    buildRecordsGrid(bd,S,myName,recs);
+  } else {
+    if(hint){
+      if(!recs)hint.innerHTML='Load Israeli records (Extract tab ③) to see the gap to each age-group record.';
+      else if(!S||!cat)hint.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see age-group record gaps.';
+      else hint.innerHTML='Gaps vs <b>'+(cat==='open'?'Open/National':'age '+cat)+'</b> records ('+(S==='F'?'women':'men')+'), the swimmer\'s current age group — each event\'s all-time personal best (left) vs. that record.';
+    }
+    buildRecordsLegacy(bd,S,myName,recs,age,cat);
+  }
 }
 window.buildRecords=buildRecords;
 

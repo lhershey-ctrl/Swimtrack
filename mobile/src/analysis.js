@@ -179,6 +179,21 @@ export function lookupRecord(records, sex, age, pool, event) {
   const rec = (((records[pool] || {})[S] || {})[cat] || {})[key];
   return rec && rec.sec ? rec : null;
 }
+// Same, but for an arbitrary (possibly non-current) age-group category —
+// used by the masters bracket-by-bracket Personal Records view, since a
+// swimmer's PAST bracket's record shouldn't be looked up via their CURRENT
+// age.
+export function lookupRecordByCat(records, sex, cat, pool, event) {
+  const S = sexNorm(sex), key = recordKey(event);
+  if (!records || !S || !cat || !key) return null;
+  const rec = (((records[pool] || {})[S] || {})[cat] || {})[key];
+  return rec && rec.sec ? rec : null;
+}
+// True for a 5-year masters bracket ("40-44"), false for a junior
+// single-age ("14") or "open"/national.
+export function isMastersCat(cat) {
+  return !!cat && /^\d{2,3}-\d{2,3}$/.test(cat);
+}
 // Age band [min,max] inclusive for a category, or null when unrestricted (open/national).
 export function categoryAgeRange(cat) {
   if (!cat || cat === "open") return null;

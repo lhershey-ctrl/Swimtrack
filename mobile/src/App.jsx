@@ -14,7 +14,7 @@ import {
   createTeam, fetchTeam, fetchMyTeams,
 } from "./firebase.js";
 import {
-  fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords,
+  fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords, lookupRecordByCat, isMastersCat,
   computePBTimeline, getStroke, getStrokeColor, STROKE_COLORS, COLORS, extractDist,
   getAgeAt, ageGroupLabel, latest, prevSeason, STROKES, eventCatalog, eventSeries,
   competitions, scLc, insights, seasonRecap, strokeImprovement, pointsTrend, eventHeatmap,
@@ -1061,6 +1061,64 @@ function InfoModal({ title, children, onClose }) {
 //  RECORDS (+ SC vs LC)
 // ════════════════════════════════════════════════════════════════════
 const GOLD = "#e0a52a";
+
+// Masters-only Personal Records view: a real bug, reported live from a
+// screenshot — the old (still used for juniors) inline list compared a
+// swimmer's LIFETIME PB against their CURRENT age group's record, so a PB
+// set at 40-44 could get shown next to an unrelated 45-49 record ("it shows
+// I have the age-group record in 45-49 in a different time" — actually
+// just a different bracket's record entirely). Fixed for masters swimmers
+// with an age-GROUP selector (tabs, not a wide multi-column table — narrow
+// phone screens can't fit one column per bracket) defaulting to the
+// swimmer's current group: each event's PB is the one actually swum
+// WITHIN the selected bracket, next to THAT bracket's own record. Juniors
+// keep the original inline-list view unchanged (see RecordsTab below).
+function MastersRecordsGrid({ D, pool, records, sex, myName, birthdate }) {
+  const { c } = useUI();
+  const byGroup = useMemo(() => bestsByAgeGroup(D, pool, birthdate), [D, pool, birthdate]);
+  const currentCat = recordCategory(recordAge(birthdate));
+  const cats = useMemo(() => {
+    const set = new Set();
+    Object.values(byGroup).forEach((list) => list.forEach((g) => { if (isMastersCat(g.cat)) set.add(g.cat); }));
+    return Array.from(set).sort((a, b) => parseInt(a) - parseInt(b));
+  }, [byGroup]);
+  const [selected, setSelected] = useState(null);
+  const active = cats.includes(selected) ? selected : (cats.includes(currentCat) ? currentCat : cats[cats.length - 1]);
+
+  if (!cats.length) return <Card><div style={{ color: c.dim, padding: 14 }}>No {pool}m results yet.</div></Card>;
+
+  const rows = Object.keys(byGroup)
+    .map((ev) => ({ event: ev, entry: (byGroup[ev] || []).find((g) => g.cat === active) }))
+    .filter((r) => r.entry)
+    .sort((a, b) => extractDist(a.event) - extractDist(b.event) || getStroke(a.event).localeCompare(getStroke(b.event)));
+
+  return (
+    <>
+      <PillRow active={active} onPick={setSelected} items={cats.map((cat) => ({ key: cat, label: catLabel(cat).replace("Masters ", "") }))} />
+      <Card style={{ padding: 6 }}>
+        {rows.length === 0 && <div style={{ color: c.dim, padding: 14 }}>No {pool}m results in this age group.</div>}
+        {rows.map((r, i) => {
+          const rec = lookupRecordByCat(records, sex, active, pool, r.event);
+          const isMine = !!(rec && myName && nameMatch(rec.name, myName));
+          return (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px",
+              background: isMine ? hexA(GOLD, 0.12) : "transparent", borderRadius: isMine ? 8 : 0,
+              borderBottom: i < rows.length - 1 ? `1px solid ${c.line}` : "none" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{isMine ? "🏅 " : ""}{r.event}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: c.amber, marginTop: 2 }}>{fmtT(r.entry.seconds)}</div>
+              </div>
+              <div style={{ textAlign: "right", fontSize: 11.5, color: isMine ? GOLD : c.dim, fontWeight: isMine ? 800 : 500, maxWidth: 130 }}>
+                {rec ? (isMine ? myName : rec.name) : "no record data"}
+              </div>
+            </div>
+          );
+        })}
+      </Card>
+    </>
+  );
+}
+
 function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc, mastersTop10Doc }) {
   const { c, s } = useUI();
   const [pool, setPool] = useState("25");
@@ -1118,11 +1176,16 @@ function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc, mastersTop10Doc
       {records && (!sex || !cat) && <Card style={{ borderColor: c.amber }}><div style={{ fontSize: 12.5, color: c.dim }}>Add {swimmer && swimmer.name}'s <strong>sex</strong> and <strong>birthdate</strong> in Settings to see the gap to each age record.</div></Card>}
       {records && sex && cat && (
         <div style={{ fontSize: 11.5, color: c.dim, margin: "0 4px 8px" }}>
-          Gaps vs <strong>{groupLabel}</strong> records ({sex === "F" ? "girls/women" : "boys/men"}, age group by year-end age).
+          {isMastersCat(cat)
+            ? <>Personal best per event, one age group at a time ({sex === "F" ? "women" : "men"}). <strong style={{ color: GOLD }}>Gold</strong> = this swimmer holds that age group's record.</>
+            : <>Gaps vs <strong>{groupLabel}</strong> records ({sex === "F" ? "girls/women" : "boys/men"}, age group by year-end age).</>}
           {stale && <span style={{ color: c.amber }}> · ⚠ records over 6 months old</span>}
         </div>
       )}
 
+      {records && sex && cat && isMastersCat(cat) ? (
+        <MastersRecordsGrid D={D} pool={pool} records={records} sex={sex} myName={myName} birthdate={swimmer && swimmer.birthdate} />
+      ) : (
       <Card style={{ padding: 6 }}>
         {listRows.length === 0 && <div style={{ color: c.dim, padding: 14 }}>No {pool}m records.</div>}
         {listRows.map((r, i) => {
@@ -1173,6 +1236,7 @@ function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc, mastersTop10Doc
           </div>
         ); })}
       </Card>
+      )}
       {held.length > 0 && (
         <>
           <div style={s.h2}>🏅 Records Held ({held.length})</div>
