@@ -5111,8 +5111,21 @@ async function refreshCloudSwimmers() {
 }
 
 // target optional {id, name}; defaults to the active local swimmer.
+// Two overlapping calls (e.g. switch swimmer A→B→A fast, or a switch raced
+// by "📄 PDF Summary" clicked mid-load) resolve in NETWORK order, not call
+// order — whichever finishes last wins and overwrites window.D, even if it
+// was actually the OLDER request for a since-abandoned swimmer. This is
+// the classic out-of-order-async-response bug (same class as a typeahead
+// showing stale results). A single monotonic counter fixes it: each call
+// gets a sequence number, and a call whose number no longer matches the
+// latest by the time its fetch resolves silently discards its own result
+// instead of writing it. Real bug, reported live more than once even after
+// the __pendingCloudLoad/defensive-recheck fixes in openPdfReport — this is
+// the actual root cause those two only partially covered.
+let loadCloudSeq = 0;
 async function doLoadFromCloud(target) {
   const st = statusEl();
+  const mySeq = ++loadCloudSeq;
   let id, name;
   if (target && target.id) { id = String(target.id); name = target.name; }
   else {
@@ -5123,6 +5136,7 @@ async function doLoadFromCloud(target) {
   if (st) { st.style.color = "#666"; st.textContent = "Loading " + (name || id) + " from cloud…"; }
   try {
     const data = await swimLoadFromCloud(id);
+    if (mySeq !== loadCloudSeq) return; // a newer load started after this one — discard, don't clobber window.D
     if (!name) name = (data && data.name) || ("Swimmer " + id);
     // Ensure this swimmer exists in the local roster and is the active one, so
     // the banner, picker and Sync button all reflect the right person. Apply
@@ -6273,8 +6287,17 @@ async function openPdfReport() {
   // swimmers even after the pending-load fix above, meaning at least one
   // other switch path also leaves D stale; better a short delay here than
   // silently building the wrong swimmer's report.
+  // NOTE: compare against window.__loadedSwimmerId, NOT window.D._swimmerId
+  // — finalize() strips _swimmerId/_swimmerName off D as part of "cleaning"
+  // it (see finalize()'s own comment), so D._swimmerId is ALWAYS empty by
+  // the time this runs. Comparing against it made this check force a
+  // reload unconditionally, every single time — which happened to mask
+  // itself in isolation but meant this fix was doing nothing selective, and
+  // (before the doLoadFromCloud sequence-token fix landed) that forced
+  // reload could itself lose an out-of-order race against a still-in-flight
+  // OLDER request. __loadedSwimmerId lives outside D and survives finalize().
   var activeSw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
-  if (activeSw && activeSw.id && window.D && String(window.D._swimmerId || '') !== String(activeSw.id) && window.swimUser && window.doLoadFromCloud) {
+  if (activeSw && activeSw.id && String(window.__loadedSwimmerId || '') !== String(activeSw.id) && window.swimUser && window.doLoadFromCloud) {
     try { await window.doLoadFromCloud(); } catch (e) {}
   }
   try { buildPdfReport(); }

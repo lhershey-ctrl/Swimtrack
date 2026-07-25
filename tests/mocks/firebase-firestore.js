@@ -32,20 +32,24 @@ export function setDoc(ref, data, opts) {
   c[ref.__id] = merged;
   return Promise.resolve();
 }
-// Optional artificial latency (window.__mockNetworkDelayMs, default 0) —
-// real Firestore reads take real network time; the mock resolves via a bare
-// microtask by default, which hides race conditions genuine users can hit
-// (e.g. clicking something right after a swimmer switch, before the switch's
-// own cloud fetch lands). Scenarios that need to exercise such a race set
-// this before triggering the action.
-function delay() {
-  var ms = window.__mockNetworkDelayMs || 0;
+// Optional artificial latency — real Firestore reads take real network
+// time; the mock resolves via a bare microtask by default, which hides race
+// conditions genuine users can hit (e.g. clicking something right after a
+// swimmer switch, before the switch's own cloud fetch lands). Scenarios
+// that need to exercise such a race set one of these before triggering the
+// action: window.__mockNetworkDelayMs (flat, applies to every getDoc), or
+// window.__mockDocDelayMs = {docId: ms} (per-doc — lets a test make an
+// OLDER request resolve AFTER a newer one, to reproduce out-of-order-
+// response races specifically, not just "everything is slow").
+function delay(id) {
+  var perDoc = (window.__mockDocDelayMs || {})[id];
+  var ms = perDoc != null ? perDoc : (window.__mockNetworkDelayMs || 0);
   return ms > 0 ? new Promise(function (r) { setTimeout(r, ms); }) : Promise.resolve();
 }
 export function getDoc(ref) {
   var c = col(ref.__col);
   var data = c[ref.__id];
-  return delay().then(function () {
+  return delay(ref.__id).then(function () {
     return { exists: function () { return !!data; }, data: function () { return data; }, id: ref.__id };
   });
 }
