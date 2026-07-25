@@ -6439,6 +6439,15 @@ async function createTeam(user, name) {
   await setDoc(ref, team);
   return Object.assign({ id: ref.id }, team);
 }
+// Renaming an existing team, distinct from saveTeamName above (which
+// renames the CALLER's own coach/account label, not any specific team) —
+// a real gap reported live: the only editable "name" field in Settings was
+// the coach's own label, with no way to rename an explicit team itself
+// (e.g. "עולם המים מאסטרס"). Firestore rules already permitted this
+// (team creator, name-field-only diff) — just needed the function + UI.
+async function renameTeam(teamId, name) {
+  await setDoc(doc(db, 'teams', teamId), { name: name }, { merge: true });
+}
 async function fetchTeam(teamId) {
   var snap = await getDoc(doc(db, 'teams', teamId));
   return snap.exists() ? Object.assign({ id: snap.id }, snap.data()) : null;
@@ -6655,6 +6664,18 @@ async function renderAccountCard() {
   var coach = await fetchCoach(currentUser.uid).catch(function () { return null; });
   var teamName = (coach && coach.teamName) || defaultTeamName(currentUser.email);
   var activeCluster = myTeamClusters.filter(function (c) { return c.key === selectedTeamKey; })[0];
+  // A team the coach is currently VIEWING (window.currentTeamId) has its
+  // OWN name (teams/{id}.name, e.g. "עולם המים מאסטרס") — a completely
+  // separate thing from the coach's own "Team / Account Name" label above.
+  // Real gap, reported live: only the coach's own label was ever editable,
+  // with no way to rename the actual team. Only the team's creator can
+  // (matches firestore.rules), so this only shows up for them. Deliberately
+  // reads window.currentTeamId, NOT activeCluster.teamId — myTeamClusters
+  // is only ever populated when there's real cluster ambiguity (2+ options
+  // needing a picker); in the common single-team case it's `[]`, which
+  // would've silently hidden this for the most common scenario.
+  var activeTeam = window.currentTeamId ? await fetchTeam(window.currentTeamId).catch(function () { return null; }) : null;
+  var canRenameTeam = !!(activeTeam && activeTeam.createdBy === currentUser.uid);
   el.innerHTML =
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
     '<div style="width:40px;height:40px;border-radius:999px;background:#0f3d72;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px">' + (currentUser.email || '?')[0].toUpperCase() + '</div>' +
@@ -6667,7 +6688,16 @@ async function renderAccountCard() {
     '<button onclick="saveMyTeamName()" style="padding:9px 16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Save</button>' +
     '</div>' +
     '<div id="teamNameStatus" style="font-size:12px;color:#888;margin-bottom:4px"></div>' +
-    '<div style="font-size:11.5px;color:#999;' + (myTeamClusters.length > 1 ? 'margin-bottom:12px' : '') + '">Shown to teammates and used to tell accounts apart if your email ever has access to more than one roster.</div>' +
+    '<div style="font-size:11.5px;color:#999;margin-bottom:12px">Shown to teammates and used to tell accounts apart if your email ever has access to more than one roster. This does <b>not</b> rename any team you view — see below.</div>' +
+    (canRenameTeam
+      ? '<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Current Team\'s Name</label>' +
+        '<div style="display:flex;gap:8px;margin-bottom:6px">' +
+        '<input id="activeTeamNameInput" value="' + activeTeam.name.replace(/"/g, '&quot;') + '" style="flex:1;padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box">' +
+        '<button onclick="saveActiveTeamName(\'' + activeTeam.id + '\')" style="padding:9px 16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Save</button>' +
+        '</div>' +
+        '<div id="activeTeamNameStatus" style="font-size:12px;color:#888;margin-bottom:4px"></div>' +
+        '<div style="font-size:11.5px;color:#999;margin-bottom:12px">Renames the team itself (shown to everyone with access to it) — you can, since you created it.</div>'
+      : '') +
     (myTeamClusters.length > 1
       ? '<button onclick="window.openTeamSwitcher()" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f5f4f0;font-weight:700;cursor:pointer">👥 Switch Account (' + (activeCluster ? activeCluster.name : '…') + ')</button>'
       : '');
@@ -6680,6 +6710,18 @@ async function saveMyTeamName() {
   try { await saveTeamName(currentUser.uid, name); status.textContent = '✅ Saved'; setTimeout(function () { status.textContent = ''; }, 2500); }
   catch (e) { status.textContent = '❌ ' + e.message; }
 }
+window.saveActiveTeamName = async function (teamId) {
+  var input = document.getElementById('activeTeamNameInput'), status = document.getElementById('activeTeamNameStatus');
+  var name = (input.value || '').trim();
+  if (!name) { status.textContent = 'Enter a name.'; return; }
+  status.textContent = 'Saving…';
+  try {
+    await renameTeam(teamId, name);
+    status.textContent = '✅ Saved';
+    myTeamClusters = myTeamClusters.map(function (cl) { return cl.teamId === teamId ? Object.assign({}, cl, { name: name }) : cl; });
+    setTimeout(function () { status.textContent = ''; renderAccountCard(); }, 900);
+  } catch (e) { status.textContent = '❌ ' + (/permission/i.test(e.message) ? 'Only this team\'s creator can rename it.' : e.message); }
+};
 
 // A brand-new, empty, independently-named roster under this SAME login —
 // distinct from "Add a Viewer" (which shares your EXISTING roster with

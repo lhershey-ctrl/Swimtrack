@@ -237,6 +237,13 @@ export async function createTeam(user, name) {
   await setDoc(ref, team);
   return { id: ref.id, ...team };
 }
+// Renaming an existing team, distinct from saveTeamName above (which
+// renames the CALLER's own coach/account label, not any specific team).
+// Firestore rules already permitted this (team creator, name-field-only
+// diff) — just needed the function + UI. Mirrors swim_tracker.html.
+export async function renameTeam(teamId, name) {
+  await setDoc(doc(db, "teams", teamId), { name }, { merge: true });
+}
 export async function fetchTeam(teamId) {
   const snap = await getDoc(doc(db, "teams", teamId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;

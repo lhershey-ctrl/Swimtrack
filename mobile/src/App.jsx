@@ -11,7 +11,7 @@ import {
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords, fetchMastersTop10,
   migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers, removeViewer,
   fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes, saveTeamName,
-  createTeam, fetchTeam, fetchMyTeams,
+  createTeam, renameTeam, fetchTeam, fetchMyTeams,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords, lookupRecordByCat, isMastersCat,
@@ -1758,6 +1758,51 @@ function TeamNameEditor({ user }) {
   );
 }
 
+// A team the coach is currently VIEWING (teamId) has its OWN name
+// (teams/{id}.name, e.g. "עולם המים מאסטרס") — a completely separate
+// thing from TeamNameEditor above, which renames the coach's own account
+// label, not any specific team. Real gap, reported live: only the coach's
+// own label was ever editable, with no way to rename the actual team.
+// Only the team's creator can (matches firestore.rules), so this only
+// renders for them — null otherwise, same as if it didn't exist.
+function ActiveTeamNameEditor({ user, teamId }) {
+  const { c } = useUI();
+  const [team, setTeam] = useState(null);
+  const [value, setValue] = useState("");
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setTeam(null);
+    if (!teamId) return;
+    fetchTeam(teamId).then((t) => { if (!cancelled) { setTeam(t); setValue((t && t.name) || ""); } });
+    return () => { cancelled = true; };
+  }, [teamId]);
+
+  if (!team || team.createdBy !== user.uid) return null;
+
+  async function save() {
+    const name = value.trim();
+    if (!name) { setStatus("Enter a name."); return; }
+    setStatus("Saving…");
+    try { await renameTeam(teamId, name); setStatus("✅ Saved"); setTimeout(() => setStatus(""), 2500); }
+    catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Only this team's creator can rename it." : e.message)); }
+  }
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Current Team's Name</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input value={value} onChange={(e) => setValue(e.target.value)}
+          style={{ flex: 1, padding: "9px 12px", borderRadius: 10, background: c.card2, color: c.text, border: `1px solid ${c.line}`, fontSize: 14 }} />
+        <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
+      </div>
+      {status && <div style={{ fontSize: 12, color: c.dim, marginTop: 6 }}>{status}</div>}
+      <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>Renames the team itself (shown to everyone with access to it) — you can, since you created it.</div>
+    </div>
+  );
+}
+
 // A brand-new, empty, independently-named roster under this SAME login —
 // distinct from "Add a Viewer" below (which shares your EXISTING roster
 // with someone else's login, not create a new one). Collapsed by default
@@ -1844,6 +1889,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
           {owner && <span style={{ fontSize: 11, fontWeight: 800, color: c.amber, border: `1px solid ${c.amber}`, borderRadius: 999, padding: "3px 9px" }}>OWNER</span>}
         </div>
         <TeamNameEditor user={user} />
+        <ActiveTeamNameEditor user={user} teamId={currentTeamId} />
         {teamClusters.length > 1 && (
           <button onClick={onOpenTeamSwitcher} style={{ marginTop: 10, width: "100%", padding: 11, borderRadius: 12, border: `1px solid ${c.line}`,
             background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>
