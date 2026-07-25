@@ -1534,6 +1534,34 @@ function landingSignIn(){
     </div>
   </details>
 
+  <details class="extract-panel" style="margin-top:10px">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">🥈 European Masters Top-10 (ISR only)</div>
+        <div id="euTop10Status" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published rankings.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
+  <p style="font-size:13px;color:#666;margin-bottom:14px;line-height:1.7">European Aquatics' yearly Top-10 masters rankings. Only Israeli (ISR) entries are kept — the source file covers every country. Each year's official file usually covers both long and short course together, so there's just one slot per year — click to upload.<br><span style="color:#9aa6b5">Source: <a href="https://europeanaquatics.org/sports/masters/records/" target="_blank" rel="noopener" style="color:#185FA5">europeanaquatics.org/sports/masters/records</a>.</span></p>
+    <div id="euTop10Grid"></div>
+    <input type="file" id="euTop10FileInput" accept=".pdf" style="display:none" onchange="euTop10PickPdf(event)">
+    <div id="euTop10UploadCard" style="display:none;margin-top:14px;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fbfcfd">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div id="euTop10UploadLabel" style="font-size:13px;font-weight:700;color:#185FA5"></div>
+        <button type="button" onclick="euTop10CancelSlot()" title="Cancel" style="border:none;background:none;color:#9aa6b5;font-size:15px;cursor:pointer;line-height:1;padding:2px">✕</button>
+      </div>
+      <div id="euTop10UploadFname" style="font-size:12px;color:#9aa6b5;margin-top:4px"></div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
+        <button id="euTop10ReviewBtn" onclick="euTop10Review()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+        <button id="euTop10PublishBtn" onclick="euTop10Publish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+      </div>
+      <div id="euTop10PublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+      <pre id="euTop10Preview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+    </div>
+    </div>
+  </details>
+
 </div>
 
 <script>
@@ -5242,6 +5270,195 @@ function clearRace2(){
 
   renderTop10Grid(); // paint empty grid immediately, before sign-in resolves
 })();
+
+// European Aquatics Masters Top-10 rankings — same review/publish/display
+// shape as the World panel above (they even share window.swimPublishMastersTop10,
+// already generic on `source`), but a genuinely different PDF layout: a
+// 3-column flowing table (each page has 3 side-by-side mini-tables, NOT
+// synchronized to start new events together, so parsing tracks state per
+// COLUMN rather than one flat stream), course (LC/SC) self-declared per
+// event same as year+sex+age+stroke+distance (all in one header string),
+// comma-decimal times ("0:29,27"), and — unlike World — a single official
+// file per year normally contains BOTH courses at once, so the grid here
+// is year-only, not year×course. Some rows have no name at all (redacted
+// in the source PDF, likely GDPR-related) — dropped rather than
+// fabricated, since there's genuinely nothing to attribute them to.
+// Prototype-validated against 5 real files (2022-2025) before porting in.
+(function(){
+  const $=(id)=>document.getElementById(id);
+  const EU_EVT_HDR_RE=/^(\d+)m\s+(free|back|breast|fly|medley)\s+(women|men)\s+(\d+)\+\s+(LC|SC)$/i;
+  const EU_STROKE_NAME={free:"Freestyle",back:"Backstroke",breast:"Breaststroke",fly:"Butterfly",medley:"Medley"};
+  const EU_COUNTRY_RE=/^[A-Z]{3}$/;
+  const EU_TIME_RE=/^\d{1,2}(:\d{2}){0,2},\d{2}$/;
+  const EU_SECTION_TITLE_RE=/^(Long|Short) Course (Women|Men|Mixed|Relays)$/;
+  const parseEuTime=(s)=>{
+    const[main,frac]=s.split(",");
+    const parts=main.split(":");
+    let secs;
+    if(parts.length===1)secs=+parts[0];
+    else if(parts.length===2)secs=(+parts[0])*60+(+parts[1]);
+    else secs=(+parts[0])*3600+(+parts[1])*60+(+parts[2]);
+    return+(secs+(+frac)/100).toFixed(2);
+  };
+  function euColOf(x){if(x<190)return 0;if(x<390)return 1;return 2;}
+
+  async function euParsePdf(buf,year){
+    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const cols=[[],[],[]];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p),tc=await page.getTextContent();
+      const items=tc.items.map((it)=>({str:it.str.trim(),x:it.transform[4],y:it.transform[5]})).filter((it)=>it.str);
+      items.sort((a,b)=>b.y-a.y||a.x-b.x);
+      items.forEach((it)=>{
+        if(EU_SECTION_TITLE_RE.test(it.str)){cols[0].push(it.str);cols[1].push(it.str);cols[2].push(it.str);}
+        else cols[euColOf(it.x)].push(it.str);
+      });
+    }
+    const entries=[];
+    for(const toks of cols){
+      let currentEvent=null,rowIdx=0,i=0;
+      while(i<toks.length){
+        const t=toks[i];
+        if(EU_SECTION_TITLE_RE.test(t)){currentEvent=null;i++;continue;}
+        const hdrM=t.match(EU_EVT_HDR_RE);
+        if(hdrM){
+          const[,dist,strokeWord,sexWord,age,course]=hdrM;
+          currentEvent={course:course.toUpperCase(),sex:sexWord.toLowerCase()==="women"?"F":"M",ageGroup:age+"+",event:dist+"m "+EU_STROKE_NAME[strokeWord.toLowerCase()]};
+          rowIdx=0;i++;continue;
+        }
+        if(!currentEvent){i++;continue;}
+        // A row is (name, country, time). Some rows have no name at all
+        // (redacted in the source) — the guard on t itself (must not look
+        // like a country/time) stops a stray leftover time value from a
+        // name-less row being wrongly read as the NEXT row's name.
+        if(!EU_COUNTRY_RE.test(t)&&!EU_TIME_RE.test(t)&&EU_COUNTRY_RE.test(toks[i+1]||"")&&EU_TIME_RE.test(toks[i+2]||"")){
+          rowIdx++;
+          const country=toks[i+1],timeStr=toks[i+2];
+          if(country==="ISR"){
+            entries.push({source:"europe",year,course:currentEvent.course,sex:currentEvent.sex,ageGroup:currentEvent.ageGroup,event:currentEvent.event,rank:rowIdx,time:timeStr.replace(",","."),seconds:parseEuTime(timeStr),name:t});
+          }
+          i+=3;continue;
+        }
+        i++;
+      }
+    }
+    if(!entries.length)throw new Error("0 ISR entries found — wrong file, or genuinely no ISR swimmers in the top 10 this year?");
+    return{entries};
+  }
+
+  let euParsedEntries=null,euParsedYear=null,euMergedEntries=null,euPendingYear=null;
+  const EU_START_YEAR=2021;
+
+  function euYearRange(){
+    const years=[];for(let y=EU_START_YEAR;y<=new Date().getFullYear();y++)years.push(y);
+    (window.__mastersTop10Entries||[]).forEach((e)=>{if(e.source==="europe"&&!years.includes(e.year))years.push(e.year);});
+    return years.sort((a,b)=>a-b);
+  }
+  function euRenderTop10Grid(){
+    const grid=$("euTop10Grid");if(!grid)return;
+    const byYear={};
+    (window.__mastersTop10Entries||[]).filter((e)=>e.source==="europe").forEach((e)=>{(byYear[e.year]=byYear[e.year]||[]).push(e);});
+    const years=euYearRange();
+    const chips=years.map((y)=>{
+      const list=byYear[y];
+      const active=euPendingYear===y?" top10-chip-active":"";
+      const id="euTop10Chip-"+y;
+      if(list)return'<button type="button" id="'+id+'" class="top10-chip top10-chip-done'+active+'" onclick="euTop10OpenSlot('+y+')" title="'+list.length+' ISR entries published — click to replace"><span class="top10-chip-year">'+y+'</span><span class="top10-chip-meta">✓ '+list.length+'</span></button>';
+      return'<button type="button" id="'+id+'" class="top10-chip top10-chip-empty'+active+'" onclick="euTop10OpenSlot('+y+')" title="Upload '+y+'"><span class="top10-chip-year">'+y+'</span><span class="top10-chip-meta">+ upload</span></button>';
+    }).join("");
+    grid.innerHTML='<div class="top10-row"><div class="top10-row-chips">'+chips+'</div></div>';
+  }
+  window.swimRenderEuTop10Grid=euRenderTop10Grid;
+
+  window.euTop10OpenSlot=function(year){
+    euPendingYear=year;euParsedEntries=null;euMergedEntries=null;euParsedYear=null;
+    euRenderTop10Grid();
+    const card=$("euTop10UploadCard"),lbl=$("euTop10UploadLabel"),fn=$("euTop10UploadFname");
+    const list=(window.__mastersTop10Entries||[]).filter((e)=>e.source==="europe"&&e.year===year);
+    if(card)card.style.display="";
+    if(lbl)lbl.textContent="🥈 European Masters Top-10 "+year;
+    if(fn){fn.textContent=list.length?"Currently "+list.length+" ISR entries published for this year — choose a file to replace them.":"No file chosen yet.";fn.style.color="#9aa6b5";}
+    const rb=$("euTop10ReviewBtn"),pv=$("euTop10Preview"),st=$("euTop10PublishStatus"),pubBtn=$("euTop10PublishBtn");
+    if(rb){rb.disabled=true;rb.style.opacity=".5";}
+    if(pubBtn){pubBtn.disabled=true;pubBtn.style.opacity=".5";pubBtn.textContent="☁ Upload changes to Cloud";}
+    if(pv)pv.style.display="none";
+    if(st)st.textContent="";
+    card&&card.scrollIntoView({behavior:"smooth",block:"nearest"});
+    $("euTop10FileInput").click();
+  };
+
+  window.euTop10CancelSlot=function(){
+    euPendingYear=null;euParsedEntries=null;euMergedEntries=null;euParsedYear=null;
+    const card=$("euTop10UploadCard");if(card)card.style.display="none";
+    euRenderTop10Grid();
+  };
+
+  window.euTop10PickPdf=async function(e){
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    const fn=$("euTop10UploadFname");
+    if(!euPendingYear){e.target.value="";return;}
+    if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
+    try{
+      const{entries}=await euParsePdf(await f.arrayBuffer(),euPendingYear);
+      euParsedEntries=entries;euParsedYear=euPendingYear;
+      const courses=Array.from(new Set(entries.map((x)=>x.course))).join("/");
+      if(fn){fn.innerHTML="✓ <strong>"+entries.length+"</strong> ISR entries ("+courses+") — "+f.name;fn.style.color="#1a7a4f";}
+    }catch(err){
+      euParsedEntries=null;euParsedYear=null;
+      if(fn){fn.textContent="⚠ "+err.message;fn.style.color="#c0392b";}
+    }
+    const rb=$("euTop10ReviewBtn");if(rb){rb.disabled=!euParsedEntries;rb.style.opacity=euParsedEntries?"1":".5";}
+    e.target.value="";
+  };
+
+  window.euTop10Review=async function(){
+    const st=$("euTop10PublishStatus"),pv=$("euTop10Preview"),pubBtn=$("euTop10PublishBtn");
+    if(!euParsedEntries){if(st){st.style.color="#c0392b";st.textContent="Parse a PDF first.";}return;}
+    if(st){st.style.color="#666";st.textContent="Signing in / reading current cloud data…";}
+    if(!(await window.swimEnsureSignIn())){if(st){st.style.color="#c0392b";st.textContent="Sign-in needed to compare with the cloud.";}return;}
+    try{
+      const cloud=await window.swimFetchMastersTop10();
+      const parsedCourses=new Set(euParsedEntries.map((e)=>e.course));
+      const existingThisYear=((cloud&&cloud.entries)||[]).filter((e)=>e.year===euParsedYear&&e.source==="europe"&&parsedCourses.has(e.course));
+      const key=(e)=>e.course+"|"+e.sex+"|"+e.ageGroup+"|"+e.event+"|"+e.name;
+      const existingMap={};existingThisYear.forEach((e)=>{existingMap[key(e)]=e;});
+      let added=0,changed=0;const changeLines=[];const newMap={};
+      euParsedEntries.forEach((e)=>{
+        const k=key(e);newMap[k]=true;
+        const old=existingMap[k];
+        const label=e.event+" ("+e.ageGroup+" "+(e.sex==="F"?"W":"M")+")";
+        if(!old){added++;changeLines.push("➕ "+label+" — #"+e.rank+" "+e.name+" "+e.time);}
+        else if(old.rank!==e.rank||old.time!==e.time){changed++;changeLines.push("✎ "+label+" — "+e.name+" now #"+e.rank+" "+e.time+" (was #"+old.rank+" "+old.time+")");}
+      });
+      const removed=existingThisYear.filter((e)=>!newMap[key(e)]);
+      removed.forEach((e)=>changeLines.push("➖ "+e.event+" ("+e.ageGroup+" "+(e.sex==="F"?"W":"M")+") — "+e.name+" no longer in top 10"));
+      euMergedEntries=euParsedEntries;
+      const total=added+changed+removed.length;
+      const body=total?("Changes for "+euParsedYear+": "+added+" new, "+changed+" updated, "+removed.length+" dropped.\n\n"+changeLines.join("\n")):("No changes — "+euParsedYear+" already matches the cloud.");
+      if(pv){pv.style.display="";pv.textContent=body;}
+      if(pubBtn){pubBtn.disabled=!total;pubBtn.style.opacity=total?"1":".5";pubBtn.textContent="☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud";}
+      if(st){st.style.color=total?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):"Nothing to upload — already up to date.";}
+    }catch(err){if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Not allowed — your email isn't on the access list.":"Compare failed: "+err.message;}}
+  };
+
+  window.euTop10Publish=async function(){
+    const st=$("euTop10PublishStatus");
+    if(!euMergedEntries||!euParsedYear){if(st){st.style.color="#c0392b";st.textContent="Click “Review changes vs cloud” first.";}return;}
+    if(st){st.style.color="#666";st.textContent="Uploading…";}
+    try{
+      await window.swimPublishMastersTop10(euMergedEntries,euParsedYear,"europe");
+      if(st){st.style.color="#1a7a4f";st.textContent="✅ Uploaded "+euParsedYear+".";}
+      euParsedEntries=null;euMergedEntries=null;euParsedYear=null;
+      const rb=$("euTop10ReviewBtn");if(rb){rb.disabled=true;rb.style.opacity=".5";}
+      if(window.swimRefreshMastersTop10Status)window.swimRefreshMastersTop10Status();
+    }catch(err){if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish rankings.":"Upload failed: "+err.message;}}
+  };
+
+  euRenderTop10Grid();
+})();
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -5851,20 +6068,40 @@ window.swimPublishMastersTop10 = async (yearEntries, year, source) => {
   });
 };
 async function refreshMastersTop10Status() {
-  const el = $("top10Status");
-  if (!currentUser) { if (el) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published rankings."; } return; }
+  const el = $("top10Status"), euEl = $("euTop10Status");
+  if (!currentUser) {
+    if (el) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published rankings."; }
+    if (euEl) { euEl.style.color = "#666"; euEl.textContent = "Sign in (Analyze tab) to see the currently published rankings."; }
+    return;
+  }
   try {
     const d = await window.swimFetchMastersTop10();
     window.__mastersTop10Entries = d && d.entries ? d.entries : [];
     if (window.buildIntlRankings && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildIntlRankings();
     if (window.swimRenderTop10Grid) window.swimRenderTop10Grid();
-    if (!el) return;
-    if (!d || !d.entries.length) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No rankings published yet — upload a year's PDF below."; return; }
-    const worldYears = Array.from(new Set(d.entries.filter((e) => e.source === "world").map((e) => e.year))).sort();
-    const euYears = Array.from(new Set(d.entries.filter((e) => e.source === "europe").map((e) => e.year))).sort();
-    el.style.color = "#1a7a4f";
-    el.innerHTML = "<strong>" + d.entries.length + "</strong> ISR entries published — World: " + (worldYears.join(", ") || "none") + " · Europe: " + (euYears.join(", ") || "none");
-  } catch (e) { if (el) { el.style.color = "#c0392b"; el.textContent = "Failed to load: " + e.message; } }
+    if (window.swimRenderEuTop10Grid) window.swimRenderEuTop10Grid();
+    const worldEntries = (d && d.entries ? d.entries : []).filter((e) => e.source === "world");
+    const euEntries = (d && d.entries ? d.entries : []).filter((e) => e.source === "europe");
+    if (el) {
+      if (!worldEntries.length) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No rankings published yet — upload a year's PDF below."; }
+      else {
+        const worldYears = Array.from(new Set(worldEntries.map((e) => e.year))).sort();
+        el.style.color = "#1a7a4f";
+        el.innerHTML = "<strong>" + worldEntries.length + "</strong> ISR entries published — World: " + worldYears.join(", ");
+      }
+    }
+    if (euEl) {
+      if (!euEntries.length) { euEl.style.color = "#9a6b00"; euEl.innerHTML = "⚠ No rankings published yet — upload a year's PDF below."; }
+      else {
+        const euYears = Array.from(new Set(euEntries.map((e) => e.year))).sort();
+        euEl.style.color = "#1a7a4f";
+        euEl.innerHTML = "<strong>" + euEntries.length + "</strong> ISR entries published — Europe: " + euYears.join(", ");
+      }
+    }
+  } catch (e) {
+    if (el) { el.style.color = "#c0392b"; el.textContent = "Failed to load: " + e.message; }
+    if (euEl) { euEl.style.color = "#c0392b"; euEl.textContent = "Failed to load: " + e.message; }
+  }
 }
 async function refreshMastersRecordsStatus() {
   const el = $("wrStatus");
