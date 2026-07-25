@@ -2856,6 +2856,26 @@ function AdminStatsPanel({ owner }) {
         ))}
       </Card>
 
+      <div style={s.h2}>Performance Split</div>
+      {teams.map((team) => {
+        const teamRoster = team.swimmers.map((sw) => ({ swimmer: sw, D: sw.seasons || {} }));
+        return <PerfSplitTable key={team.members[0].uid} title={team.name} rows={perfSplitRows(teamRoster, usaTable, rudTable, mastersTable)} c={c} />;
+      })}
+
+      <div style={s.h2}>Least Recently Synced</div>
+      <Card style={{ padding: 6 }}>
+        {stalest.map((sw, i) => (
+          <div key={sw.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "9px 10px", borderBottom: i < stalest.length - 1 ? `1px solid ${c.line}` : "none" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{sw.name}</span>
+            <span style={{ fontSize: 11.5, color: c.dim }}>{relTime(sw.updatedAt)}</span>
+          </div>
+        ))}
+      </Card>
+
+      {/* Rendered right before InviteCodeManager (the generator) in the parent
+          tree — kept adjacent since they're the same feature: generate a
+          code here, see it listed there. */}
       <div style={s.h2}>Invite Codes</div>
       <Card style={{ padding: 6 }}>
         {codes.length === 0 ? <div style={{ color: c.dim, padding: 10, fontSize: 13 }}>None generated yet.</div> : (
@@ -2872,23 +2892,6 @@ function AdminStatsPanel({ owner }) {
             </div>
           ))
         )}
-      </Card>
-
-      <div style={s.h2}>Performance Split</div>
-      {teams.map((team) => {
-        const teamRoster = team.swimmers.map((sw) => ({ swimmer: sw, D: sw.seasons || {} }));
-        return <PerfSplitTable key={team.members[0].uid} title={team.name} rows={perfSplitRows(teamRoster, usaTable, rudTable, mastersTable)} c={c} />;
-      })}
-
-      <div style={s.h2}>Least Recently Synced</div>
-      <Card style={{ padding: 6 }}>
-        {stalest.map((sw, i) => (
-          <div key={sw.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "9px 10px", borderBottom: i < stalest.length - 1 ? `1px solid ${c.line}` : "none" }}>
-            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{sw.name}</span>
-            <span style={{ fontSize: 11.5, color: c.dim }}>{relTime(sw.updatedAt)}</span>
-          </div>
-        ))}
       </Card>
     </>
   );

@@ -224,10 +224,10 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
    "Print → Save as PDF" produces just the report. ── */
 #pdfReportRoot{position:fixed;top:0;left:-10000px;width:820px;background:#fff}
 .rpt-page{background:#fff;padding:10px 4px 30px}
-.rpt-topline{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}
+.rpt-topline{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
 .rpt-brand{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--blue)}
 .rpt-date{font-size:11px;color:var(--gray-500)}
-.rpt-header{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,var(--blue-dark) 0%,var(--blue) 55%,#1a7ac4 100%);border-radius:14px;padding:18px 22px;color:#fff;margin-bottom:22px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rpt-header{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,var(--blue-dark) 0%,var(--blue) 55%,#1a7ac4 100%);border-radius:14px;padding:12px 18px;color:#fff;margin-bottom:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rpt-ico{font-size:28px}
 .rpt-name{font-size:21px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
 .rpt-meta{font-size:11.5px;opacity:.8;margin-top:4px}
@@ -236,13 +236,13 @@ details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:
 .rpt-kpi .v{font-size:18px;font-weight:800}
 .rpt-kpi .k{font-size:8.5px;opacity:.75;text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
 .rpt-kpi.hi .v{color:#ffe9a8}
-.rpt-section{margin-bottom:20px}
-.rpt-h2{font-size:10px;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid var(--blue-light)}
-.rpt-evt-card{border:1px solid var(--gray-200);border-radius:12px;padding:14px 16px;margin-bottom:14px;break-inside:avoid}
-.rpt-evt-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
-.rpt-evt-title{font-size:13px;font-weight:700}
-.rpt-evt-sub{font-size:11px;color:var(--gray-500)}
-.rpt-evt-body{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;align-items:start}
+.rpt-section{margin-bottom:10px}
+.rpt-h2{font-size:10px;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px;padding-bottom:5px;border-bottom:2px solid var(--blue-light)}
+.rpt-evt-card{border:1px solid var(--gray-200);border-radius:11px;padding:7px 12px;margin-bottom:7px;break-inside:avoid}
+.rpt-evt-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.rpt-evt-title{font-size:12.5px;font-weight:700}
+.rpt-evt-sub{font-size:10px;color:var(--gray-500)}
+.rpt-evt-body{display:grid;grid-template-columns:1.5fr 1fr;gap:10px;align-items:start}
 .rpt-two-col{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 table.rpt-table{width:100%;border-collapse:collapse;font-size:11px}
 table.rpt-table th{text-align:left;padding:6px 7px;font-size:9px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.03em;border-bottom:1.5px solid var(--gray-200)}
@@ -265,7 +265,7 @@ table.rpt-table tr:last-child td{border-bottom:none}
 .rpt-callout .ico{font-size:15px;margin-bottom:5px}
 .rpt-callout .t{font-size:11.5px;font-weight:700;margin-bottom:2px}
 .rpt-callout .s{font-size:10px;color:var(--gray-500);line-height:1.4}
-.rpt-footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--gray-200);display:flex;justify-content:space-between;font-size:9px;color:var(--gray-500)}
+.rpt-footer{margin-top:10px;padding-top:8px;border-top:1px solid var(--gray-200);display:flex;justify-content:space-between;font-size:9px;color:var(--gray-500)}
 @media print{
   @page{margin:12mm}
   body>*:not(#pdfReportRoot){display:none!important}
@@ -358,6 +358,7 @@ function landingSignIn(){
   <button class="tab-btn" onclick="switchTab('team')" id="t-team"><span class="tn">👥</span>Team</button>
   <button class="tab-btn" onclick="switchTab('settings')" id="t-settings"><span class="tn">⚙</span>Settings</button>
   <button class="tab-btn" onclick="switchTab('admin')" id="t-admin" style="display:none"><span class="tn">🔑</span>Admin</button>
+  <span id="topbarTeamName" style="margin-left:auto;padding-right:6px;font-size:11px;font-weight:600;color:rgba(255,255,255,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
 </div>
 
 <!-- ══════════ TAB 1 · EXTRACTOR ══════════ -->
@@ -1344,8 +1345,6 @@ function landingSignIn(){
   <div class="section-title">📊 Stats</div>
   <div class="metrics" id="adminMetrics" style="margin-bottom:20px"></div>
   <div id="adminCoachesCard" class="card" style="padding:6px;margin-bottom:20px"></div>
-  <div class="section-title">🎟 Invite Codes</div>
-  <div id="adminCodesCard" class="card" style="padding:6px;margin-bottom:24px"></div>
   <div class="section-title">📊 Performance Split (all coaches)</div>
   <div id="adminPerf" style="margin-bottom:20px"></div>
   <div class="section-title">🩺 Least Recently Synced</div>
@@ -1353,12 +1352,14 @@ function landingSignIn(){
 
   <div class="section-title">🔑 Invite a Coach</div>
   <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time invite code for a new coach. They sign in with Google, then enter this code to activate their account — after that, just Google sign-in like everyone else. Each code works once.</p>
-  <div class="card" style="padding:16px 20px;margin-bottom:24px">
+  <div class="card" style="padding:16px 20px;margin-bottom:20px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input id="inviteNote" placeholder="Note (e.g. coach's name) — optional" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #e8e6e0;border-radius:8px;font-size:13px;font-family:inherit">
       <span id="inviteActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></span>
     </div>
   </div>
+  <div class="section-title">🎟 Invite Codes</div>
+  <div id="adminCodesCard" class="card" style="padding:6px;margin-bottom:24px"></div>
 
   <div class="section-title" style="display:flex;align-items:center;gap:8px">
     ③ Israeli Age Records
@@ -3292,9 +3293,11 @@ function makeEvChart(canvasId,sc25,lc50,noAnim){
     _cvs.parentElement.innerHTML='<p style="color:#a32;font-size:10px;padding:8px">⚠ Chart error: '+e.message+'</p>';}
 }
 
-function makeEvTable(results){
+function makeEvTable(results,maxRows){
   if(!results.length)return'<p style="color:#aaa;font-size:12px;padding:10px 0">No results for this filter.</p>';
   var sorted=results.slice().sort(function(a,b){return(parseDate(b.date)||0)-(parseDate(a.date)||0);});
+  var extra=0;
+  if(maxRows&&sorted.length>maxRows){extra=sorted.length-maxRows;sorted=sorted.slice(0,maxRows);}
   var h='<table style="width:100%;border-collapse:collapse;font-size:11px">';
   h+='<tr style="border-bottom:1px solid #eee">'+
     '<th style="padding:5px 6px;color:#999;text-align:left;white-space:nowrap">Date</th>'+
@@ -3311,6 +3314,7 @@ function makeEvTable(results){
       '<td style="padding:4px 6px;text-align:right">'+pBadge(r.points)+'</td></tr>';
   });
   h+='</table>';
+  if(extra>0)h+='<div style="font-size:9.5px;color:#aaa;padding:4px 6px">+'+extra+' more this season</div>';
   return h;
 }
 
@@ -6660,7 +6664,7 @@ window.closeTeamGate = closeTeamGate;
 // this coach's email spans multiple rosters) a Switch Account button.
 async function renderAccountCard() {
   var el = document.getElementById('accountCard'); if (!el) return;
-  if (!currentUser) { el.innerHTML = 'Sign in (Analyze tab) to edit your account.'; return; }
+  if (!currentUser) { el.innerHTML = 'Sign in (Analyze tab) to edit your account.'; renderTopbarTeamName(null); return; }
   var coach = await fetchCoach(currentUser.uid).catch(function () { return null; });
   var teamName = (coach && coach.teamName) || defaultTeamName(currentUser.email);
   var activeCluster = myTeamClusters.filter(function (c) { return c.key === selectedTeamKey; })[0];
@@ -6701,6 +6705,15 @@ async function renderAccountCard() {
     (myTeamClusters.length > 1
       ? '<button onclick="window.openTeamSwitcher()" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f5f4f0;font-weight:700;cursor:pointer">👥 Switch Account (' + (activeCluster ? activeCluster.name : '…') + ')</button>'
       : '');
+  renderTopbarTeamName(activeTeam ? activeTeam.name : teamName);
+}
+// Small-font "which team am I looking at" label in the top nav bar (Extract/
+// Analyze/Team/Settings/Admin) — reuses whatever renderAccountCard already
+// resolved (explicit team's own name, or the coach's personal label as a
+// fallback for the legacy/no-explicit-team case) instead of re-fetching.
+function renderTopbarTeamName(name) {
+  var el = document.getElementById('topbarTeamName'); if (!el) return;
+  el.textContent = name || '';
 }
 async function saveMyTeamName() {
   var input = document.getElementById('teamNameInput'), status = document.getElementById('teamNameStatus');
@@ -7013,53 +7026,45 @@ function buildPdfReport() {
   var pb = _reportPbCounts();
   var totalSwims = allResults().length;
 
-  // ── Event pages: header + progress in main events (same chart/table as ①).
-  // Split 2-per-page rather than cramming all 4 onto one sheet — a swimmer
-  // with several current-season meets can make a card tall enough that all 4
-  // no longer fit one printed page, and letting that overflow naturally spill
-  // left a near-empty page between page 1 and the summary page. Splitting
-  // explicitly means pagination is always clean, regardless of table length. ──
+  // ── Event page: header + progress in main events (same chart/table as ①).
+  // Always exactly 4 cards on page 1 — the previous version split 2-per-page
+  // because a busy swimmer's per-event RESULTS TABLE (unbounded — one row
+  // per meet swum this season) could make a card too tall to fit, spilling a
+  // near-empty page. Bounded that directly instead: each card's table caps
+  // at EVENT_TABLE_MAX_ROWS (chart stays full-history, uncapped, since it's a
+  // fixed-height canvas regardless of point count), plus tighter card/canvas
+  // sizing. Verified against a synthetic 10-meet-per-event "busy" swimmer
+  // that all 4 cards + header/footer still fit one printed page. ──
   var topEvents = _reportTopEvents(4);
-  var EVENTS_PER_PAGE = 2;
-  var eventChunks = [];
-  for (var ci = 0; ci < topEvents.length; ci += EVENTS_PER_PAGE) eventChunks.push(topEvents.slice(ci, ci + EVENTS_PER_PAGE));
-  if (!eventChunks.length) eventChunks = [[]];
-  var totalPages = eventChunks.length + 1; // + the top-10/heatmap/callouts summary page
+  var EVENT_TABLE_MAX_ROWS = 4;
+  var totalPages = 2; // event page + the top-10/heatmap/callouts summary page — always exactly 2
 
-  var eventPagesHtml = eventChunks.map(function (chunk, pageIdx) {
-    var cardsHtml = chunk.map(function (ev) {
-      var i = topEvents.indexOf(ev); // global index — canvas/table ids below key off the full topEvents list
-      return '<div class="rpt-evt-card">'
-        + '<div class="rpt-evt-head"><span class="rpt-evt-title">' + ev + '</span><span id="rpt-evt-sub-' + i + '" class="rpt-evt-sub"></span></div>'
-        + '<div class="rpt-evt-body">'
-        + '<div style="height:190px;position:relative"><canvas id="rpt-evc-' + i + '"></canvas></div>'
-        + '<div id="rpt-evt-' + i + '"></div>'
-        + '</div></div>';
-    }).join('');
-    var headerHtml = pageIdx === 0
-      ? ('<div class="rpt-header">'
-        + '<div class="rpt-ico">🏊‍♀️</div>'
-        + '<div><div class="rpt-name">' + sw.name + '</div>'
-        + '<div class="rpt-meta">Player ID ' + sw.id + (age != null ? ' · Age ' + age : '') + (groupLabel ? ' · ' + groupLabel : '') + ' · ' + ss.length + ' season' + (ss.length !== 1 ? 's' : '') + ' tracked</div></div>'
-        + '<div class="rpt-kpis">'
-        + '<div class="rpt-kpi"><div class="v">' + totalSwims + '</div><div class="k">Total Swims</div></div>'
-        + '<div class="rpt-kpi"><div class="v">' + pb.total + '</div><div class="k">Personal Bests</div></div>'
-        + '<div class="rpt-kpi hi"><div class="v">' + pb.thisSeason + '</div><div class="k">PBs This Season</div></div>'
-        + '</div>'
-        + '</div>')
-      : '';
-    var dateHtml = pageIdx === 0
-      ? 'Generated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-      : sw.name + ' — continued';
-    return '<div class="rpt-page">'
-      + '<div class="rpt-topline"><div class="rpt-brand">🏊‍♀️ SwimTrack</div><div class="rpt-date">' + dateHtml + '</div></div>'
-      + headerHtml
-      + '<div class="rpt-section"><div class="rpt-h2">Progress in Main Events' + (eventChunks.length > 1 ? ' (' + (pageIdx + 1) + '/' + eventChunks.length + ')' : '') + '</div>'
-      + (cardsHtml || '<p style="color:#aaa;font-size:12px">No results yet.</p>')
-      + '</div>'
-      + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page ' + (pageIdx + 1) + ' of ' + totalPages + '</span></div>'
-      + '</div>';
+  var cardsHtml = topEvents.map(function (ev, i) {
+    return '<div class="rpt-evt-card">'
+      + '<div class="rpt-evt-head"><span class="rpt-evt-title">' + ev + '</span><span id="rpt-evt-sub-' + i + '" class="rpt-evt-sub"></span></div>'
+      + '<div class="rpt-evt-body">'
+      + '<div style="height:120px;position:relative"><canvas id="rpt-evc-' + i + '"></canvas></div>'
+      + '<div id="rpt-evt-' + i + '"></div>'
+      + '</div></div>';
   }).join('');
+  var eventPagesHtml =
+    '<div class="rpt-page">'
+    + '<div class="rpt-topline"><div class="rpt-brand">🏊‍♀️ SwimTrack</div><div class="rpt-date">Generated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + '</div></div>'
+    + '<div class="rpt-header">'
+    + '<div class="rpt-ico">🏊‍♀️</div>'
+    + '<div><div class="rpt-name">' + sw.name + '</div>'
+    + '<div class="rpt-meta">Player ID ' + sw.id + (age != null ? ' · Age ' + age : '') + (groupLabel ? ' · ' + groupLabel : '') + ' · ' + ss.length + ' season' + (ss.length !== 1 ? 's' : '') + ' tracked</div></div>'
+    + '<div class="rpt-kpis">'
+    + '<div class="rpt-kpi"><div class="v">' + totalSwims + '</div><div class="k">Total Swims</div></div>'
+    + '<div class="rpt-kpi"><div class="v">' + pb.total + '</div><div class="k">Personal Bests</div></div>'
+    + '<div class="rpt-kpi hi"><div class="v">' + pb.thisSeason + '</div><div class="k">PBs This Season</div></div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="rpt-section"><div class="rpt-h2">Progress in Main Events</div>'
+    + (cardsHtml || '<p style="color:#aaa;font-size:12px">No results yet.</p>')
+    + '</div>'
+    + '<div class="rpt-footer"><span>SwimTrack · swimtrack-e12c8.web.app</span><span>Page 1 of ' + totalPages + '</span></div>'
+    + '</div>';
 
   // ── Page 2: top-10 tables + heat map + callouts ──
   var bestRows = _reportBestPerformances(10);
@@ -7180,7 +7185,7 @@ function buildPdfReport() {
     sc25.sort(function (a, b) { return a.x - b.x; }); lc50.sort(function (a, b) { return a.x - b.x; });
     makeEvChart('rpt-evc-' + i, sc25, lc50, true); // noAnim — printing captures whatever's painted at print() time
     var tblRes = curSeason ? evRes.filter(function (r) { return r.season === curSeason; }) : evRes;
-    var tblEl = document.getElementById('rpt-evt-' + i); if (tblEl) tblEl.innerHTML = makeEvTable(tblRes);
+    var tblEl = document.getElementById('rpt-evt-' + i); if (tblEl) tblEl.innerHTML = makeEvTable(tblRes, EVENT_TABLE_MAX_ROWS);
     var all = evRes.filter(function (r) { return parseDate(r.date); }).sort(function (a, b) { return parseDate(a.date) - parseDate(b.date); });
     var subEl = document.getElementById('rpt-evt-sub-' + i);
     if (subEl && all.length >= 2) {
