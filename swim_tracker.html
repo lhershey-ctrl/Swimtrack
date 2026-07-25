@@ -581,6 +581,27 @@ function landingSignIn(){
             +'</div>'
           +'</div>'
 
+          // Name in records — a swimmer sometimes holds an age-group record
+          // set at a meet outside LogLig entirely (e.g. an international
+          // masters competition); this field is how buildRecords() knows to
+          // flag "you hold it" even with no matching LogLig row. Desktop
+          // could only ever READ this (from the cloud profile) until now —
+          // editing lived on mobile only. Same field, same meaning.
+          +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">'
+            +'<div style="flex:1;min-width:220px">'
+              +'<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Name in Records (Hebrew, optional)</label>'
+              +'<input id="set-recname-'+i+'" value="'+(sw.recordName||'')+'" dir="rtl" placeholder="e.g. הר שי לירון — to flag records they hold" '
+                +'oninput="var _s=window.getAllSwimmers()['+i+'];_s&&(_s.recordName=this.value)" '
+                +'style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'
+            +'</div>'
+            +'<div style="flex:1;min-width:220px">'
+              +'<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Name in Int\'l Rankings (Latin, optional)</label>'
+              +'<input id="set-intlname-'+i+'" value="'+(sw.intlName||'')+'" placeholder="e.g. HAR-SHAI Liron — to match European/World masters rankings" '
+                +'oninput="var _s=window.getAllSwimmers()['+i+'];_s&&(_s.intlName=this.value)" '
+                +'style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'
+            +'</div>'
+          +'</div>'
+
           // Seasons section — auto-detected from whatever's actually been
           // loaded/uploaded (see mergeRaw's autoAddSeasonId call); no manual
           // "+ Add" step needed. A tag can still be removed if wrong.
@@ -707,6 +728,8 @@ function landingSignIn(){
       weights:(profile&&Array.isArray(profile.weights))?profile.weights:[],
       birthdate:(profile&&profile.birthdate)||'',
       sex:(profile&&profile.sex)||'',
+      recordName:(profile&&profile.recordName)||'',
+      intlName:(profile&&profile.intlName)||'',
       _autoImported:true // added by a cloud sync, not typed in by hand — see pruneAutoImportedSwimmers
     });
     saveSettings();
@@ -759,6 +782,8 @@ function landingSignIn(){
         if(Array.isArray(profile.seasonIds)&&profile.seasonIds.length)sw.seasonIds=profile.seasonIds;
         if(profile.birthdate)sw.birthdate=profile.birthdate;
         if(profile.sex)sw.sex=profile.sex;
+        if(profile.recordName)sw.recordName=profile.recordName;
+        if(profile.intlName)sw.intlName=profile.intlName;
         saveSettings();
         if(typeof renderSettingsUI==='function')renderSettingsUI();
         if(typeof renderPhysStats==='function')renderPhysStats();
@@ -898,6 +923,8 @@ function landingSignIn(){
       if(!name||!id){alert('Please fill in name and ID for all swimmers.');ok=false;return;}
       sw.name=name;sw.id=id;
       var bdEl=document.getElementById('set-bd-'+i);if(bdEl)sw.birthdate=(bdEl.value||'').trim();
+      var recNameEl=document.getElementById('set-recname-'+i);if(recNameEl)sw.recordName=(recNameEl.value||'').trim();
+      var intlNameEl=document.getElementById('set-intlname-'+i);if(intlNameEl)sw.intlName=(intlNameEl.value||'').trim();
     });
     if(!ok)return;
     saveSettings();
@@ -1026,6 +1053,14 @@ function landingSignIn(){
     <div class="tbl-card">
       <table><thead><tr><th>🏊 50m Pool</th><th>Best</th><th>Pts</th><th>Season</th><th>Age-group Record</th><th>You vs Record</th></tr></thead>
       <tbody id="rec50"></tbody></table>
+    </div>
+
+    <!-- ③b INTERNATIONAL RANKINGS (World Aquatics Masters Top-10, ISR only) -->
+    <div class="section-title" id="intlRankSection" style="display:none">③b International Rankings</div>
+    <div id="intlRankHint" style="font-size:12px;color:#888;margin-bottom:10px"></div>
+    <div class="tbl-card" id="intlRankCard" style="display:none">
+      <table><thead><tr><th>Source</th><th>Event</th><th>Age Group</th><th>Year</th><th>Rank</th><th>Time</th></tr></thead>
+      <tbody id="intlRankBody"></tbody></table>
     </div>
 
     <!-- ④ 25m vs 50m ANALYSIS ───────────── -->
@@ -1448,6 +1483,40 @@ function landingSignIn(){
     </div>
     <div id="wrPublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
     <pre id="wrPreview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+    </div>
+  </details>
+
+  <div class="section-title" style="margin-top:20px">
+    ⑦ Masters Top-10 Rankings
+    <button onclick="top10ShowInfo()" title="What is this?" style="width:26px;height:26px;border-radius:999px;border:1px solid #c9d3df;background:#fff;color:#666;font-size:15px;font-weight:800;line-height:24px;padding:0;cursor:pointer">?</button>
+  </div>
+  <details class="extract-panel">
+    <summary>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#185FA5">🥇 World Masters Top-10 (ISR only)</div>
+        <div id="top10Status" style="font-size:12px;margin-top:3px;color:#666">Sign in (Analyze tab) to see the currently published rankings.</div>
+      </div>
+      <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
+    </summary>
+    <div class="extract-body">
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">World Aquatics' yearly Top-10 masters rankings (long course). Only Israeli (ISR) entries are kept — the source file covers every country. Upload one year at a time; re-uploading a year you've already published replaces just that year, other years stay untouched.<br><span style="color:#9aa6b5">Source: <a href="https://www.worldaquatics.com/masters/top-10/lcm-2030-2021" target="_blank" rel="noopener" style="color:#185FA5">worldaquatics.com/masters/top-10</a>.</span></p>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Year</label>
+        <input id="top10Year" type="number" placeholder="2025" style="width:90px;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;box-sizing:border-box">
+      </div>
+      <label id="top10Slot" class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;flex:1;min-width:230px">
+        <span style="font-size:13px;font-weight:700;color:#185FA5">🥇 Long course (LCM) PDF</span>
+        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen — enter the year first</span>
+        <input type="file" accept=".pdf" style="display:none" onchange="top10PickPdf(event)">
+      </label>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button id="top10ReviewBtn" onclick="top10Review()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+      <button id="top10PublishBtn" onclick="top10Publish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+    </div>
+    <div id="top10PublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+    <pre id="top10Preview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
     </div>
   </details>
 
@@ -2090,6 +2159,7 @@ function buildAll(){
   safe('competitions',buildCompetitions);
   safe('top5',buildTop5);
   safe('records',buildRecords);
+  safe('intlRankings',buildIntlRankings);
   safe('scLC',buildSCLC);
   safe('insights',function(){buildInsights(null);});
   btSelected=[];
@@ -3352,6 +3422,37 @@ function buildRecords(){
   renderRec(rec50,'rec50','50');
 }
 window.buildRecords=buildRecords;
+
+// World Aquatics Masters Top-10, matched against this swimmer's intlName
+// (⚙ Settings — "Name in Int'l Rankings"). Nothing shown at all if that
+// field is blank or no rankings have been published yet; an explicit "no
+// entries found" hint (not just silence) if the field IS set but nothing
+// matched, since a spelling mismatch is the most likely reason.
+function buildIntlRankings(){
+  var sectionEl=document.getElementById('intlRankSection'),hintEl=document.getElementById('intlRankHint'),cardEl=document.getElementById('intlRankCard'),bodyEl=document.getElementById('intlRankBody');
+  if(!sectionEl)return;
+  var sw=window.getActiveSwimmerData?window.getActiveSwimmerData():null;
+  var intlName=(sw&&sw.intlName)||'';
+  var allEntries=window.__mastersTop10Entries||[];
+  if(!intlName||!allEntries.length){sectionEl.style.display='none';if(cardEl)cardEl.style.display='none';if(hintEl)hintEl.textContent='';return;}
+  var norm=function(s){return(s||'').toString().toUpperCase().replace(/['’‘׳\s\-]/g,'');};
+  var target=norm(intlName);
+  var mine=allEntries.filter(function(e){return norm(e.name)===target;});
+  sectionEl.style.display='';
+  if(!mine.length){
+    if(cardEl)cardEl.style.display='none';
+    if(hintEl)hintEl.innerHTML='No Masters Top-10 entries found for "'+intlName+'" — check the spelling in ⚙ Settings matches the published rankings exactly.';
+    return;
+  }
+  var srcLabel=function(s){return s==='europe'?'Europe':'World';};
+  if(hintEl)hintEl.innerHTML='World/European Masters Top-10 rankings, matched by "'+intlName+'" — '+mine.length+' appearance'+(mine.length!==1?'s':'')+'.';
+  if(cardEl)cardEl.style.display='';
+  var sorted=mine.slice().sort(function(a,b){return b.year-a.year||a.rank-b.rank;});
+  if(bodyEl)bodyEl.innerHTML=sorted.map(function(e){
+    return '<tr><td>'+srcLabel(e.source)+'</td><td>'+e.event+'</td><td>'+e.ageGroup+' '+(e.sex==='F'?'W':'M')+'</td><td>'+e.year+'</td><td><strong>#'+e.rank+'</strong></td><td>'+e.time+'</td></tr>';
+  }).join('');
+}
+window.buildIntlRankings=buildIntlRankings;
 
 // ── All-records browser (Extract-published records, filterable) ──
 var _REC_CATS=['open','10','11','12','13','14','15','16','17','18','25-29','30-34','35-39','40-44','45-49','50-54','55-59','60-64','65-69','70-74','75-79','80-84','85-89','90-94'];
@@ -4865,6 +4966,133 @@ function clearRace2(){
     }catch(err){ if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish masters records.":"Upload failed: "+err.message;} }
   };
 })();
+
+// World Aquatics Masters Top-10 rankings — same upload/parse/review/publish
+// shape as the Masters WR panel above, but ISR-only and additive per year
+// (see window.swimPublishMastersTop10's own comment) rather than one big
+// cumulative table. See references/masters-rankings prototype validation:
+// parsed against the real 2025 LCM file (263 pages) and matched all 12
+// known ISR individual entries exactly before this was ported in.
+(function(){
+  const TOP10_HDR_RE=/^(LCM|SCM)\s+(Women|Men)\s+(\d+)m\s+(Freestyle|Backstroke|Breaststroke|Butterfly|Medley)\s+\(([\d\-\+]+)\)$/;
+  const TOP10_RANK_RE=/^(\d+)\.$/;
+  const TOP10_TIME_RE=/^\d{1,2}(:\d{2}){0,2}\.\d{2}$/;
+  const TOP10_COUNTRY_RE=/^[A-Z]{3}$/;
+  const parseTop10Time=(s)=>{
+    const parts=s.trim().split(":");
+    if(parts.length===1)return parseFloat(parts[0]);
+    if(parts.length===2)return(+parts[0])*60+parseFloat(parts[1]);
+    return(+parts[0])*3600+(+parts[1])*60+parseFloat(parts[2]);
+  };
+
+  async function top10ParsePdf(buf,year){
+    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let toks=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p),tc=await page.getTextContent();
+      tc.items.forEach((it)=>{const s=it.str.trim();if(s)toks.push(s);});
+    }
+    const entries=[];
+    let currentEvent=null,currentRank=null,i=0;
+    function pushIfIsr(rank,timeStr,country,name){
+      if(country!=="ISR"||!name)return;
+      entries.push({source:"world",year,course:currentEvent.course,sex:currentEvent.sex,ageGroup:currentEvent.ageGroup,event:currentEvent.event,rank,time:timeStr,seconds:+parseTop10Time(timeStr).toFixed(2),name});
+    }
+    // Ranks repeat for ties (e.g. "2." then two swimmers, no "3." until the
+    // next distinct time) — currentRank carries forward across tied rows
+    // until a fresh "N." token bumps it.
+    while(i<toks.length){
+      const hdrM=toks[i].match(TOP10_HDR_RE);
+      if(hdrM){
+        const[,course,sexWord,dist,strokeWord,ageGroup]=hdrM;
+        currentEvent={course,sex:sexWord==="Women"?"F":"M",event:dist+"m "+strokeWord,ageGroup};
+        currentRank=null;i++;continue;
+      }
+      if(!currentEvent){i++;continue;}
+      const rankM=toks[i].match(TOP10_RANK_RE);
+      if(rankM){
+        currentRank=+rankM[1];i++;
+        if(TOP10_TIME_RE.test(toks[i])&&TOP10_COUNTRY_RE.test(toks[i+1])){pushIfIsr(currentRank,toks[i],toks[i+1],toks[i+2]);i+=3;}
+        continue;
+      }
+      if(currentRank!=null&&TOP10_TIME_RE.test(toks[i])&&TOP10_COUNTRY_RE.test(toks[i+1])){pushIfIsr(currentRank,toks[i],toks[i+1],toks[i+2]);i+=3;continue;}
+      i++;
+    }
+    if(!entries.length)throw new Error("0 ISR entries found — wrong file, or genuinely no ISR swimmers in the top 10 this year?");
+    return{entries};
+  }
+
+  const $=(id)=>document.getElementById(id);
+  let parsedEntries=null,parsedYear=null,mergedEntries=null;
+
+  window.top10ShowInfo=function(){
+    alert("World Aquatics Masters Top-10 rankings — the top 10 fastest masters swimmers per event, sex, and 5-year age bracket, worldwide, each year.\n\nOnly Israeli (ISR) entries are kept — the source file covers every country and runs 250+ pages, so everything else is discarded at parse time.\n\nUpload one year's official PDF at a time (source: worldaquatics.com/masters/top-10) — parsed entirely in your browser, nothing is sent anywhere until you click Upload. Re-uploading a year you've already published replaces just that year; other years are untouched.");
+  };
+
+  window.top10PickPdf=async function(e){
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    const yearInput=$("top10Year"),year=parseInt(yearInput&&yearInput.value,10);
+    const lab=e.target.closest(".wr-slot"),fn=lab&&lab.querySelector(".wr-fname");
+    if(!year){if(fn){fn.textContent="⚠ Enter the year first";fn.style.color="#c0392b";}e.target.value="";return;}
+    if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
+    try{
+      const{entries}=await top10ParsePdf(await f.arrayBuffer(),year);
+      parsedEntries=entries;parsedYear=year;
+      if(fn){fn.innerHTML="✓ <strong>"+entries.length+"</strong> ISR entries — "+f.name;fn.style.color="#1a7a4f";}
+      if(lab){lab.style.borderColor="#1D9E75";lab.style.background="#f0faf5";}
+    }catch(err){
+      parsedEntries=null;parsedYear=null;
+      if(fn){fn.textContent="⚠ "+err.message;fn.style.color="#c0392b";}
+      if(lab){lab.style.borderColor="#e5a05a";lab.style.background="#fef6ee";}
+    }
+    const rb=$("top10ReviewBtn");if(rb){rb.disabled=!parsedEntries;rb.style.opacity=parsedEntries?"1":".5";}
+  };
+
+  window.top10Review=async function(){
+    const st=$("top10PublishStatus"),pv=$("top10Preview"),pubBtn=$("top10PublishBtn");
+    if(!parsedEntries){if(st){st.style.color="#c0392b";st.textContent="Parse a PDF first.";}return;}
+    if(st){st.style.color="#666";st.textContent="Signing in / reading current cloud data…";}
+    if(!(await window.swimEnsureSignIn())){if(st){st.style.color="#c0392b";st.textContent="Sign-in needed to compare with the cloud.";}return;}
+    try{
+      const cloud=await window.swimFetchMastersTop10();
+      const existingThisYear=((cloud&&cloud.entries)||[]).filter((e)=>e.year===parsedYear&&e.source==="world");
+      const key=(e)=>e.course+"|"+e.sex+"|"+e.ageGroup+"|"+e.event+"|"+e.name;
+      const existingMap={};existingThisYear.forEach((e)=>{existingMap[key(e)]=e;});
+      let added=0,changed=0;const changeLines=[];const newMap={};
+      parsedEntries.forEach((e)=>{
+        const k=key(e);newMap[k]=true;
+        const old=existingMap[k];
+        const label=e.event+" ("+e.ageGroup+" "+(e.sex==="F"?"W":"M")+")";
+        if(!old){added++;changeLines.push("➕ "+label+" — #"+e.rank+" "+e.name+" "+e.time);}
+        else if(old.rank!==e.rank||old.time!==e.time){changed++;changeLines.push("✎ "+label+" — "+e.name+" now #"+e.rank+" "+e.time+" (was #"+old.rank+" "+old.time+")");}
+      });
+      const removed=existingThisYear.filter((e)=>!newMap[key(e)]);
+      removed.forEach((e)=>changeLines.push("➖ "+e.event+" ("+e.ageGroup+" "+(e.sex==="F"?"W":"M")+") — "+e.name+" no longer in top 10"));
+      mergedEntries=parsedEntries;
+      const total=added+changed+removed.length;
+      const body=total?("Changes for "+parsedYear+": "+added+" new, "+changed+" updated, "+removed.length+" dropped.\n\n"+changeLines.join("\n")):("No changes — "+parsedYear+" already matches the cloud.");
+      if(pv){pv.style.display="";pv.textContent=body;}
+      if(pubBtn){pubBtn.disabled=!total;pubBtn.style.opacity=total?"1":".5";pubBtn.textContent="☁ Upload "+total+" change"+(total===1?"":"s")+" to Cloud";}
+      if(st){st.style.color=total?"#185FA5":"#1a7a4f";st.textContent=total?("Review the "+total+" change(s) below, then upload."):"Nothing to upload — already up to date.";}
+    }catch(err){if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Not allowed — your email isn't on the access list.":"Compare failed: "+err.message;}}
+  };
+
+  window.top10Publish=async function(){
+    const st=$("top10PublishStatus");
+    if(!mergedEntries||!parsedYear){if(st){st.style.color="#c0392b";st.textContent="Click “Review changes vs cloud” first.";}return;}
+    if(st){st.style.color="#666";st.textContent="Uploading…";}
+    try{
+      await window.swimPublishMastersTop10(mergedEntries,parsedYear,"world");
+      if(st){st.style.color="#1a7a4f";st.textContent="✅ Uploaded "+parsedYear+".";}
+      parsedEntries=null;mergedEntries=null;parsedYear=null;
+      const rb=$("top10ReviewBtn");if(rb){rb.disabled=true;rb.style.opacity=".5";}
+      if(window.swimRefreshMastersTop10Status)window.swimRefreshMastersTop10Status();
+    }catch(err){if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish rankings.":"Upload failed: "+err.message;}}
+  };
+})();
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -5218,6 +5446,7 @@ async function doSync() {
       id: String(sw.id),
       birthdate: sw.birthdate || "",
       sex: sw.sex || "",
+      recordName: sw.recordName || "", intlName: sw.intlName || "",
       heights: Array.isArray(sw.heights) ? sw.heights : [],
       weights: Array.isArray(sw.weights) ? sw.weights : [],
       seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
@@ -5256,6 +5485,7 @@ async function swimSaveProfile(sw) {
     id: String(sw.id),
     birthdate: sw.birthdate || "",
     sex: sw.sex || "",
+    recordName: sw.recordName || "", intlName: sw.intlName || "",
     heights: Array.isArray(sw.heights) ? sw.heights : [],
     weights: Array.isArray(sw.weights) ? sw.weights : [],
     seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
@@ -5448,6 +5678,43 @@ window.swimPublishMastersRecords = async (table) => {
     table, count: countMastersRecords(table), loadedAt: Date.now(), by: currentUser ? currentUser.email : "",
   });
 };
+// ── Masters Top-10 rankings, both sources (config/mastersTop10) ──────────
+// Shape: { entries:[{source,year,course,sex,ageGroup,event,rank,time,
+//          seconds,name}], count, loadedAt, by }. source is "world"
+// (worldaquatics.com) or "europe" (europeanaquatics.org) — same doc, same
+// per-swimmer matching/display, just tagged so a swimmer's history can
+// show "how many times in the World top 10" vs "the European top 10"
+// separately. ISR swimmers only — everyone else is thrown away at parse
+// time, keeping this doc small even though the source PDFs run 100-250+
+// pages. Additive per (source, year): publish REPLACES only that source's
+// entries for that specific year (so re-uploading is idempotent) and
+// leaves every other already-published source/year combination untouched
+// — years don't change after the fact, so there's never a reason to
+// re-parse one once it's in.
+window.swimFetchMastersTop10 = async () => { const s = await getDoc(doc(db, "config", "mastersTop10")); return s.exists() ? s.data() : null; };
+window.swimPublishMastersTop10 = async (yearEntries, year, source) => {
+  const cloud = await window.swimFetchMastersTop10();
+  const kept = ((cloud && cloud.entries) || []).filter((e) => !(e.year === year && e.source === source));
+  const merged = kept.concat(yearEntries);
+  await setDoc(doc(db, "config", "mastersTop10"), {
+    entries: merged, count: merged.length, loadedAt: Date.now(), by: currentUser ? currentUser.email : "",
+  });
+};
+async function refreshMastersTop10Status() {
+  const el = $("top10Status");
+  if (!currentUser) { if (el) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published rankings."; } return; }
+  try {
+    const d = await window.swimFetchMastersTop10();
+    window.__mastersTop10Entries = d && d.entries ? d.entries : [];
+    if (window.buildIntlRankings && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildIntlRankings();
+    if (!el) return;
+    if (!d || !d.entries.length) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No rankings published yet — upload a year's PDF below."; return; }
+    const worldYears = Array.from(new Set(d.entries.filter((e) => e.source === "world").map((e) => e.year))).sort();
+    const euYears = Array.from(new Set(d.entries.filter((e) => e.source === "europe").map((e) => e.year))).sort();
+    el.style.color = "#1a7a4f";
+    el.innerHTML = "<strong>" + d.entries.length + "</strong> ISR entries published — World: " + (worldYears.join(", ") || "none") + " · Europe: " + (euYears.join(", ") || "none");
+  } catch (e) { if (el) { el.style.color = "#c0392b"; el.textContent = "Failed to load: " + e.message; } }
+}
 async function refreshMastersRecordsStatus() {
   const el = $("wrStatus");
   if (!currentUser) { if (el) { el.style.color = "#666"; el.textContent = "Sign in (Analyze tab) to see the currently published records."; } return; }
@@ -5468,6 +5735,7 @@ async function refreshMastersRecordsStatus() {
   }
 }
 window.swimRefreshMastersRecordsStatus = refreshMastersRecordsStatus;
+window.swimRefreshMastersTop10Status = refreshMastersTop10Status;
 
 // Clear the loaded analysis view (defined here so it's always available,
 // independent of the main script's execution order).
@@ -6752,6 +7020,7 @@ function refreshSharedTables() {
   refreshRudolphStatus();
   refreshUsaStandardsStatus();
   refreshMastersRecordsStatus();
+  refreshMastersTop10Status();
 }
 
 onAuthStateChanged(auth, (u) => {

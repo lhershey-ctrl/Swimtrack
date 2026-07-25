@@ -146,6 +146,16 @@ export async function fetchMastersRecords() {
   return snap.exists() ? snap.data() : null;
 }
 
+// ── Masters Top-10 rankings, World Aquatics + European Aquatics (config/mastersTop10) ──
+// Published from the desktop app's Admin tab (owner-only). Shape:
+//   { entries: [{source:"world"|"europe",year,course,sex,ageGroup,event,
+//                rank,time,seconds,name}], count, loadedAt, by }
+// ISR swimmers only. Mobile only ever reads this — publishing is desktop-only.
+export async function fetchMastersTop10() {
+  const snap = await getDoc(doc(db, "config", "mastersTop10"));
+  return snap.exists() ? snap.data() : null;
+}
+
 export async function saveAccessList(emails) {
   await setDoc(doc(db, "config", "access"), { emails });
 }

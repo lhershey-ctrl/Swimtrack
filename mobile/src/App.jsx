@@ -8,7 +8,7 @@ import { useUI, GRAD } from "./theme.jsx";
 import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, fetchSwimmersByTeam, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
-  fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
+  fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords, fetchMastersTop10,
   migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers, removeViewer,
   fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes, saveTeamName,
   createTeam, fetchTeam, fetchMyTeams,
@@ -1061,7 +1061,7 @@ function InfoModal({ title, children, onClose }) {
 //  RECORDS (+ SC vs LC)
 // ════════════════════════════════════════════════════════════════════
 const GOLD = "#e0a52a";
-function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc }) {
+function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc, mastersTop10Doc }) {
   const { c, s } = useUI();
   const [pool, setPool] = useState("25");
   const [showBrowser, setShowBrowser] = useState(false);
@@ -1213,7 +1213,52 @@ function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc }) {
       )}
 
       <MastersWrPanel D={D} swimmer={swimmer} mastersRecordsDoc={mastersRecordsDoc} />
+      <IntlRankingsPanel swimmer={swimmer} mastersTop10Doc={mastersTop10Doc} />
     </div>
+  );
+}
+
+// World Aquatics + European Aquatics Masters Top-10, matched against this
+// swimmer's intlName (Settings — "Name in int'l rankings"). Read-only —
+// publishing this data is desktop-Admin-tab-only, same as every other
+// reference table. Nothing shown at all if intlName is blank or nothing's
+// published yet; an explicit "no entries found" hint (not silence) if the
+// field IS set but nothing matched, since a spelling mismatch is the most
+// likely reason.
+function IntlRankingsPanel({ swimmer, mastersTop10Doc }) {
+  const { c, s } = useUI();
+  const intlName = swimmer && swimmer.intlName;
+  const allEntries = (mastersTop10Doc && mastersTop10Doc.entries) || [];
+  if (!intlName || !allEntries.length) return null;
+  const norm = (v) => (v || "").toString().toUpperCase().replace(/['’‘׳\s\-]/g, "");
+  const target = norm(intlName);
+  const mine = allEntries.filter((e) => norm(e.name) === target);
+  const srcLabel = (src) => (src === "europe" ? "Europe" : "World");
+  return (
+    <>
+      <div style={s.h2}>International Rankings</div>
+      {!mine.length ? (
+        <Card style={{ borderColor: c.amber }}>
+          <div style={{ fontSize: 12.5, color: c.dim }}>No Masters Top-10 entries found for "{intlName}" — check the spelling in Settings matches the published rankings exactly.</div>
+        </Card>
+      ) : (
+        <Card style={{ padding: 6, marginBottom: 14 }}>
+          <div style={{ fontSize: 11.5, color: c.dim, padding: "4px 8px 8px" }}>
+            World/European Masters Top-10, matched by "{intlName}" — {mine.length} appearance{mine.length !== 1 ? "s" : ""}.
+          </div>
+          {mine.slice().sort((a, b) => b.year - a.year || a.rank - b.rank).map((e, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "9px 10px", borderBottom: i < mine.length - 1 ? `1px solid ${c.line}` : "none" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{e.event} <span style={{ color: c.dim, fontWeight: 400 }}>({e.ageGroup} {e.sex === "F" ? "W" : "M"})</span></div>
+                <div style={{ fontSize: 11, color: c.dim }}>{srcLabel(e.source)} · {e.year} · {e.time}</div>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: c.blue }}>#{e.rank}</div>
+            </div>
+          ))}
+        </Card>
+      )}
+    </>
   );
 }
 
@@ -1858,6 +1903,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmai
   const [dob, setDob] = useState(sw.birthdate || "");
   const [sex, setSex] = useState(sw.sex || "");
   const [recordName, setRecordName] = useState(sw.recordName || "");
+  const [intlName, setIntlName] = useState(sw.intlName || "");
   const [heights, setHeights] = useState(sw.heights || []);
   const [weights, setWeights] = useState(sw.weights || []);
   const [status, setStatus] = useState("");
@@ -1871,7 +1917,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmai
   async function save() {
     setStatus("Saving…");
     try {
-      await saveSwimmerProfile(sw.id, { name: name.trim() || sw.name, birthdate: dob.trim(), sex, recordName: recordName.trim(), heights, weights });
+      await saveSwimmerProfile(sw.id, { name: name.trim() || sw.name, birthdate: dob.trim(), sex, recordName: recordName.trim(), intlName: intlName.trim(), heights, weights });
       setStatus("✅ Saved"); reloadSwimmers();
     } catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Not allowed." : e.message)); }
   }
@@ -1899,6 +1945,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmai
             </div>
           </Field>
           <Field label="Name in records (Hebrew, optional)"><input value={recordName} onChange={(e) => setRecordName(e.target.value)} placeholder="e.g. הר-שי לירון — to flag records they hold" style={s.input} dir="rtl" /></Field>
+          <Field label="Name in int'l rankings (Latin, optional)"><input value={intlName} onChange={(e) => setIntlName(e.target.value)} placeholder="e.g. HAR-SHAI Liron — to match European/World masters rankings" style={s.input} /></Field>
 
           <MeasEditor title="📏 Height (cm)" unit="cm" color={c.blue} arr={heights} setArr={setHeights} onAdd={addMeas} />
           <MeasEditor title="⚖️ Weight (kg)" unit="kg" color={c.amber} arr={weights} setArr={setWeights} onAdd={addMeas} />
@@ -2085,6 +2132,7 @@ export default function App() {
   const [rudolphDoc, setRudolphDoc] = useState(null);
   const [usaStandardsDoc, setUsaStandardsDoc] = useState(null);
   const [mastersRecordsDoc, setMastersRecordsDoc] = useState(null);
+  const [mastersTop10Doc, setMastersTop10Doc] = useState(null);
   const [coachStatus, setCoachStatus] = useState("checking"); // "checking" | "needsInvite" | "ok"
   const [teamClusters, setTeamClusters] = useState([]); // only >1 entry when this email spans multiple accounts
   const [selectedTeamKey, setSelectedTeamKey] = useState(null);
@@ -2103,6 +2151,7 @@ export default function App() {
   useEffect(() => { if (user && coachStatus === "ok") fetchRudolph().then(setRudolphDoc).catch(() => setRudolphDoc(null)); }, [user, coachStatus]);
   useEffect(() => { if (user && coachStatus === "ok") fetchUsaStandards().then(setUsaStandardsDoc).catch(() => setUsaStandardsDoc(null)); }, [user, coachStatus]);
   useEffect(() => { if (user && coachStatus === "ok") fetchMastersRecords().then(setMastersRecordsDoc).catch(() => setMastersRecordsDoc(null)); }, [user, coachStatus]);
+  useEffect(() => { if (user && coachStatus === "ok") fetchMastersTop10().then(setMastersTop10Doc).catch(() => setMastersTop10Doc(null)); }, [user, coachStatus]);
 
   // Applies a chosen cluster: filters `swimmers` down to just that account's
   // roster and remembers the choice so future sign-ins don't re-ask.
@@ -2252,7 +2301,7 @@ export default function App() {
             {tab === "home" && <HomeTab D={D} swimmer={swimmer} />}
             {tab === "meets" && <MeetsTab D={D} swimmer={swimmer} />}
             {tab === "progress" && <ProgressTab D={D} swimmer={swimmer} rudolphDoc={rudolphDoc} usaStandardsDoc={usaStandardsDoc} />}
-            {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} mastersRecordsDoc={mastersRecordsDoc} />}
+            {tab === "records" && <RecordsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} mastersRecordsDoc={mastersRecordsDoc} mastersTop10Doc={mastersTop10Doc} />}
             {tab === "seasons" && <SeasonsTab D={D} swimmer={swimmer} recordsDoc={recordsDoc} />}
           </TabErrorBoundary>}
         </>
