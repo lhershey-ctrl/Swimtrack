@@ -6705,7 +6705,16 @@ async function renderAccountCard() {
     (myTeamClusters.length > 1
       ? '<button onclick="window.openTeamSwitcher()" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f5f4f0;font-weight:700;cursor:pointer">👥 Switch Account (' + (activeCluster ? activeCluster.name : '…') + ')</button>'
       : '');
-  renderTopbarTeamName(activeTeam ? activeTeam.name : teamName);
+  // Priority: an explicit team's own name, else — when there IS real cluster
+  // ambiguity (myTeamClusters populated) — the currently SELECTED legacy
+  // cluster's name (which can belong to a DIFFERENT coach than the signed-in
+  // one, e.g. viewing a teammate's roster), else this coach's own personal
+  // label as the single-cluster fallback. Real bug, reported live: using
+  // `teamName` (this coach's own label) here unconditionally meant switching
+  // between two legacy clusters (e.g. "KFS" <-> "Har-Shai") kept showing
+  // whichever label the signed-in coach personally set, never the other
+  // cluster's real name, even though the rest of the app had switched.
+  renderTopbarTeamName(activeTeam ? activeTeam.name : (activeCluster ? activeCluster.name : teamName));
 }
 // Small-font "which team am I looking at" label in the top nav bar (Extract/
 // Analyze/Team/Settings/Admin) — reuses whatever renderAccountCard already
