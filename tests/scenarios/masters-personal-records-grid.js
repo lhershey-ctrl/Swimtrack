@@ -2,16 +2,16 @@
 // Personal Records table compared a masters swimmer's LIFETIME PB (swum at
 // whatever age it happened) against their CURRENT age group's record —
 // e.g. 200m Breaststroke PB set at 40-44 shown next to the 45-49 record,
-// a confusing mismatch ("it shows I have the age-group record in 45-49 in
-// a different time" — actually just an unrelated record from a different
-// bracket). Fixed by redesigning Personal Records for masters swimmers
-// (5-year brackets only — juniors keep the old single-bracket table, see
-// personal-records-current-age-gap.js) into a grid: one column per age
-// bracket the swimmer has actually competed in, each cell showing the PB
-// actually swum WITHIN that specific bracket next to THAT bracket's own
-// record — never a cross-bracket mismatch. Gold background + the holder's
-// own name when this swimmer holds that bracket's record; plain background
-// + the real holder's name otherwise.
+// a confusing mismatch. Fixed with a per-age-group VIEW for masters
+// swimmers only (juniors keep the old single-bracket table, see
+// personal-records-current-age-gap.js): age-bracket TABS (matching the
+// existing Masters WR gap-chart selector AND the mobile app's own tab
+// design, per explicit user request to keep desktop/mobile consistent),
+// defaulting to the swimmer's current bracket. The selected bracket's
+// table shows the PB actually swum WITHIN it next to THAT bracket's own
+// record — always naming the actual holder, and (per user request) also
+// showing the record's own time + the gap in seconds when it's NOT held
+// by this swimmer, not just a bare name.
 const { openDesktopApp, assert } = require('../lib/harness');
 
 module.exports = async function run() {
@@ -37,7 +37,7 @@ module.exports = async function run() {
         records: {
           records: { 50: { M: {
             '40-44': { '200|Breast': { sec: 150.00, time: '2:30.00', name: 'הר-שי לירון' } }, // Liron holds this one
-            '45-49': { '200|Breast': { sec: 155.00, time: '2:35.00', name: 'קוסטק אריק' } },   // someone else holds this one
+            '45-49': { '200|Breast': { sec: 145.00, time: '2:25.00', name: 'קוסטק אריק' } },   // someone else holds this one, genuinely faster than Liron's 149.05
           } } },
           segments: {}, count: 2, loadedAt: Date.now(), by: 'test',
         },
@@ -56,20 +56,31 @@ module.exports = async function run() {
     await page.click('button[data-grp="records"]');
     await page.waitForTimeout(400);
 
-    const headText = await page.$eval('#rec50Head', (el) => el.textContent);
-    assert(headText.includes('40-44') && headText.includes('45-49'), 'expected separate columns for both age brackets this swimmer has competed in, got: ' + headText);
-    steps.push({ desc: 'Grid shows one column per age bracket actually competed in (40-44 AND 45-49)', ok: true });
+    const poolTitle = await page.$eval('#rec25', (el) => el.closest('.tbl-card').textContent);
+    assert(poolTitle.includes('25m Pool') && poolTitle.includes('SCM'), 'expected the pool card to be clearly labeled with its course, got: ' + poolTitle.slice(0, 100));
+    steps.push({ desc: 'Pool card is clearly labeled with its course (SCM/LCM)', ok: true });
 
-    const bodyHtml = await page.$eval('#rec50', (el) => el.innerHTML);
-    // The 40-44 cell must show the 40-44-era PB (2:32.19) next to the
-    // 40-44 record (2:30.00, held by this swimmer) — NOT mixed with 45-49.
-    assert(bodyHtml.includes('2:32.19'), 'expected the 40-44-era PB (2:32.19) to appear, got snippet: ' + bodyHtml.slice(0, 400));
-    assert(bodyHtml.includes('2:29.05'), 'expected the 45-49-era PB (2:29.05) to appear separately, got snippet: ' + bodyHtml.slice(0, 400));
-    steps.push({ desc: 'Each bracket column shows the PB actually swum WITHIN that bracket, not a lifetime PB compared to the wrong bracket\'s record', ok: true });
+    const tabsText = await page.$eval('#rec50AgeSel', (el) => el.textContent);
+    assert(tabsText.includes('40-44') && tabsText.includes('45-49'), 'expected tabs for both age brackets this swimmer has competed in, got: ' + tabsText);
+    assert(/45-49.*current/.test(tabsText.replace(/\s+/g, ' ')), 'expected the CURRENT bracket (45-49) to be marked as such, got: ' + tabsText);
+    steps.push({ desc: 'Age-bracket tabs appear (matching the Masters WR selector design), current bracket marked and selected by default', ok: true });
 
-    assert(bodyHtml.includes('background:#fdf3d9'), 'expected a gold-background cell for the bracket this swimmer holds the record in (40-44), got snippet: ' + bodyHtml.slice(0, 600));
-    assert(bodyHtml.includes('קוסטק אריק'), 'expected the 45-49 cell to name the actual record holder (not this swimmer), got snippet: ' + bodyHtml.slice(0, 600));
-    steps.push({ desc: 'Gold background + own name for a held record; plain background + real holder\'s name otherwise', ok: true });
+    // Default tab (45-49, current) — this swimmer does NOT hold this
+    // bracket's record, so the cell must show the real holder's NAME, the
+    // record's own TIME, and the gap in seconds — not just a bare name.
+    let body50 = await page.$eval('#rec50', (el) => el.textContent);
+    assert(body50.includes('2:29.05'), 'expected the current (45-49) bracket\'s own PB to show by default, got: ' + body50);
+    assert(body50.includes('קוסטק אריק') && body50.includes('2:25.00'), 'expected the real record holder\'s name AND the record\'s own time, got: ' + body50);
+    assert(body50.includes('+4.05s'), 'expected the gap in seconds in brackets, got: ' + body50);
+    steps.push({ desc: 'Un-held record shows holder name + record time + gap in seconds, not just a bare name', ok: true });
+
+    // Switch to 40-44 — this swimmer DOES hold that bracket's record.
+    await page.click('#rec50AgeSel button:has-text("40-44")');
+    await page.waitForTimeout(200);
+    body50 = await page.$eval('#rec50', (el) => el.textContent);
+    assert(body50.includes('2:32.19'), 'expected the 40-44-era PB after switching tabs, got: ' + body50);
+    assert(body50.includes('🏅') && body50.includes('הר-שי לירון'), 'expected a held-record marker with this swimmer\'s own name for the bracket they hold, got: ' + body50);
+    steps.push({ desc: 'Switching tabs shows that bracket\'s own PB; a held record shows the swimmer\'s own name with a medal, no gap math needed', ok: true });
 
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));
     steps.push({ desc: 'No uncaught page errors during the flow', ok: true });

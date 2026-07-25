@@ -25,7 +25,7 @@ module.exports = async function run() {
         records: {
           records: { 50: { M: {
             '40-44': { '200|Breast': { sec: 150.00, time: '2:30.00', name: 'הר-שי לירון' } },
-            '45-49': { '200|Breast': { sec: 155.00, time: '2:35.00', name: 'קוסטק אריק' } },
+            '45-49': { '200|Breast': { sec: 145.00, time: '2:25.00', name: 'קוסטק אריק' } }, // genuinely faster than this swimmer's 149.05
           } } },
           segments: {}, count: 2, loadedAt: Date.now(), by: 'test',
         },
@@ -47,8 +47,9 @@ module.exports = async function run() {
     let bodyText = await page.evaluate(() => document.body.innerText);
     assert(bodyText.includes('45-49') && bodyText.includes('40-44'), 'expected tabs for both brackets this swimmer has competed in, got: ' + bodyText.slice(0, 600));
     assert(bodyText.includes('2:29.05'), 'expected the 45-49-era PB to show by default, got: ' + bodyText.slice(0, 600));
-    assert(bodyText.includes('קוסטק אריק'), 'expected the real 45-49 record holder to be named (not this swimmer), got: ' + bodyText.slice(0, 600));
-    steps.push({ desc: 'Defaults to the current bracket, showing that bracket\'s own PB next to its own (different) record holder', ok: true });
+    assert(bodyText.includes('קוסטק אריק') && bodyText.includes('2:25.00'), 'expected the real 45-49 record holder\'s name AND the record\'s own time (not this swimmer), got: ' + bodyText.slice(0, 600));
+    assert(bodyText.includes('+4.05s'), 'expected the gap in seconds in brackets, got: ' + bodyText.slice(0, 600));
+    steps.push({ desc: 'Defaults to the current bracket, showing that bracket\'s own PB next to its own (different) record holder\'s name, time, and gap', ok: true });
 
     // Switch to the 40-44 tab — the swimmer holds THAT bracket's record.
     await page.click('button:has-text("40-44")');

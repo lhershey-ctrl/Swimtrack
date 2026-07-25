@@ -1108,8 +1108,10 @@ function MastersRecordsGrid({ D, pool, records, sex, myName, birthdate }) {
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{isMine ? "🏅 " : ""}{r.event}</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: c.amber, marginTop: 2 }}>{fmtT(r.entry.seconds)}</div>
               </div>
-              <div style={{ textAlign: "right", fontSize: 11.5, color: isMine ? GOLD : c.dim, fontWeight: isMine ? 800 : 500, maxWidth: 130 }}>
-                {rec ? (isMine ? myName : rec.name) : "no record data"}
+              <div style={{ textAlign: "right", fontSize: 11.5, color: isMine ? GOLD : c.dim, fontWeight: isMine ? 800 : 500, maxWidth: 150 }}>
+                {rec
+                  ? (isMine ? myName : <>{rec.name} · {fmtT(rec.sec)} <span style={{ color: c.dim }}>({r.entry.seconds - rec.sec >= 0 ? "+" : ""}{(r.entry.seconds - rec.sec).toFixed(2)}s)</span></>)
+                  : "no record data"}
               </div>
             </div>
           );
