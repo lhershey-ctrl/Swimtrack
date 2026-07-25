@@ -87,8 +87,9 @@ module.exports = async function run() {
     const sectionVisible = await page.$eval('#intlRankSection', (el) => getComputedStyle(el).display !== 'none');
     assert(sectionVisible, 'International Rankings section should be visible once entries exist and intlName is set');
     const rows = await page.$eval('#intlRankBody', (el) => el.textContent);
-    assert(rows.includes('31.94') && rows.includes('#7'), 'expected Anya\'s 50m Backstroke #7 (31.94) row to appear, got: ' + rows);
-    assert(rows.includes('World'), 'expected the Source column to show "World" for these entries, got: ' + rows);
+    assert(rows.includes('#7') && rows.includes('50 Back'), 'expected Anya\'s 50m Backstroke #7 to appear (shortened to "50 Back"), got: ' + rows);
+    const cardText = await page.$eval('#intlRankCard', (el) => el.textContent);
+    assert(cardText.includes('World'), 'expected the "World" column header for these entries, got: ' + cardText);
     steps.push({ desc: 'International Rankings section on the Records tab correctly matches by intlName and shows real entries', ok: true });
 
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));

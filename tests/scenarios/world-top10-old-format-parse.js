@@ -73,7 +73,7 @@ module.exports = async function run() {
     await page.click('button[data-grp="records"]');
     await page.waitForTimeout(400);
     const rows = await page.$eval('#intlRankBody', (el) => el.textContent);
-    assert(rows.includes('World'), 'expected Liron\'s matched entry (intlName "LIRON HARSHAY") to show on the Records tab, got: ' + rows);
+    assert(rows.includes('2021') && rows.includes('Breast'), 'expected Liron\'s matched entry (intlName "LIRON HARSHAY") to show on the Records tab, got: ' + rows);
     steps.push({ desc: 'A real swimmer with intlName "LIRON HARSHAY" matches an old-format-parsed entry on the Records tab', ok: true });
 
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));

@@ -1078,7 +1078,7 @@ function landingSignIn(){
     <div class="section-title" id="intlRankSection" style="display:none">③b International Rankings</div>
     <div id="intlRankHint" style="font-size:12px;color:#888;margin-bottom:10px"></div>
     <div class="tbl-card" id="intlRankCard" style="display:none">
-      <table><thead><tr><th>Source</th><th>Event</th><th>Age Group</th><th>Year</th><th>Rank</th><th>Time</th></tr></thead>
+      <table><thead><tr><th>Year</th><th>World</th><th>Europe</th></tr></thead>
       <tbody id="intlRankBody"></tbody></table>
     </div>
 
@@ -3578,6 +3578,33 @@ window.buildRecords=buildRecords;
 // field is blank or no rankings have been published yet; an explicit "no
 // entries found" hint (not just silence) if the field IS set but nothing
 // matched, since a spelling mismatch is the most likely reason.
+// Matching HAS to be word-order- and minor-spelling-tolerant, not just
+// case/hyphen/space-insensitive: the SAME real person appears under
+// genuinely different published spellings across federations/years — e.g.
+// Liron shows up as "HARSHAY Liron" (World 2024+, lastname-first),
+// "LIRON HARSHAY" (World pre-2024, firstname-first), AND "Liron Har-Shai"
+// (Europe, firstname-first, "i" ending not "y"). A real bug, reported live:
+// only 1 of Liron's 8 real published entries showed, because the old exact
+// (order-sensitive) match only ever caught the one spelling identical to
+// his stored intlName. Fixed by comparing each name's SORTED word list
+// (order-agnostic) with a fuzzy Levenshtein threshold (0.85 — same-script
+// Latin-to-Latin here, so real matches cluster near-exact; this is NOT the
+// cross-script Hebrew transliteration case from the Settings suggestion
+// feature, which needed a much lower bar).
+function _sortedNormWords(s){return(s||'').toString().toUpperCase().replace(/['’‘׳-]/g,'').trim().split(/\s+/).filter(Boolean).sort().join('');}
+function _namesMatchFuzzy(a,b){
+  var na=_sortedNormWords(a),nb=_sortedNormWords(b);
+  if(!na||!nb)return false;
+  var d=_levenshtein(na,nb);
+  return(1-d/Math.max(na.length,nb.length,1))>=0.85;
+}
+var EVT_SHORT_STROKE={Freestyle:'Free',Backstroke:'Back',Breaststroke:'Breast',Butterfly:'Fly',Medley:'IM'};
+function _evtShort(ev){
+  var m=(ev||'').match(/^(\d+)m\s+(.+)$/);
+  if(!m)return ev;
+  return m[1]+' '+(EVT_SHORT_STROKE[m[2]]||m[2]);
+}
+function _medalOrRank(rank){return rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'#'+rank;}
 function buildIntlRankings(){
   var sectionEl=document.getElementById('intlRankSection'),hintEl=document.getElementById('intlRankHint'),cardEl=document.getElementById('intlRankCard'),bodyEl=document.getElementById('intlRankBody');
   if(!sectionEl)return;
@@ -3585,21 +3612,31 @@ function buildIntlRankings(){
   var intlName=(sw&&sw.intlName)||'';
   var allEntries=window.__mastersTop10Entries||[];
   if(!intlName||!allEntries.length){sectionEl.style.display='none';if(cardEl)cardEl.style.display='none';if(hintEl)hintEl.textContent='';return;}
-  var norm=function(s){return(s||'').toString().toUpperCase().replace(/['’‘׳\s\-]/g,'');};
-  var target=norm(intlName);
-  var mine=allEntries.filter(function(e){return norm(e.name)===target;});
+  var mine=allEntries.filter(function(e){return _namesMatchFuzzy(e.name,intlName);});
   sectionEl.style.display='';
   if(!mine.length){
     if(cardEl)cardEl.style.display='none';
     if(hintEl)hintEl.innerHTML='No Masters Top-10 entries found for "'+intlName+'" — check the spelling in ⚙ Settings matches the published rankings exactly.';
     return;
   }
-  var srcLabel=function(s){return s==='europe'?'Europe':'World';};
   if(hintEl)hintEl.innerHTML='World/European Masters Top-10 rankings, matched by "'+intlName+'" — '+mine.length+' appearance'+(mine.length!==1?'s':'')+'.';
   if(cardEl)cardEl.style.display='';
-  var sorted=mine.slice().sort(function(a,b){return b.year-a.year||a.rank-b.rank;});
-  if(bodyEl)bodyEl.innerHTML=sorted.map(function(e){
-    return '<tr><td>'+srcLabel(e.source)+'</td><td>'+e.event+'</td><td>'+e.ageGroup+' '+(e.sex==='F'?'W':'M')+'</td><td>'+e.year+'</td><td><strong>#'+e.rank+'</strong></td><td>'+e.time+'</td></tr>';
+  // One row per year; each cell condenses that year's World/Europe entries
+  // into a single line (medal for top-3, "#N" otherwise), per user request
+  // — the un-grouped one-row-per-entry table got too long to scan once a
+  // swimmer has many appearances.
+  var byYear={};
+  mine.forEach(function(e){(byYear[e.year]=byYear[e.year]||{world:[],europe:[]})[e.source==='europe'?'europe':'world'].push(e);});
+  var years=Object.keys(byYear).map(Number).sort(function(a,b){return b-a;});
+  function cellHtml(list){
+    if(!list.length)return'<span style="color:#bbb">—</span>';
+    return list.slice().sort(function(a,b){return a.rank-b.rank;}).map(function(e){
+      return _medalOrRank(e.rank)+' '+_evtShort(e.event);
+    }).join(', ');
+  }
+  if(bodyEl)bodyEl.innerHTML=years.map(function(y){
+    var g=byYear[y];
+    return'<tr><td><strong>'+y+'</strong></td><td>'+cellHtml(g.world)+'</td><td>'+cellHtml(g.europe)+'</td></tr>';
   }).join('');
 }
 window.buildIntlRankings=buildIntlRankings;

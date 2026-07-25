@@ -1225,39 +1225,76 @@ function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc, mastersTop10Doc
 // published yet; an explicit "no entries found" hint (not silence) if the
 // field IS set but nothing matched, since a spelling mismatch is the most
 // likely reason.
+// Matching HAS to be word-order- and minor-spelling-tolerant, not just
+// case/hyphen/space-insensitive: the SAME real person appears under
+// genuinely different published spellings across federations/years — e.g.
+// Liron shows up as "HARSHAY Liron" (World 2024+, lastname-first),
+// "LIRON HARSHAY" (World pre-2024, firstname-first), AND "Liron Har-Shai"
+// (Europe, firstname-first, "i" ending not "y"). A real bug, reported live:
+// only 1 of Liron's 8 real published entries showed, because the old exact
+// (order-sensitive) match only ever caught the one spelling identical to
+// his stored intlName. Fixed by comparing each name's SORTED word list
+// (order-agnostic) with a fuzzy Levenshtein threshold (0.85 — same-script
+// Latin-to-Latin here, so real matches cluster near-exact; this is NOT the
+// cross-script Hebrew transliteration case the Settings suggestion chips
+// use, which needed a much lower bar). Mirrors swim_tracker.html.
+function sortedNormWords(s) { return (s || "").toString().toUpperCase().replace(/['’‘׳-]/g, "").trim().split(/\s+/).filter(Boolean).sort().join(""); }
+function namesMatchFuzzy(a, b) {
+  const na = sortedNormWords(a), nb = sortedNormWords(b);
+  if (!na || !nb) return false;
+  const d = levenshtein(na, nb);
+  return 1 - d / Math.max(na.length, nb.length, 1) >= 0.85;
+}
+const EVT_SHORT_STROKE = { Freestyle: "Free", Backstroke: "Back", Breaststroke: "Breast", Butterfly: "Fly", Medley: "IM" };
+function evtShort(ev) {
+  const m = (ev || "").match(/^(\d+)m\s+(.+)$/);
+  if (!m) return ev;
+  return m[1] + " " + (EVT_SHORT_STROKE[m[2]] || m[2]);
+}
+function medalOrRank(rank) { return rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : "#" + rank; }
+
 function IntlRankingsPanel({ swimmer, mastersTop10Doc }) {
   const { c, s } = useUI();
   const intlName = swimmer && swimmer.intlName;
   const allEntries = (mastersTop10Doc && mastersTop10Doc.entries) || [];
   if (!intlName || !allEntries.length) return null;
-  const norm = (v) => (v || "").toString().toUpperCase().replace(/['’‘׳\s\-]/g, "");
-  const target = norm(intlName);
-  const mine = allEntries.filter((e) => norm(e.name) === target);
-  const srcLabel = (src) => (src === "europe" ? "Europe" : "World");
-  return (
-    <>
-      <div style={s.h2}>International Rankings</div>
-      {!mine.length ? (
+  const mine = allEntries.filter((e) => namesMatchFuzzy(e.name, intlName));
+  if (!mine.length) {
+    return (
+      <>
+        <div style={s.h2}>International Rankings</div>
         <Card style={{ borderColor: c.amber }}>
           <div style={{ fontSize: 12.5, color: c.dim }}>No Masters Top-10 entries found for "{intlName}" — check the spelling in Settings matches the published rankings exactly.</div>
         </Card>
-      ) : (
-        <Card style={{ padding: 6, marginBottom: 14 }}>
-          <div style={{ fontSize: 11.5, color: c.dim, padding: "4px 8px 8px" }}>
-            World/European Masters Top-10, matched by "{intlName}" — {mine.length} appearance{mine.length !== 1 ? "s" : ""}.
+      </>
+    );
+  }
+  // One row per year; each cell condenses that year's World/Europe entries
+  // into a single line (medal for top-3, "#N" otherwise) — the un-grouped
+  // one-row-per-entry list got too long to scan once a swimmer has many
+  // appearances, per user feedback.
+  const byYear = {};
+  mine.forEach((e) => {
+    const g = (byYear[e.year] = byYear[e.year] || { world: [], europe: [] });
+    g[e.source === "europe" ? "europe" : "world"].push(e);
+  });
+  const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+  const cellText = (list) => (!list.length ? "—" : list.slice().sort((a, b) => a.rank - b.rank).map((e) => medalOrRank(e.rank) + " " + evtShort(e.event)).join(", "));
+  return (
+    <>
+      <div style={s.h2}>International Rankings</div>
+      <Card style={{ padding: 6, marginBottom: 14 }}>
+        <div style={{ fontSize: 11.5, color: c.dim, padding: "4px 8px 8px" }}>
+          World/European Masters Top-10, matched by "{intlName}" — {mine.length} appearance{mine.length !== 1 ? "s" : ""}.
+        </div>
+        {years.map((y, i) => (
+          <div key={y} style={{ padding: "9px 10px", borderBottom: i < years.length - 1 ? `1px solid ${c.line}` : "none" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: c.text, marginBottom: 3 }}>{y}</div>
+            <div style={{ fontSize: 12, color: c.dim }}><span style={{ color: c.blue, fontWeight: 700 }}>World</span> {cellText(byYear[y].world)}</div>
+            <div style={{ fontSize: 12, color: c.dim, marginTop: 2 }}><span style={{ color: c.blue, fontWeight: 700 }}>Europe</span> {cellText(byYear[y].europe)}</div>
           </div>
-          {mine.slice().sort((a, b) => b.year - a.year || a.rank - b.rank).map((e, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-              padding: "9px 10px", borderBottom: i < mine.length - 1 ? `1px solid ${c.line}` : "none" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{e.event} <span style={{ color: c.dim, fontWeight: 400 }}>({e.ageGroup} {e.sex === "F" ? "W" : "M"})</span></div>
-                <div style={{ fontSize: 11, color: c.dim }}>{srcLabel(e.source)} · {e.year} · {e.time}</div>
-              </div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: c.blue }}>#{e.rank}</div>
-            </div>
-          ))}
-        </Card>
-      )}
+        ))}
+      </Card>
     </>
   );
 }

@@ -79,7 +79,9 @@ module.exports = async function run() {
     await page.click('button[data-grp="records"]');
     await page.waitForTimeout(400);
     const rows = await page.$eval('#intlRankBody', (el) => el.textContent);
-    assert(rows.includes('Europe'), 'expected Liron\'s matched entry (intlName "Liron Har-Shai") to show as a Europe-sourced row on the Records tab, got: ' + rows);
+    assert(rows.includes('2025') && rows.includes('Breast'), 'expected Liron\'s matched entry (intlName "Liron Har-Shai") to show on the Records tab, got: ' + rows);
+    const cardText = await page.$eval('#intlRankCard', (el) => el.textContent);
+    assert(cardText.includes('Europe'), 'expected the "Europe" column header, got: ' + cardText);
     steps.push({ desc: 'A real swimmer with intlName "Liron Har-Shai" matches a European-parsed entry on the Records tab', ok: true });
 
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));

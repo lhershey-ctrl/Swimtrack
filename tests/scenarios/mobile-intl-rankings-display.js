@@ -39,7 +39,7 @@ module.exports = async function run() {
 
     const bodyText = await page.evaluate(() => document.body.innerText);
     assert(/international rankings/i.test(bodyText), 'expected an "International Rankings" section, got: ' + bodyText.slice(0, 800));
-    assert(bodyText.includes('50m Backstroke') && bodyText.includes('#7'), 'expected the matched 50m Backstroke #7 entry, got: ' + bodyText.slice(0, 1000));
+    assert(bodyText.includes('50 Back') && bodyText.includes('#7'), 'expected the matched 50m Backstroke #7 entry (shortened to "50 Back"), got: ' + bodyText.slice(0, 1000));
     assert(bodyText.includes('World'), 'expected the source label "World" to show, got: ' + bodyText.slice(0, 1000));
     assert(bodyText.includes('2 appearances'), 'expected an appearance count of 2, got: ' + bodyText.slice(0, 1000));
     steps.push({ desc: 'Records tab shows International Rankings, matched by intlName, sourced from config/mastersTop10', ok: true });
