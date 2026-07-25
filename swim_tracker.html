@@ -1074,14 +1074,6 @@ function landingSignIn(){
       <tbody id="rec50"></tbody></table>
     </div>
 
-    <!-- ③b INTERNATIONAL RANKINGS (World Aquatics Masters Top-10, ISR only) -->
-    <div class="section-title" id="intlRankSection" style="display:none">③b International Rankings</div>
-    <div id="intlRankHint" style="font-size:12px;color:#888;margin-bottom:10px"></div>
-    <div class="tbl-card" id="intlRankCard" style="display:none">
-      <table><thead><tr><th>Year</th><th>World</th><th>Europe</th></tr></thead>
-      <tbody id="intlRankBody"></tbody></table>
-    </div>
-
     <!-- ④ 25m vs 50m ANALYSIS ───────────── -->
     <div class="section-title">④ Short Course vs Long Course Analysis</div>
     <p style="font-size:12px;color:#888;margin-bottom:12px">Expected SC advantage = 0.75 s per extra turn (≈ 1.5 s/100 m). <span style="color:#1D9E75">Green</span> = within 0.5 s of expected · <span style="color:#9b7a0b">Yellow</span> = off by 0.5–2 s · <span style="color:#a32d2d">Red</span> = very different.</p>
@@ -1147,6 +1139,14 @@ function landingSignIn(){
         <div style="position:relative;height:280px"><canvas id="wrGapChart"></canvas></div>
         <p id="wrGapEmpty" style="display:none;color:#aaa;font-size:12px;padding:10px 0;text-align:center"></p>
       </div>
+    </div>
+
+    <!-- ⑫b INTERNATIONAL RANKINGS (World Aquatics + European Aquatics Masters Top-10, ISR only) -->
+    <div class="section-title" id="intlRankSection" style="display:none">⑫b International Rankings</div>
+    <div id="intlRankHint" style="font-size:12px;color:#888;margin-bottom:10px"></div>
+    <div class="tbl-card" id="intlRankCard" style="display:none">
+      <table><thead><tr><th>Year</th><th>World</th><th>Europe</th></tr></thead>
+      <tbody id="intlRankBody"></tbody></table>
     </div>
     </div>
 
@@ -3631,7 +3631,7 @@ function buildIntlRankings(){
   function cellHtml(list){
     if(!list.length)return'<span style="color:#bbb">—</span>';
     return list.slice().sort(function(a,b){return a.rank-b.rank;}).map(function(e){
-      return _medalOrRank(e.rank)+' '+_evtShort(e.event);
+      return _medalOrRank(e.rank)+' '+_evtShort(e.event)+' <span style="color:#9aa6b5;font-size:11px">('+e.course+')</span>';
     }).join(', ');
   }
   if(bodyEl)bodyEl.innerHTML=years.map(function(y){

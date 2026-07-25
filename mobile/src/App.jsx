@@ -1279,7 +1279,7 @@ function IntlRankingsPanel({ swimmer, mastersTop10Doc }) {
     g[e.source === "europe" ? "europe" : "world"].push(e);
   });
   const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
-  const cellText = (list) => (!list.length ? "—" : list.slice().sort((a, b) => a.rank - b.rank).map((e) => medalOrRank(e.rank) + " " + evtShort(e.event)).join(", "));
+  const cellText = (list) => (!list.length ? "—" : list.slice().sort((a, b) => a.rank - b.rank).map((e) => medalOrRank(e.rank) + " " + evtShort(e.event) + " (" + e.course + ")").join(", "));
   return (
     <>
       <div style={s.h2}>International Rankings</div>
