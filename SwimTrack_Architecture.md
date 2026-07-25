@@ -33,13 +33,30 @@ DESKTOP (swim_tracker.html)                MOBILE (mobile/ — React+Vite)
    │      name, id, birthdate, sex,                                     │
    │      heights:[{date,value}], weights:[...], seasonIds:[...],       │
    │      seasons:{ "2024-2025": {seasonId,bests[],results[]}, …},      │
+   │      coachUids:[uid,...], coachEmails:[email,...],                 │
+   │      teamIds:[teamId,...]   ← optional, see "Teams" below          │
    │      updatedAt                                                     │
    │    }                                                               │
-   │    config/access  = { emails:[...] }         ← live allow-list     │
+   │    coaches/{uid} = { email, name, createdAt, teamName? }           │
+   │      ← existence of this doc = "is a coach"; teamName is the       │
+   │        self-editable display name for their LEGACY (coachUids-     │
+   │        based) cluster, shown when picking/switching accounts       │
+   │    teams/{teamId} = { name, createdBy, createdAt }                 │
+   │      ← an EXPLICIT, named roster a coach creates under their own   │
+   │        login (see "Teams" below) — distinct from a legacy cluster  │
+   │    inviteCodes/{code} = { createdAt, createdBy, usedBy, usedAt,    │
+   │      note, targetCoachUid?, swimmerIds? }     ← single-use         │
+   │    pendingShares/{uid} = { swimmerIds:[...], claimedAt }           │
+   │      ← rules-verification bridge for invite-code redemption        │
+   │    config/access  = { emails:[...] }    ← legacy flat allow-list   │
    │    config/records = { records, segments, count, loadedAt, by }     │
    │      ← Israeli age-group records (juniors+masters, SC+LC)          │
    │    config/rudolph = { table, count, loadedAt, by }                 │
    │      ← Rudolph age-graded 1-20 points table (50m only)             │
+   │    config/usaStandards = { table, count, loadedAt, by }            │
+   │      ← USA Swimming motivational standards (juniors 10-18)         │
+   │    config/mastersRecords = { table, count, loadedAt, by }          │
+   │      ← World Aquatics masters world records (SCM+LCM)              │
    │  Auth: Google                                                      │
    │  Hosting: serves mobile/dist (+ extract.html, bm2.js)              │
    └───────────────────────────────────────────────────────────────────┘
@@ -48,12 +65,56 @@ DESKTOP (swim_tracker.html)                MOBILE (mobile/ — React+Vite)
 ### Data ownership (avoids clobbering)
 - **`seasons`** (results/bests) is written by the **desktop** "☁ Sync to cloud" (Analyze tab). Firestore `merge:true` updates season-by-season, so re-syncing one season never wipes the others.
 - **Profile** (`name`, `birthdate`, `sex`, `heights`, `weights`, `seasonIds`) is editable on **both** desktop Settings (auto-saves to cloud when signed in; "☁ Save to Cloud" button) **and** the mobile Settings tab. All writes use `merge:true` and only touch their own fields.
-- **`config/records`** and **`config/rudolph`** are published **only from the desktop app's Extract tab** (③ Israeli Age Records, ④ Rudolph Age-Score Table) after reviewing a diff vs. the current cloud doc. Both mobile and desktop only ever *read* them for scoring/gap features; they're not touched by the swimmer-sync flow at all.
+- **`coachUids`/`coachEmails`/`teamIds`** are all **additive-only** — every write uses Firestore `arrayUnion()` (joining a team, sharing access, syncing) and every removal uses `arrayRemove()` (Settings "✕ Remove" on a swimmer, "✕" on a viewer pill) targeting only the current coach/team. Nothing ever overwrites these arrays wholesale, and — critically — **removing a swimmer or a viewer never deletes the swimmer document itself**, only unlinks the one coach/team relationship being removed; the doc and any other coach's access stay fully intact. (An earlier version of mobile's "Remove" button called `deleteDoc()` directly — a real, shipped bug that would have wiped a shared swimmer's entire record for every coach who had access, not just the one clicking Remove. Fixed 2026-07-25; never reintroduce a hard delete on this collection from a non-owner action.)
+- **`config/records`**, **`config/rudolph`**, **`config/usaStandards`**, **`config/mastersRecords`** are published **only from the desktop app's Extract/Admin tabs** after reviewing a diff vs. the current cloud doc, owner-only. Both apps only ever *read* them for scoring/gap features.
 
 ### Security rules (`firestore.rules`)
-- **Owners** (hardcoded `ownerEmails()`, currently `lhershey@gmail.com`) always have access and can edit the allow-list.
-- Everyone else must be in **`config/access.emails`** (managed live from the mobile Settings → "Who can access"). `swimmers/*` allows read/write only to owners or allow-listed emails; `config/access` is readable by allow-listed users, writable only by owners.
-- `config/records` and `config/rudolph` follow the same pattern: readable by any allow-listed user, writable only by owners (so only the owner account can publish new records/table data).
+- **Owners** (hardcoded `ownerEmails()`, currently `lhershey@gmail.com`) always have full access — read/write everything, including cross-coach admin queries.
+- **Coaches**: existence of a `coaches/{uid}` doc is what makes an account a "coach." `swimmers/{id}` read/update is scoped to `request.auth.uid in resource.data.coachUids`; create is open to any coach (a brand-new doc has no prior owner to protect). `coaches/{uid}` is readable by any coach (needed to label a shared swimmer's team) but only self-updatable, and only the `teamName` field.
+- **`teams/{teamId}`**: any coach can read (needed to show a team's name to someone who didn't create it); only the creator (`createdBy`) can rename; only the owner can delete.
+- Everyone else (no `coaches/{uid}` doc yet) must redeem an **invite code** first — see "Onboarding a new coach" below. `config/records`/`rudolph`/`usaStandards`/`mastersRecords` are readable by any coach (or legacy-allowed email), writable only by the owner.
+
+---
+
+## Teams / Multi-Account Architecture
+
+A single Google sign-in can have access to **more than one, otherwise-unrelated roster** — e.g. a coach invited into two different families' swimmers, or a coach who explicitly creates a second, empty roster for a different squad under their own login. Both apps compute this **client-side**, over whatever swimmers the signed-in coach can already query (`coachUids array-contains uid`) — no extra Firestore query, no rules change needed for the clustering itself.
+
+### Two kinds of "team," not mutually exclusive
+
+1. **Legacy cluster** (implicit) — a group of swimmers connected by *shared coachUids*, with no explicit `teams/{id}` behind it. This is the original, pre-teams model (e.g. a family sharing one roster). Named after the earliest-created member coach's `coaches/{uid}.teamName` (or a computed default, `"<email-local-part>'s Team"`).
+2. **Explicit team** (`teams/{id}`) — a real, named Firestore doc a coach creates via **Settings → "Start Another Team" → + Create a New Team**. Brand-new and empty at creation; swimmers join it by being added while it's the *active* team, or by already existing elsewhere and being additionally tagged with its id (see below). Named directly from `teams/{id}.name`.
+
+**A swimmer can belong to more than one of either kind at once** — `teamIds` is an **array**, not a single field, specifically so that adding an existing swimmer (already shared via legacy coachUids) to a brand-new explicit team never removes them from where they already were. This was a real, reported bug during development ("added Liron to a new team and it removed him from Team Har-Shai") before `teamId` (singular) was redesigned into `teamIds` (array) — see [[swimtrack-cloud-architecture]] in the assistant's memory for the full incident.
+
+### Clustering algorithm — `clusterMySwimmers(mySwimmers, myUid)`
+
+Implemented identically in both apps (`swim_tracker.html` and `mobile/src/App.jsx`). Input: every swimmer doc the signed-in coach's uid appears on. Output: an array of clusters, `{key, teamId?, swimmers, coachUids}`.
+
+1. **Explicit-team pass**: for every swimmer, for every id in its `teamIds`, put it in that team's cluster (`key: "team:"+teamId`). A swimmer with entries in `teamIds` still ALSO participates in the legacy pass below — UNLESS it has literally no other coach at all (nothing left for a "solo" legacy bucket to add).
+2. **Legacy pass (union-find)**: swimmers are unioned together if they share any coach **other than the signed-in coach's own uid** — using your own uid would trivially merge every swimmer you can see into one cluster, since by definition you're on all of them. Swimmers with **no other coach at all** ("solo," entirely yours) are unioned together into one combined default cluster, so each doesn't become its own singleton.
+3. If clustering yields **only one cluster total**, nothing changes for the user — no gate, no picker, same single-roster experience as before teams existed.
+4. If it yields **more than one**, cluster names are resolved (`nameClusters()` — fetches each explicit team's real name from `teams/{id}`, or the earliest-created legacy member's `teamName`/default) and a **forced picker** ("Which account?" on mobile, `#teamGate` overlay on desktop) shows at sign-in. The choice is remembered in `localStorage` (`swimtrack:teamKey`) so it doesn't re-ask next time, and is reachable afterward via **"Switch Account"** (desktop Settings) / the account-switcher (mobile TopBar + Settings).
+
+### Switching teams — what actually changes
+
+Picking a cluster (`applyTeamChoice`) sets:
+- `currentTeamId` — which explicit team (if any) a **newly-added** swimmer gets tagged into (`teamIds: arrayUnion(currentTeamId)`); `null` for a legacy cluster.
+- The swimmer list shown — mobile just uses `cluster.swimmers` directly (always a fresh, complete re-fetch); desktop derives a `teamFilterIds` Set used to filter the cloud-swimmer query.
+- **Desktop-specific gotcha, real bug found + fixed**: `teamFilterIds` is a snapshot taken at switch time. Saving NEW swimmers into the *currently active* team afterward (e.g. "💾 Save All Changes") didn't update that snapshot — so switching away and back would make `pruneAutoImportedSwimmers()` treat the just-saved swimmers as "not in this team" and silently drop them locally (they were still safe in Firestore, just hidden — looked identical to data loss to the user). Fixed with `refreshTeamFilterForCurrentTeam()`, called after every cloud save. If you ever touch `teamFilterIds`/`pruneAutoImportedSwimmers`, re-verify this exact switch → add-swimmer → save → switch-away → switch-back cycle (see `tests/scenarios/multi-team-membership.js`).
+
+### Admin view — cross-coach, owner-only
+
+`groupCoachesIntoTeams(coaches, swimmers)` (both apps) is the **admin-side twin** of `clusterMySwimmers` — same explicit-team-then-legacy-union-find shape, but over **every** coach/swimmer in the system (a query only the owner's rules allow), and grouping by each swimmer's **root coach** (whichever coachUid has the earliest `coaches/{uid}.createdAt`) rather than "my own uid," since there's no single "my uid" to exclude at admin scope. Deliberately NOT naive connected-components-via-any-shared-swimmer — that would incorrectly merge two genuinely unrelated rosters into one "team" the moment one coach happens to be a viewer on both. Powers the Admin tab's Teams list (now showing each team's real name, resolved via `nameClusters()`) and a **Performance Split table per team** (not one table mixing every coach's swimmers) — collapsed to just the team name + swimmer count by default, expandable.
+
+### Onboarding a new coach / adding & removing a viewer
+
+- **Owner-only invite code**: a plain `inviteCodes/{code}` doc (no `targetCoachUid`) — redeeming it self-registers a brand-new, independent, empty-roster coach.
+- **"Add a Viewer"** (any coach, both apps' Settings): generates a "join my team" code (`targetCoachUid` + `swimmerIds` set to the generating coach's own current roster) — redeeming it grants the SAME access the generating coach has, restoring the old flat-allow-list "family sharing" behavior on top of the multi-coach model. Shows a live "Current Team" pill list of everyone who already has access (derived from `coachEmails` on the roster's swimmers).
+- **"Remove a Viewer"** (added 2026-07-25): each "Current Team" pill has an inline "✕." Since only uids/emails are stored on swimmer docs (no ready-made email→uid map), removal first queries `coaches` `where(email==...)` to resolve the target uid, then `arrayRemove`s that uid/email off every swimmer in the current roster shared with them. Never touches the swimmer doc otherwise, never affects any other coach.
+- **"Start Another Team"** (Settings): `createTeam()` writes a new `teams/{id}` doc and immediately switches into it (bypasses the picker — intent is unambiguous), so the very next "+ Add Swimmer" tags into the right team automatically.
+
+---
 
 ### Desktop ↔ cloud (Analyze tab "☁ Cloud" bar)
 - **☁ Load from cloud** — builds the global `D` from `swimmers/{activeId}.seasons` and renders via `finalize()`.
@@ -336,7 +397,9 @@ Used in: swimmer banner, competition table Age column, season recap header.
 
 Published from the desktop Extract tab (③ Israeli Age Records) after uploading the official PDFs from **isr.org.il/records.asp** (juniors + masters, long + short course — 4 separate PDFs, any subset can be uploaded). Parsed entirely client-side (pdf.js text-item extraction, grouped by row/column position), diffed against the current `config/records` doc, then published via a manual "☁ Upload changes to Cloud" button (owner-only, enforced by `firestore.rules`).
 
-`buildRecords()` shows, per pool (25m/50m), the swimmer's best time vs. their current age-group record, using `_recAge()`/`_recCat()`/`_recKey()` (dist+stroke → key) — same helpers reused by the Rudolph feature below.
+`buildRecords()` shows, per pool (25m/50m), the swimmer's **all-time personal best** vs. their **current** age-group record, using `_recAge()`/`_recCat()`/`_recKey()` (dist+stroke → key) — same helpers reused by the Rudolph feature below.
+
+**Gap comparison uses the lifetime PB, not a same-bracket swim (fixed 2026-07-25, real bug).** An earlier version required the comparison swim to have literally happened while the swimmer was AT that exact age bracket (`_bestInGroup`) — so a swimmer who'd just aged into a new bracket with no meet yet at that age showed "no in-group swim" for every single event, even though their existing PB (set at a younger age) might already beat the record. `_gapCells`/`buildRecords` (mobile: `RecordsTab`) now always compares the swimmer's all-time best to the record for their CURRENT age group, full stop. This "must be swum while in that exact bracket" restriction is still correct and unchanged for the *other* age-graded features below (Rudolph, USA Standards, Masters WR gap) — it was specific to Personal Records.
 
 ---
 
