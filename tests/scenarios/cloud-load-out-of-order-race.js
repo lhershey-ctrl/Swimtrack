@@ -37,19 +37,29 @@ module.exports = async function run() {
     await page.waitForTimeout(900);
 
     // Noga's fetch will take 800ms; Gal's only 50ms — Noga is clicked FIRST
-    // (older request) but Gal's response will land first.
+    // (older request) but Gal's response will land first. Waiting via
+    // waitForFunction (not a fixed sleep) so this holds regardless of how
+    // fast/slow/loaded the runner is — a hardcoded timeout here would be
+    // exactly the kind of environment-sensitive flakiness this whole test
+    // exists to rule out. (A fixed-sleep version of this test failed CI on
+    // a slower/shared runner despite passing locally every time.)
     await page.evaluate(() => { window.__mockDocDelayMs = { 901: 800, 902: 50 }; });
 
     await page.click('#loadSwimmerPicker button:has-text("Noga")'); // slow, older request
     await page.click('#loadSwimmerPicker button:has-text("Gal")');  // fast, newer request — should win
-    await page.waitForTimeout(1100); // long enough for BOTH to have resolved
+    await page.waitForFunction(() => window.__loadedSwimmerId === '902', null, { timeout: 15000 });
+    // Keep waiting past that first (correct) resolution long enough for the
+    // OLDER, slower request to ALSO land — the whole point is confirming
+    // its late arrival doesn't clobber what's already there.
+    await page.waitForTimeout(1500);
 
     const finalId = await page.evaluate(() => window.__loadedSwimmerId);
     assert(finalId === '902', 'REGRESSION: window.D should end up as Gal (the last-requested swimmer), got swimmer id: ' + finalId);
     steps.push({ desc: 'A slower, older request cannot clobber window.D after a faster, newer request already won', ok: true });
 
     await page.click('text=📄 PDF Summary');
-    await page.waitForTimeout(1200);
+    await page.waitForFunction(() => window.Chart && Chart.getChart && Chart.getChart('rpt-stroke-radar'), null, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(500);
     const radar = await page.evaluate(() => {
       const c = window.Chart && Chart.getChart ? Chart.getChart('rpt-stroke-radar') : null;
       return c ? c.data.datasets[0].data : null;
