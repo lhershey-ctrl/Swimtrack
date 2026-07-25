@@ -78,6 +78,19 @@ module.exports = async function run() {
     assert(/off WR/.test(perfText), 'Senior Swimmer\'s row should show a % off World Record, got: ' + perfText);
     steps.push({ desc: 'Senior/masters swimmer shows FINA score + % off World Record instead of Rudolph/USA Standard', ok: true });
 
+    // Collapsed by default (native <details>, no [open] attribute), each with
+    // a <summary> naming the team — content stays in the DOM either way.
+    const detailsState = await page.$$eval('#adminPerf details', (els) => els.map((el) => ({ open: el.open, summary: el.querySelector('summary').textContent })));
+    assert(detailsState.length >= 2, 'expected a <details> section per team, got ' + detailsState.length);
+    assert(detailsState.every((d) => !d.open), 'Performance Split sections should be collapsed by default, got: ' + JSON.stringify(detailsState));
+    assert(detailsState.some((d) => d.summary.includes('Masters Squad')), 'a section\'s <summary> should name the team, got: ' + JSON.stringify(detailsState));
+    steps.push({ desc: 'Performance Split sections are collapsed by default, one per team, named in the summary', ok: true });
+
+    // Color coding: the WR-gap cell ((32-30.0)/30.0*100 = 6.67%, the "yellow" band).
+    const wrGapColorInHtml = perfHtml.includes('#e0b400');
+    assert(wrGapColorInHtml, 'expected the WR-gap score to be color-coded (yellow, #e0b400 for a ~6.7% gap), got no matching color in the markup');
+    steps.push({ desc: 'Performance Split scores are color-coded (green/yellow/orange/red/black)', ok: true });
+
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));
     steps.push({ desc: 'No uncaught page errors during the flow', ok: true });
 

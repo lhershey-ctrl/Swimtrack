@@ -43,6 +43,10 @@ export function setDoc(ref, data, opts) {
       const arr = Array.isArray(merged[k]) ? merged[k].slice() : (Array.isArray(existing[k]) ? existing[k].slice() : []);
       v.__arrayUnion.forEach((x) => { if (!arr.includes(x)) arr.push(x); });
       merged[k] = arr;
+    } else if (v && v.__arrayRemove) {
+      let arr2 = Array.isArray(merged[k]) ? merged[k].slice() : (Array.isArray(existing[k]) ? existing[k].slice() : []);
+      v.__arrayRemove.forEach((x) => { arr2 = arr2.filter((y) => y !== x); });
+      merged[k] = arr2;
     } else merged[k] = v;
   });
   c[ref.__id] = merged;
@@ -81,3 +85,4 @@ export function onSnapshot(ref, onNext, onError) {
   return () => { L[key] = (L[key] || []).filter((cb) => cb !== onNext); };
 }
 export function arrayUnion(...args) { return { __arrayUnion: args }; }
+export function arrayRemove(...args) { return { __arrayRemove: args }; }

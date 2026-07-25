@@ -23,15 +23,31 @@ export function setDoc(ref, data, opts) {
       var arr = Array.isArray(merged[k]) ? merged[k].slice() : (Array.isArray(existing[k]) ? existing[k].slice() : []);
       v.__arrayUnion.forEach(function (x) { if (arr.indexOf(x) < 0) arr.push(x); });
       merged[k] = arr;
+    } else if (v && v.__arrayRemove) {
+      var arr2 = Array.isArray(merged[k]) ? merged[k].slice() : (Array.isArray(existing[k]) ? existing[k].slice() : []);
+      v.__arrayRemove.forEach(function (x) { arr2 = arr2.filter(function (y) { return y !== x; }); });
+      merged[k] = arr2;
     } else merged[k] = v;
   });
   c[ref.__id] = merged;
   return Promise.resolve();
 }
+// Optional artificial latency (window.__mockNetworkDelayMs, default 0) —
+// real Firestore reads take real network time; the mock resolves via a bare
+// microtask by default, which hides race conditions genuine users can hit
+// (e.g. clicking something right after a swimmer switch, before the switch's
+// own cloud fetch lands). Scenarios that need to exercise such a race set
+// this before triggering the action.
+function delay() {
+  var ms = window.__mockNetworkDelayMs || 0;
+  return ms > 0 ? new Promise(function (r) { setTimeout(r, ms); }) : Promise.resolve();
+}
 export function getDoc(ref) {
   var c = col(ref.__col);
   var data = c[ref.__id];
-  return Promise.resolve({ exists: function () { return !!data; }, data: function () { return data; }, id: ref.__id });
+  return delay().then(function () {
+    return { exists: function () { return !!data; }, data: function () { return data; }, id: ref.__id };
+  });
 }
 export function collection(db, name) { return { __col: name }; }
 export function query(colRef) {
@@ -54,3 +70,4 @@ export function getDocs(ref) {
   return Promise.resolve({ docs: ids.map(function (id) { return { id: id, data: function () { return c[id]; } }; }) });
 }
 export function arrayUnion() { return { __arrayUnion: Array.prototype.slice.call(arguments) }; }
+export function arrayRemove() { return { __arrayRemove: Array.prototype.slice.call(arguments) }; }

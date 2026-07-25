@@ -55,10 +55,30 @@ module.exports = async function run() {
     assert(perfHeadings >= 2, 'expected the team name to appear both in the Teams list and as a Performance Split heading, got ' + perfHeadings + ' occurrences');
     steps.push({ desc: 'Performance Split renders a separate, named section per team', ok: true });
 
-    assert(bodyText.includes('Senior Swimmer'), 'Senior Swimmer should appear in the Performance Split, got: ' + bodyText.slice(0, 800));
-    assert(bodyText.includes('700 pts (FINA)'), 'Senior Swimmer\'s row should show a FINA score, got: ' + bodyText.slice(0, 800));
-    assert(/off WR/.test(bodyText), 'Senior Swimmer\'s row should show a % off World Record, got: ' + bodyText.slice(0, 800));
-    steps.push({ desc: 'Senior/masters swimmer shows FINA score + % off World Record instead of Rudolph/USA Standard', ok: true });
+    // Performance Split sections are collapsed by default (just the team
+    // name + swimmer count) — the table itself isn't in the DOM until
+    // expanded. TopBar's "Switch account (Masters Squad)" button also
+    // contains the team name, so the LAST match is the actual section toggle.
+    const collapsedBodyText = bodyText;
+    assert(!/700 pts \(FINA\)/.test(collapsedBodyText), 'Performance Split table should be collapsed by default (not in the DOM yet), got: ' + collapsedBodyText.slice(0, 800));
+    steps.push({ desc: 'Performance Split section is collapsed by default', ok: true });
+
+    await page.click('button:has-text("Masters Squad") >> nth=-1');
+    await page.waitForTimeout(300);
+    const expandedBodyText = await page.evaluate(() => document.body.innerText);
+    assert(expandedBodyText.includes('Senior Swimmer'), 'Senior Swimmer should appear in the expanded Performance Split, got: ' + expandedBodyText.slice(0, 900));
+    assert(expandedBodyText.includes('700 pts (FINA)'), 'Senior Swimmer\'s row should show a FINA score once expanded, got: ' + expandedBodyText.slice(0, 900));
+    assert(/off WR/.test(expandedBodyText), 'Senior Swimmer\'s row should show a % off World Record once expanded, got: ' + expandedBodyText.slice(0, 900));
+    steps.push({ desc: 'Expanding a team\'s section reveals the full table, with senior swimmer FINA score + % off World Record', ok: true });
+
+    // Color coding: the WR-gap cell ((32-30.0)/30.0*100 = 6.67%, the "yellow" band).
+    const wrGapCellColor = await page.evaluate(() => {
+      const cells = Array.from(document.querySelectorAll('td'));
+      const cell = cells.find((td) => /off WR/.test(td.textContent));
+      return cell ? getComputedStyle(cell).color : null;
+    });
+    assert(wrGapCellColor === 'rgb(224, 180, 0)', 'expected the WR-gap cell to be color-coded yellow (#e0b400) for a ~6.7% gap, got: ' + wrGapCellColor);
+    steps.push({ desc: 'Performance Split scores are color-coded (green/yellow/orange/red/black)', ok: true });
 
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));
     steps.push({ desc: 'No uncaught page errors during the flow', ok: true });

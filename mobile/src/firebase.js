@@ -18,6 +18,7 @@ import {
   query,
   where,
   arrayUnion,
+  arrayRemove,
 } from "firebase/firestore";
 
 // ── Firebase config (project: swimtrack-e12c8) ──────────────────────
@@ -160,8 +161,17 @@ export async function createSwimmer(swimmerId, name, coachUid, coachEmail, teamI
   await setDoc(doc(db, "swimmers", String(swimmerId)), payload, { merge: true });
 }
 
-export async function deleteSwimmer(swimmerId) {
-  await deleteDoc(doc(db, "swimmers", String(swimmerId)));
+// Unlinks THIS coach (and, if viewing an explicit team, that team) from the
+// swimmer — symmetric with createSwimmer's arrayUnion. Never deletes the
+// swimmer doc itself: it used to (deleteDoc), which meant removing a
+// swimmer shared with another coach (e.g. Liron, shared with sharos88)
+// would permanently wipe their entire record for everyone, not just stop
+// showing them in this account. Real bug, high severity — fixed to match
+// desktop's swimCloudRemoveSwimmer.
+export async function deleteSwimmer(swimmerId, coachUid, coachEmail, teamId) {
+  const updates = { coachUids: arrayRemove(coachUid), coachEmails: arrayRemove(coachEmail) };
+  if (teamId) updates.teamIds = arrayRemove(teamId);
+  await setDoc(doc(db, "swimmers", String(swimmerId)), updates, { merge: true });
 }
 
 // ── Coaches (config for the multi-coach access model) ────────────────
@@ -280,6 +290,23 @@ export async function createInviteCode(user, note, shareWith) {
   if (shareWith) { payload.targetCoachUid = shareWith.targetCoachUid; payload.swimmerIds = shareWith.swimmerIds; }
   await setDoc(doc(db, "inviteCodes", code), payload);
   return code;
+}
+
+// Revokes a viewer's access to every swimmer in `swimmers` (this coach's
+// current roster) that's shared with them — the inverse of createInviteCode
+// (which grants access to the whole roster at once). Resolves email → uid
+// via the coaches collection first (coachUids/coachEmails only store
+// uids/emails, not a ready-made mapping), then arrayRemove on each swimmer.
+export async function removeViewer(swimmers, email) {
+  const q = query(collection(db, "coaches"), where("email", "==", email));
+  const snap = await getDocs(q);
+  if (!snap.docs.length) throw new Error("Could not find that coach account.");
+  const targetUid = snap.docs[0].id;
+  for (const sw of swimmers) {
+    const realEmail = (sw.coachEmails || []).find((e) => e.toLowerCase() === email.toLowerCase());
+    if (!realEmail) continue;
+    await setDoc(doc(db, "swimmers", String(sw.id)), { coachUids: arrayRemove(targetUid), coachEmails: arrayRemove(realEmail) }, { merge: true });
+  }
 }
 
 // ── Admin stats (owner-only; deliberately separate from the normal,

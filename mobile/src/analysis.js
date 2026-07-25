@@ -755,6 +755,24 @@ export function wrGapColor(pct) {
   if (pct <= 15) return "#d9362e";  // red
   return "#111827";                 // black
 }
+// Same green/yellow/orange/red/black scale as wrGapColor, applied to the two
+// other Performance Split score types so every column reads at a glance.
+export function rudScoreColor(score) {
+  if (score >= 16) return "#1D9E75";  // green
+  if (score >= 12) return "#e0b400";  // yellow
+  if (score >= 8) return "#e07b00";   // orange
+  if (score >= 4) return "#d9362e";   // red
+  return "#111827";                    // black
+}
+export function usaTierColor(tier) {
+  const i = USA_TIERS.indexOf(tier);
+  if (i < 0) return "#111827";
+  if (i >= 4) return "#1D9E75";  // AAA/AAAA — green
+  if (i === 3) return "#e0b400"; // AA — yellow
+  if (i === 2) return "#e07b00"; // A — orange
+  if (i === 1) return "#d9362e"; // BB — red
+  return "#111827";               // B — black
+}
 // Top-5 closest-to-record events for a given bracket, using the best time
 // actually swum while the swimmer was in that bracket, sorted by % gap ascending.
 export function wrGapRows(table, S, group, D, birthdate) {

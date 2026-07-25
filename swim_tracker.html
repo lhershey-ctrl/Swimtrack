@@ -630,7 +630,12 @@ function landingSignIn(){
     }
     // Picking a name is enough — pull this swimmer's data straight from the
     // cloud instead of requiring a separate "Load from cloud" click too.
-    if(window.swimUser&&window.doLoadFromCloud)window.doLoadFromCloud();
+    // Tracked on window.__pendingCloudLoad so anything reading window.D
+    // right after a switch (e.g. "📄 PDF Summary", clicked fast on a real
+    // network) can wait for this to land instead of racing it — see
+    // openPdfReport, which is exactly that race: build the report before
+    // this resolves and it reads the PREVIOUS swimmer's still-loaded D.
+    if(window.swimUser&&window.doLoadFromCloud)window.__pendingCloudLoad=window.doLoadFromCloud();
   };
 
   window.addSwimmer=function(){
@@ -871,9 +876,14 @@ function landingSignIn(){
 
   window.removeSettingsSwimmer=function(idx){
     if(SWIMMERS.length<=1){alert('Must keep at least one swimmer.');return;}
+    var sw=SWIMMERS[idx];
     SWIMMERS.splice(idx,1);
     if(activeSwimmer>=SWIMMERS.length)activeSwimmer=SWIMMERS.length-1;
     saveSettings();renderSettingsUI();renderSwimmerMgmt();renderSwimmerSelectors();
+    // Unlink from Firestore too (not just local state) — otherwise the next
+    // cloud refresh silently re-imports them right back (see comment above
+    // window.swimCloudRemoveSwimmer).
+    if(sw&&sw.id&&window.swimUser&&window.swimCloudRemoveSwimmer)window.swimCloudRemoveSwimmer(sw.id);
   };
 
   window.saveAllSettings=function(){
@@ -2870,6 +2880,7 @@ window.buildUsaStandards=buildUsaStandards;
 
 // ── ⑫ MASTERS WORLD RECORD GAP (age > 30) ─────────────────────────────
 var wrGapChartInst=null;
+var rptRadarChartInst=null; // PDF report's "Performance by Stroke" radar — see buildPdfReport
 function _wrAgeGroup(age){
   if(age==null||age<25)return null;
   var base=25+Math.floor((age-25)/5)*5;
@@ -2890,6 +2901,25 @@ function _wrGapColor(pct){
   if(pct<=10)return'#e07b00';  // orange
   if(pct<=15)return'#d9362e';  // red
   return'#111';                // black
+}
+// Same green/yellow/orange/red/black scale as _wrGapColor, applied to the
+// two other Performance Split score types so every column reads at a
+// glance, not just the WR-gap one — used by perfTableHtml.
+function _rudScoreColor(score){
+  if(score>=16)return'#1D9E75';  // green
+  if(score>=12)return'#e0b400';  // yellow
+  if(score>=8)return'#e07b00';   // orange
+  if(score>=4)return'#d9362e';   // red
+  return'#111';                  // black
+}
+function _usaTierColor(tier){
+  var i=USA_TIERS.indexOf(tier);
+  if(i<0)return'#111';
+  if(i>=4)return'#1D9E75';  // AAA/AAAA — green
+  if(i===3)return'#e0b400'; // AA — yellow
+  if(i===2)return'#e07b00'; // A — orange
+  if(i===1)return'#d9362e'; // BB — red
+  return'#111';              // B — black
 }
 function _wrGapRows(table,S,ageGroup,bd){
   var rows=[];
@@ -3262,17 +3292,28 @@ function _recRange(cat){if(!cat||cat==='open')return null;if(/^\d{1,2}$/.test(ca
 function _nameMatch(a,b){var n=function(x){return(x||'').toString().replace(/['’‘׳\s\-]/g,'');};return !!a&&!!b&&n(a)===n(b);}
 function _lookupRec(recs,S,age,pool,ev){var cat=_recCat(age),key=_recKey(ev);if(!recs||!S||!cat||!key)return null;var r=(((recs[pool]||{})[S]||{})[cat]||{})[key];return r&&r.sec?r:null;}
 function _bestInGroup(pool,bd,cat){var range=_recRange(cat),out={};seasons().forEach(function(sk){(D[sk].bests||[]).forEach(function(b){if(!b.event||!b.seconds||isRelay(b.event)||poolNorm(b.pool)!==pool)return;if(range){var a=_recAge(bd,parseDate(b.date));if(a==null||a<range[0]||a>range[1])return;}if(!out[b.event]||b.seconds<out[b.event].seconds)out[b.event]={seconds:b.seconds,time:b.time};});});return out;}
-function _gapCells(recs,S,age,pool,ev,ebMap,myName){
+// bestEver = this event's overall/lifetime-best entry ({seconds,time,...}
+// from rec25/rec50 — same one shown in the BEST column), compared against
+// the record for the swimmer's CURRENT/latest age group regardless of how
+// old they were when they actually swam that best. Previously this only
+// compared a swim performed while literally inside that exact age bracket
+// (_bestInGroup) — correct in spirit, but meant a swimmer who just aged up
+// into a new bracket (e.g. just turned 18) with no meet yet at that age
+// showed "no in-group swim" for every single event, even though their
+// existing PB might already beat the record. Real user report, not a
+// design call: the PB is always what should be judged against the current
+// bracket's record.
+function _gapCells(recs,S,age,pool,ev,bestEver,myName){
   var rec=_lookupRec(recs,S,age,pool,ev); if(!rec)return['<span style="color:#bbb">—</span>','<span style="color:#bbb">—</span>'];
   var recTxt=fmtT(rec.sec)+' <span style="color:#999;font-size:11px">'+rec.name+'</span>';
-  var eb=ebMap[ev], nameOwn=myName&&_nameMatch(rec.name,myName), gapTxt;
-  if(eb){
-    var g=+(eb.seconds-rec.sec).toFixed(2), pct=+((g/rec.sec)*100).toFixed(1);
+  var nameOwn=myName&&_nameMatch(rec.name,myName), gapTxt;
+  if(bestEver){
+    var g=+(bestEver.seconds-rec.sec).toFixed(2), pct=+((g/rec.sec)*100).toFixed(1);
     if(nameOwn||Math.abs(g)<=0.005)gapTxt='<span style="color:#c8961f;font-weight:700">🏅 you hold it</span>';
     else if(g<-0.005)gapTxt='<span style="color:#1D9E75;font-weight:700">🏅 faster!</span>';
     else gapTxt='<span style="color:'+(pct<=5?'#1D9E75':pct<=15?'#9b7a0b':'#a32d2d')+';font-weight:700">+'+g+'s · '+pct+'%</span>';
   } else if(nameOwn){ gapTxt='<span style="color:#c8961f;font-weight:700">🏅 you hold it</span>'; }
-  else { gapTxt='<span style="color:#bbb">no in-group swim</span>'; }
+  else { gapTxt='<span style="color:#bbb">no swim yet</span>'; }
   return[recTxt,gapTxt];
 }
 
@@ -3293,23 +3334,22 @@ function buildRecords(){
   var bd=prof.birthdate||sw.birthdate||'', S=_sexN(prof.sex||sw.sex), myName=prof.recordName||'';
   var recs=window.__records||null, age=bd?_recAge(bd):null, cat=_recCat(age);
   var canGap=!!(recs&&S&&cat);
-  var eb25=canGap?_bestInGroup('25',bd,cat):{}, eb50=canGap?_bestInGroup('50',bd,cat):{};
   var hint=document.getElementById('recGapHint');
   if(hint){
     if(!recs)hint.innerHTML='Load Israeli records (Extract tab ③) to see the gap to each age-group record.';
     else if(!S||!cat)hint.innerHTML='Set this swimmer\'s <b>sex</b> + <b>birthdate</b> in ⚙ Settings to see age-group record gaps.';
-    else hint.innerHTML='Gaps vs <b>'+(cat==='open'?'Open/National':'age '+cat)+'</b> records ('+(S==='F'?'women':'men')+'). Age group uses year-end age; a faster time from a younger group doesn\'t count.';
+    else hint.innerHTML='Gaps vs <b>'+(cat==='open'?'Open/National':'age '+cat)+'</b> records ('+(S==='F'?'women':'men')+'), the swimmer\'s current age group — each event\'s all-time personal best (left) vs. that record.';
   }
-  function renderRec(store,tbodyId,pool,ebMap){
+  function renderRec(store,tbodyId,pool){
     var rows=Object.entries(store).sort(function(a,b){return parseInt(a[0])-parseInt(b[0])||a[0].localeCompare(b[0]);})
       .map(function(e){
-        var gc=canGap?_gapCells(recs,S,age,pool,e[0],ebMap,myName):['<span style="color:#bbb">—</span>','<span style="color:#bbb">—</span>'];
+        var gc=canGap?_gapCells(recs,S,age,pool,e[0],e[1],myName):['<span style="color:#bbb">—</span>','<span style="color:#bbb">—</span>'];
         return'<tr><td><strong>'+e[0]+'</strong></td><td>'+fmtT(e[1].seconds)+'</td><td>'+pBadge(e[1].points)+'</td><td>'+e[1].season+'</td><td>'+gc[0]+'</td><td>'+gc[1]+'</td></tr>';
       }).join('');
     document.getElementById(tbodyId).innerHTML=rows;
   }
-  renderRec(rec25,'rec25','25',eb25);
-  renderRec(rec50,'rec50','50',eb50);
+  renderRec(rec25,'rec25','25');
+  renderRec(rec50,'rec50','50');
 }
 window.buildRecords=buildRecords;
 
@@ -4838,7 +4878,7 @@ function clearRace2(){
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, where, arrayUnion }
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, where, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -4970,7 +5010,9 @@ function renderViewerBar() {
       .filter((e) => currentUser && e.toLowerCase() !== currentUser.email.toLowerCase());
     teamEl.innerHTML = others.length
       ? '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Current Team</div>' +
-        others.map((e) => '<span style="display:inline-block;font-size:12px;color:#1a7a4f;background:#f0fdf4;border:1px solid #b7e4cc;border-radius:7px;padding:4px 10px;margin:0 6px 6px 0">' + e + '</span>').join('')
+        others.map((e) => '<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#1a7a4f;background:#f0fdf4;border:1px solid #b7e4cc;border-radius:7px;padding:4px 6px 4px 10px;margin:0 6px 6px 0">' + e +
+          '<button onclick="window.removeViewer(\'' + e.replace(/'/g, "\\'") + '\')" title="Remove this viewer\'s access" ' +
+          'style="background:none;border:none;cursor:pointer;color:#a32d2d;font-size:13px;line-height:1;padding:0 2px;font-weight:700">✕</button></span>').join('')
       : "";
   }
   if (!currentUser) { out.innerHTML = '<span style="font-size:12px;color:#9a6b00">Sign in above first.</span>'; return; }
@@ -4994,6 +5036,28 @@ function renderViewerBar() {
   });
 }
 window.renderViewerBar = renderViewerBar;
+// Revokes a viewer's access to every swimmer THIS coach can currently see
+// that's shared with them — the inverse of "Generate code" (which grants
+// access to the whole cloudSwimmers roster at once). Resolves email → uid
+// via the coaches collection (coachUids/coachEmails only store uids/emails,
+// not a ready-made mapping), then arrayRemove on each affected swimmer.
+window.removeViewer = async function (email) {
+  if (!currentUser) return;
+  if (!confirm("Remove " + email + "'s access to your swimmers?")) return;
+  try {
+    const q = query(collection(db, "coaches"), where("email", "==", email));
+    const snap = await getDocs(q);
+    if (!snap.docs.length) { alert("Could not find that coach account."); return; }
+    const targetUid = snap.docs[0].id;
+    for (const s of cloudSwimmers) {
+      const realEmail = (s.coachEmails || []).find((e) => e.toLowerCase() === email.toLowerCase());
+      if (!realEmail) continue;
+      await setDoc(doc(db, "swimmers", String(s.id)), { coachUids: arrayRemove(targetUid), coachEmails: arrayRemove(realEmail) }, { merge: true });
+    }
+    await refreshCloudSwimmers();
+    renderViewerBar();
+  } catch (e) { alert("Failed to remove viewer: " + e.message); }
+};
 
 async function swimLoadFromCloud(id) {
   const snap = await getDoc(doc(db, "swimmers", String(id)));
@@ -5182,6 +5246,26 @@ window.swimCloudSaveAll = async function (swimmers) {
     await refreshTeamFilterForCurrentTeam(); // keep the current team's filter in sync with what was just saved (see comment above the function)
     refreshCloudSwimmers(); // so the "☁ Load:" pills pick up a renamed swimmer right away, not just on next sign-in
     return "saved";
+  } catch (e) { return "error:" + e.message; }
+};
+// Clicking "✕ Remove" in Settings only ever spliced the swimmer out of the
+// local SWIMMERS array/localStorage — the swimmer's Firestore doc still had
+// this coach in coachUids (and this team in teamIds), so the very next
+// refreshCloudSwimmers()/autoSyncProfilesFromCloud() (e.g. right after
+// clicking "Save All Changes") silently re-imported them, making "Remove"
+// look broken ("it returns afterwards"). This actually unlinks this coach
+// (and, if viewing an explicit team, that team) from the swimmer in
+// Firestore — symmetric with how joining a team is additive (arrayUnion),
+// leaving/removing is the same fields via arrayRemove. Never deletes the
+// swimmer doc itself, so it's still fully intact for any other coach who
+// also has access to it.
+window.swimCloudRemoveSwimmer = async function (swimmerId) {
+  if (!currentUser || !swimmerId) return "offline";
+  try {
+    var updates = { coachUids: arrayRemove(currentUser.uid), coachEmails: arrayRemove(currentUser.email) };
+    if (window.currentTeamId) updates.teamIds = arrayRemove(window.currentTeamId);
+    await setDoc(doc(db, "swimmers", String(swimmerId)), updates, { merge: true });
+    return "removed";
   } catch (e) { return "error:" + e.message; }
 };
 
@@ -6098,10 +6182,18 @@ function buildPdfReport() {
     }
   });
 
+  // Every other chart in this app (top5Charts[canvasId], wrGapChartInst,
+  // etc.) destroys its previous Chart.js instance before creating a new
+  // one — this one didn't, unlike them. root.innerHTML above does replace
+  // the <canvas> DOM node each call, but leaving the old Chart.js instance
+  // undestroyed still leaks it (retained listeners/animation-frame hooks on
+  // a detached node) and is the one inconsistency in an otherwise-uniform
+  // pattern; fixed to match.
+  if (rptRadarChartInst) { try { rptRadarChartInst.destroy(); } catch (e) {} rptRadarChartInst = null; }
   if (radar) {
     var radarCanvas = document.getElementById('rpt-stroke-radar');
     if (radarCanvas) {
-      new Chart(radarCanvas.getContext('2d'), {
+      rptRadarChartInst = new Chart(radarCanvas.getContext('2d'), {
         type: 'radar',
         data: { labels: radar.labels, datasets: [{ label: 'Avg points', data: radar.avg, backgroundColor: 'rgba(200,150,31,.25)', borderColor: '#c8961f', pointBackgroundColor: '#c8961f' }] },
         options: {
@@ -6114,7 +6206,15 @@ function buildPdfReport() {
   }
 }
 
-function openPdfReport() {
+async function openPdfReport() {
+  // If a swimmer switch just fired a cloud load that hasn't landed yet,
+  // wait for it — otherwise buildPdfReport() reads window.D while it still
+  // holds the PREVIOUS swimmer's season data (real race: switch swimmer,
+  // click "📄 PDF Summary" before the fetch resolves). Harmless no-op when
+  // nothing's in flight or the promise already settled.
+  if (window.__pendingCloudLoad && window.__pendingCloudLoad.then) {
+    try { await window.__pendingCloudLoad; } catch (e) {}
+  }
   try { buildPdfReport(); }
   catch (e) { alert('Could not build the PDF report: ' + e.message); console.error('openPdfReport failed:', e); return; }
   // Chrome's "Save as PDF" suggests document.title as the filename — swap it
@@ -6346,15 +6446,15 @@ function perfTableHtml(stats) {
       var topHtml = (r.topEvents && r.topEvents.length)
         ? r.topEvents.map(function (t) { return t.event + ' <span style="color:#999">(' + t.points + ')</span>'; }).join('<br>')
         : '—';
-      var col3 = r.rudScore != null ? r.rudScore.toFixed(1) + ' pts'
+      var col3 = r.rudScore != null ? '<span style="color:' + _rudScoreColor(r.rudScore) + '">' + r.rudScore.toFixed(1) + ' pts</span>'
         : r.finaPts != null ? r.finaPts + ' pts (FINA)' : '—';
-      var col4 = r.usaTier ? r.usaTier
-        : r.wrGapPct != null ? '+' + r.wrGapPct.toFixed(1) + '% off WR' : '—';
+      var col4 = r.usaTier ? '<span style="color:' + _usaTierColor(r.usaTier) + '">' + r.usaTier + '</span>'
+        : r.wrGapPct != null ? '<span style="color:' + _wrGapColor(r.wrGapPct) + '">+' + r.wrGapPct.toFixed(1) + '% off WR</span>' : '—';
       return '<tr style="border-top:1px solid #f0efe9">' +
         '<td style="padding:7px 4px;font-size:12.5px">' + r.name + '</td>' +
         '<td style="padding:7px 4px;font-size:11.5px;line-height:1.5">' + topHtml + '</td>' +
         '<td style="padding:7px 4px;font-size:12.5px;text-align:right;font-weight:700">' + col3 + '</td>' +
-        '<td style="padding:7px 4px;font-size:12.5px;text-align:right;font-weight:700;color:#185FA5">' + col4 + '</td>' +
+        '<td style="padding:7px 4px;font-size:12.5px;text-align:right;font-weight:700">' + col4 + '</td>' +
         '</tr>';
     }).join('') +
     '</tbody></table>';
@@ -6530,12 +6630,16 @@ async function renderAdminStats() {
       // every coach's swimmers) — a swimmer belonging to more than one team
       // (see teamIds multi-membership) correctly appears in each team's own
       // table, same as everywhere else that concept applies.
+      // Collapsed by default (just the team name + swimmer count) — expand
+      // to see the full table. Native <details>/<summary>, no JS state.
       perfEl.innerHTML = teams.map(function (team) {
         const teamRoster = team.swimmers.map((sw) => ({ swimmer: { id: sw.id, name: sw.name, birthdate: sw.birthdate, sex: sw.sex }, D: sw.seasons || {}, updatedAt: sw.updatedAt }));
         const stats = groupTeamStats(teamRoster, usaTable, rudTable, mastersTable);
-        return '<div class="card" style="padding:16px 20px;margin-bottom:14px">' +
-          '<div style="font-size:13px;font-weight:800;color:#185FA5;margin-bottom:10px">' + team.name + '</div>' +
-          perfTableHtml(stats) + '</div>';
+        return '<details class="card" style="padding:0;margin-bottom:14px;overflow:hidden">' +
+          '<summary style="cursor:pointer;padding:16px 20px;font-size:13px;font-weight:800;color:#185FA5">' + team.name +
+          ' <span style="font-weight:600;color:#999;font-size:11px">(' + team.swimmerCount + ' swimmer' + (team.swimmerCount !== 1 ? 's' : '') + ')</span></summary>' +
+          '<div style="padding:0 20px 16px">' + perfTableHtml(stats) + '</div>' +
+          '</details>';
       }).join('');
 
       const stalest = roster.slice().sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0)).slice(0, 8);

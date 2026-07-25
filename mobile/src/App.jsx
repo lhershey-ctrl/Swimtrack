@@ -9,7 +9,7 @@ import {
   watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
-  migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers,
+  migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers, removeViewer,
   fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes, saveTeamName,
   createTeam, fetchTeam, fetchMyTeams,
 } from "./firebase.js";
@@ -21,7 +21,7 @@ import {
   recordGap, recordCategory, sexNorm, nameMatch, recordCategories, catLabel,
   lookupRecord, bestInAgeGroup, recordAge, recordsHeldBy, seasonEventReport, bestsByAgeGroup,
   recordKey, rudolphTrend, usaStandardsForAge, USA_TIERS, USA_STROKES,
-  wrAgeGroup, wrAvailableGroups, wrGapColor, wrGapRows,
+  wrAgeGroup, wrAvailableGroups, wrGapColor, wrGapRows, rudScoreColor, usaTierColor,
   teamUsaTierSummary, teamRudolphSummary, teamWrGapSummary, teamBestPoints,
 } from "./analysis.js";
 import { shareProgress } from "./share.js";
@@ -1128,36 +1128,40 @@ function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc }) {
         {listRows.map((r, i) => {
           const rec = lookupRecord(records, sex, age, pool, r.event);
           const groups = byGroup[r.event] || [];
-          const curBest = groups.find((g) => g.cat === cat) || null;   // best in the current age group
+          const curBest = groups.find((g) => g.cat === cat) || null;   // best actually swum in the current age group (context only, see "Earlier:" below)
           const prev = groups.filter((g) => g.cat !== cat).slice().reverse(); // earlier groups, most-recent first
-          // Compare on the current-age-group best (what actually counts for this record).
-          const gap = rec && curBest ? +(curBest.seconds - rec.sec).toFixed(2) : null;
+          // Compare the swimmer's all-time PB (r.seconds) against the CURRENT
+          // age group's record — not just a swim performed while literally
+          // inside that bracket. A swimmer who just aged into a new bracket
+          // with no meet yet at that age used to show "no time yet" for
+          // every single event even though their existing PB might already
+          // beat the record — real user report, not a design call.
+          const gap = rec ? +(r.seconds - rec.sec).toFixed(2) : null;
           const pct = gap != null ? +((gap / rec.sec) * 100).toFixed(1) : null;
           const nameOwn = !!rec && myName && nameMatch(rec.name, myName);
-          const tiesRec = !!(rec && curBest && Math.abs(curBest.seconds - rec.sec) <= 0.005);
-          const beatsRec = !!(rec && curBest && curBest.seconds < rec.sec - 0.005);
+          const tiesRec = !!(rec && Math.abs(r.seconds - rec.sec) <= 0.005);
+          const beatsRec = !!(rec && r.seconds < rec.sec - 0.005);
           const holdsIt = nameOwn || tiesRec;
           const own = holdsIt || beatsRec;
-          // If he holds the record, his true in-group best IS the record time — which
-          // may be an international swim missing from loglig. Use it as the headline
+          // If he holds the record, his true PB IS the record time — which may be
+          // an international swim missing from loglig. Use it as the headline
           // unless a documented time is actually faster.
-          const headSec = (holdsIt && rec) ? (curBest ? Math.min(curBest.seconds, rec.sec) : rec.sec) : (curBest ? curBest.seconds : r.seconds);
-          const headFromRecord = holdsIt && rec && (!curBest || rec.sec < curBest.seconds - 0.005);
+          const headSec = (holdsIt && rec) ? Math.min(r.seconds, rec.sec) : r.seconds;
+          const headFromRecord = holdsIt && rec && rec.sec < r.seconds - 0.005;
           return (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 10px",
             background: own ? hexA(GOLD, 0.12) : "transparent", borderRadius: own ? 8 : 0,
             borderBottom: i < listRows.length - 1 ? `1px solid ${c.line}` : "none" }}>
             <div style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: own ? GOLD : getStrokeColor(r.event) }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "🏅 " : ""}{r.event}
-                {cat && !curBest && !holdsIt && <span style={{ fontSize: 11, color: c.dim, fontWeight: 400 }}> · no {groupLabel} time yet</span>}</div>
+              <div style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "🏅 " : ""}{r.event}</div>
               {!records && <div style={{ fontSize: 11.5, color: c.dim }}>{fmtDateShort(parseDate(r.date))}{r.competition ? " · " + r.competition : ""}</div>}
               {rec && <div style={{ fontSize: 11, color: c.dim, marginTop: 2 }}>{groupLabel} record: {fmtT(rec.sec)} · {rec.name}</div>}
               {headFromRecord && <div style={{ fontSize: 10.5, color: GOLD, marginTop: 2 }}>★ record time — not in the meet data (e.g. international meet)</div>}
               {prev.length > 0 && <div style={{ fontSize: 10.5, color: c.dim, marginTop: 2, opacity: 0.85 }}>Earlier: {prev.map((g) => shortCat(g.cat) + " " + g.time).join(" · ")}</div>}
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 800, fontSize: 16, color: (curBest || holdsIt) ? c.amber : c.dim }}>{fmtT(headSec)}</div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: c.amber }}>{fmtT(headSec)}</div>
               {rec && (holdsIt
                 ? <div style={{ fontSize: 11, fontWeight: 800, color: GOLD }}>🏅 You hold this!</div>
                 : beatsRec
@@ -1712,7 +1716,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
 
       <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} coachEmail={user.email} currentTeamId={currentTeamId} />
 
-      <TeamViewerManager user={user} swimmers={swimmers} />
+      <TeamViewerManager user={user} swimmers={swimmers} reloadSwimmers={reloadSwimmers} />
 
       <AccessManager owner={owner} />
 
@@ -1755,7 +1759,8 @@ function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail, curre
       <div style={s.h2}>Swimmers</div>
       {swimmers.map((sw) => (
         <SwimmerEditor key={sw.id} sw={sw} open={editing === sw.id}
-          onToggle={() => setEditing(editing === sw.id ? null : sw.id)} reloadSwimmers={reloadSwimmers} />
+          onToggle={() => setEditing(editing === sw.id ? null : sw.id)} reloadSwimmers={reloadSwimmers}
+          coachUid={coachUid} coachEmail={coachEmail} currentTeamId={currentTeamId} />
       ))}
       <Card>
         <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>Add a swimmer</div>
@@ -1775,12 +1780,18 @@ function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail, curre
 // read/write) their OWN current roster, the same way sharos88 shares
 // access with lhershey. Different from the owner-only "Invite a Coach"
 // panel in Admin, which creates a brand-new, independent, empty roster.
-function TeamViewerManager({ user, swimmers }) {
+function TeamViewerManager({ user, swimmers, reloadSwimmers }) {
   const { c, s } = useUI();
   const [note, setNote] = useState("");
   const [codes, setCodes] = useState([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+
+  async function removeOne(email) {
+    if (!confirm("Remove " + email + "'s access to your swimmers?")) return;
+    try { await removeViewer(swimmers, email); reloadSwimmers(); }
+    catch (e) { setStatus("❌ " + e.message); }
+  }
 
   async function generate() {
     if (!swimmers.length) { setStatus("Add a swimmer first — there's nothing to share yet."); return; }
@@ -1809,7 +1820,11 @@ function TeamViewerManager({ user, swimmers }) {
             <div style={{ fontSize: 10.5, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Current Team</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {others.map((e) => (
-                <span key={e} style={{ fontSize: 12, color: c.green, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 10px" }}>{e}</span>
+                <span key={e} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: c.green, background: c.chipBg, border: `1px solid ${c.line}`, borderRadius: 7, padding: "4px 6px 4px 10px" }}>
+                  {e}
+                  <button onClick={() => removeOne(e)} title="Remove this viewer's access"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: c.red, fontSize: 13, lineHeight: 1, padding: "0 2px", fontWeight: 700 }}>✕</button>
+                </span>
               ))}
             </div>
           </div>
@@ -1837,7 +1852,7 @@ function TeamViewerManager({ user, swimmers }) {
   );
 }
 
-function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
+function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmail, currentTeamId }) {
   const { c, s } = useUI();
   const [name, setName] = useState(sw.name || "");
   const [dob, setDob] = useState(sw.birthdate || "");
@@ -1861,8 +1876,8 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
     } catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Not allowed." : e.message)); }
   }
   async function del() {
-    if (!confirm("Delete " + sw.name + " and all their cloud data?")) return;
-    await deleteSwimmer(sw.id); reloadSwimmers();
+    if (!confirm("Remove " + sw.name + " from this team? (Still fully intact for any other coach who shares them.)")) return;
+    await deleteSwimmer(sw.id, coachUid, coachEmail, currentTeamId); reloadSwimmers();
   }
 
   return (
@@ -1890,7 +1905,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers }) {
 
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button onClick={save} style={{ flex: 1, padding: 11, borderRadius: 12, border: "none", background: c.green, color: "#fff", fontWeight: 800, cursor: "pointer" }}>Save</button>
-            <button onClick={del} style={{ padding: "11px 16px", borderRadius: 12, border: `1px solid ${c.red}`, background: "transparent", color: c.red, fontWeight: 700, cursor: "pointer" }}>Delete</button>
+            <button onClick={del} style={{ padding: "11px 16px", borderRadius: 12, border: `1px solid ${c.red}`, background: "transparent", color: c.red, fontWeight: 700, cursor: "pointer" }}>Remove</button>
           </div>
           {status && <div style={{ marginTop: 8, fontSize: 12.5, color: status[0] === "✅" ? c.green : c.amber }}>{status}</div>}
         </div>
@@ -2426,10 +2441,19 @@ function perfSplitRows(roster, usaTable, rudTable, mastersTable) {
   return Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Collapsed by default (just the team name + swimmer count) — expand to see
+// the full table. Same open/closed pattern as SwimmerEditor's ▾/▴.
 function PerfSplitTable({ title, rows, c }) {
+  const [open, setOpen] = useState(false);
   return (
     <>
-      <div style={{ fontSize: 13, fontWeight: 800, color: c.blue, margin: "10px 2px 6px" }}>{title}</div>
+      <button onClick={() => setOpen(!open)} style={{ width: "100%", textAlign: "left", display: "flex",
+        alignItems: "center", justifyContent: "space-between", background: "none", border: "none", cursor: "pointer",
+        padding: "10px 2px 6px" }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: c.blue }}>{title} <span style={{ fontWeight: 600, color: c.dim, fontSize: 11.5 }}>({rows.length} swimmer{rows.length !== 1 ? "s" : ""})</span></span>
+        <span style={{ color: c.dim }}>{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
       <Card style={{ marginBottom: 14, padding: 6 }}>
         {rows.length ? (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -2448,10 +2472,10 @@ function PerfSplitTable({ title, rows, c }) {
                       ? r.topEvents.map((t, j) => <div key={j}>{t.event} <span style={{ color: c.dim }}>({t.points})</span></div>)
                       : "—"}
                   </td>
-                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700 }}>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700, color: r.rudScore != null ? rudScoreColor(r.rudScore) : c.text }}>
                     {r.rudScore != null ? r.rudScore.toFixed(1) + " pts" : r.finaPts != null ? r.finaPts + " pts (FINA)" : "—"}
                   </td>
-                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700, color: c.blue }}>
+                  <td style={{ padding: "7px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 700, color: r.usaTier ? usaTierColor(r.usaTier) : r.wrGapPct != null ? wrGapColor(r.wrGapPct) : c.text }}>
                     {r.usaTier || (r.wrGapPct != null ? "+" + r.wrGapPct.toFixed(1) + "% off WR" : "—")}
                   </td>
                 </tr>
@@ -2460,6 +2484,7 @@ function PerfSplitTable({ title, rows, c }) {
           </table>
         ) : <div style={{ fontSize: 12.5, color: c.dim, padding: 8 }}>No performance data yet.</div>}
       </Card>
+      )}
     </>
   );
 }
