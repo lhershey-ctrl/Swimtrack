@@ -73,6 +73,18 @@ export async function fetchSwimmers(user) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// Swimmers in an explicit team, independent of coachUids — used to
+// supplement fetchSwimmers() with swimmers a coach can no longer see via
+// the coachUids-gated query alone (e.g. right after their own uid was
+// removed from a swimmer's coachUids by "Remove" on an unrelated legacy
+// cluster) but who still belong to a team this same coach created. See
+// loadSwimmers() in App.jsx for why this matters.
+export async function fetchSwimmersByTeam(teamId) {
+  const q = query(collection(db, "swimmers"), where("teamIds", "array-contains", teamId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
 // Live subscription to a single swimmer document.
 export function subscribeSwimmer(swimmerId, callback) {
   return onSnapshot(
@@ -169,8 +181,19 @@ export async function createSwimmer(swimmerId, name, coachUid, coachEmail, teamI
 // showing them in this account. Real bug, high severity — fixed to match
 // desktop's swimCloudRemoveSwimmer.
 export async function deleteSwimmer(swimmerId, coachUid, coachEmail, teamId) {
-  const updates = { coachUids: arrayRemove(coachUid), coachEmails: arrayRemove(coachEmail) };
-  if (teamId) updates.teamIds = arrayRemove(teamId);
+  // While viewing an explicit team, only unlink THAT team — never touch
+  // coachUids. This coach may own/share other teams or a legacy cluster
+  // for the SAME swimmer, and coachUids is what fetchSwimmers()'s base
+  // query is gated on; stripping it here would silently break this coach's
+  // visibility into every OTHER team/cluster they still share this swimmer
+  // with, not just the one being removed from. Real bug, reported live:
+  // removing a swimmer from a legacy cluster ("Team KFS") also removed
+  // them from an unrelated explicit team ("עולם המים"). Only the
+  // no-explicit-team (legacy) case still needs to unlink coachUids, since
+  // coachUids IS the membership mechanism there.
+  const updates = teamId
+    ? { teamIds: arrayRemove(teamId) }
+    : { coachUids: arrayRemove(coachUid), coachEmails: arrayRemove(coachEmail) };
   await setDoc(doc(db, "swimmers", String(swimmerId)), updates, { merge: true });
 }
 

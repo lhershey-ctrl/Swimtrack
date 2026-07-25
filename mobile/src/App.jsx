@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { useUI, GRAD } from "./theme.jsx";
 import {
-  watchAuth, signInWithGoogle, signOut, fetchSwimmers, subscribeSwimmer,
+  watchAuth, signInWithGoogle, signOut, fetchSwimmers, fetchSwimmersByTeam, subscribeSwimmer,
   isOwner, getAccessList, saveAccessList, saveSwimmerProfile, createSwimmer, deleteSwimmer,
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords,
   migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers, removeViewer,
@@ -2119,13 +2119,28 @@ export default function App() {
 
   function loadSwimmers() {
     return fetchSwimmers(user)
-      .then(async (list) => {
-        const clusters = clusterMySwimmers(list, user.uid);
+      .then(async (baseList) => {
         // Teams this coach created themselves that have zero swimmers so far
-        // (clustering above is swimmer-driven, so a brand-new empty team
+        // (clustering below is swimmer-driven, so a brand-new empty team
         // wouldn't otherwise surface anywhere) still need to show up as a
         // pickable — if empty — option.
         const myTeams = await fetchMyTeams(user.uid).catch(() => []);
+        // Also fetch each owned team's swimmers independent of coachUids —
+        // otherwise removing a swimmer from a legacy (coachUids-based)
+        // cluster, which unlinks this coach's uid, silently also breaks
+        // their visibility into an explicit team they own, since
+        // fetchSwimmers() above is coachUids-gated. Real bug, reported
+        // live: removing a swimmer from a legacy cluster ("Team KFS") also
+        // made them vanish from an explicit team ("עולם המים") the same
+        // coach created, even though the swimmer's teamIds was untouched.
+        const byId = {};
+        baseList.forEach((sw) => { byId[sw.id] = sw; });
+        for (const t of myTeams) {
+          const teamSwimmers = await fetchSwimmersByTeam(t.id).catch(() => []);
+          teamSwimmers.forEach((sw) => { byId[sw.id] = sw; });
+        }
+        const list = Object.values(byId);
+        const clusters = clusterMySwimmers(list, user.uid);
         const emptyTeams = myTeams
           .filter((t) => !clusters.some((cl) => cl.teamId === t.id))
           .map((t) => ({ key: "team:" + t.id, teamId: t.id, swimmers: [], coachUids: [] }));
@@ -2309,6 +2324,16 @@ function clusterMySwimmers(mySwimmers, myUid) {
   // unambiguous home (no implicit default one needed).
   const swimmerIdsByCoach = {}, soloIds = [];
   mySwimmers.forEach((sw) => {
+    // mySwimmers can now include swimmers fetched purely via an explicit
+    // team this coach owns (see loadSwimmers), independent of coachUids —
+    // e.g. right after this coach's own uid was removed from a swimmer's
+    // coachUids (Settings "Remove" on a legacy cluster). Such a swimmer
+    // must NEVER enter the legacy union-find below: without this guard
+    // they'd still union with — and visibly reappear under — whatever
+    // legacy cluster their remaining coaches happen to share, even though
+    // this coach has no coachUids claim on them anymore. Real bug: removing
+    // a swimmer from "Team KFS" left them still showing there.
+    if (!(sw.coachUids || []).includes(myUid)) return;
     const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
     if (!others.length) { if (!(sw.teamIds && sw.teamIds.length)) soloIds.push(sw.id); return; }
     others.forEach((uid) => { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
@@ -2317,6 +2342,7 @@ function clusterMySwimmers(mySwimmers, myUid) {
   for (let i = 1; i < soloIds.length; i++) union(soloIds[0], soloIds[i]);
   const groups = {};
   mySwimmers.forEach((sw) => {
+    if (!(sw.coachUids || []).includes(myUid)) return; // see guard above
     const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
     if (!others.length && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no legacy home needed
     (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw);

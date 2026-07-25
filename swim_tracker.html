@@ -5064,6 +5064,36 @@ async function swimLoadFromCloud(id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+// Every "which swimmers can this coach see" query used to be a single
+// `where('coachUids','array-contains',uid)` — but that's ONLY the legacy
+// membership mechanism. A swimmer in an explicit team this coach created
+// can lose their coachUids entry (e.g. Settings "✕ Remove" on an unrelated
+// legacy cluster) while still correctly belonging to that team via
+// teamIds — and without this merge, EVERY coachUids-gated query (the
+// picker, auto-sync, the sign-in cluster resolver) would silently drop
+// them, even though nothing about their team membership actually changed.
+// Real bug, reported live: removing a swimmer from a legacy cluster
+// ("Team KFS") also made them vanish from an unrelated explicit team
+// ("עולם המים") the SAME coach owns — traced to this exact gap, present
+// in more than one call site, hence one shared helper instead of patching
+// each query ad hoc. Returns raw Firestore doc objects ({id, ...data()});
+// callers project whichever fields they need.
+async function fetchMySwimmerDocsWithTeams(uid) {
+  const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", uid));
+  const snap = await getDocs(q);
+  const byId = {};
+  snap.docs.forEach((d) => { byId[d.id] = Object.assign({ id: d.id }, d.data()); });
+  const myTeams = await fetchMyTeams(uid).catch(() => []);
+  for (const t of myTeams) {
+    try {
+      const tq = query(collection(db, "swimmers"), where("teamIds", "array-contains", t.id));
+      const tsnap = await getDocs(tq);
+      tsnap.docs.forEach((d) => { byId[d.id] = Object.assign({ id: d.id }, d.data()); });
+    } catch (e) { /* best-effort supplement */ }
+  }
+  return { docs: Object.values(byId), myTeams };
+}
+
 // Fetch the swimmer roster from the cloud so any synced swimmer (e.g. on a
 // fresh browser) is loadable — not just the local localStorage defaults.
 async function refreshCloudSwimmers() {
@@ -5072,9 +5102,8 @@ async function refreshCloudSwimmers() {
     // Cross-coach visibility (e.g. for support) is a deliberate, separate
     // admin action, never the default day-to-day swimmer list, so one
     // coach's newly-added swimmers never bleed into another's picker.
-    const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
-    const snap = await getDocs(q);
-    let docs = snap.docs.map((d) => ({ id: d.id, name: (d.data().name || ("Swimmer " + d.id)), coachEmails: d.data().coachEmails || [], coachUids: d.data().coachUids || [] }));
+    const { docs: allDocs } = await fetchMySwimmerDocsWithTeams(currentUser.uid);
+    let docs = allDocs.map((d) => ({ id: d.id, name: (d.name || ("Swimmer " + d.id)), coachEmails: d.coachEmails || [], coachUids: d.coachUids || [] }));
     if (teamFilterIds) docs = docs.filter((d) => teamFilterIds.has(d.id));
     cloudSwimmers = docs.sort((a, b) => a.name.localeCompare(b.name));
   } catch (e) { cloudSwimmers = []; }
@@ -5262,8 +5291,19 @@ window.swimCloudSaveAll = async function (swimmers) {
 window.swimCloudRemoveSwimmer = async function (swimmerId) {
   if (!currentUser || !swimmerId) return "offline";
   try {
-    var updates = { coachUids: arrayRemove(currentUser.uid), coachEmails: arrayRemove(currentUser.email) };
-    if (window.currentTeamId) updates.teamIds = arrayRemove(window.currentTeamId);
+    // While viewing an explicit team, only unlink THAT team — never touch
+    // coachUids. This coach may own/share other teams or a legacy cluster
+    // for the SAME swimmer, and coachUids is what the swimmer-fetch query
+    // is gated on; stripping it here would silently break this coach's
+    // visibility into every OTHER team/cluster they still share this
+    // swimmer with, not just the one being removed from. Real bug,
+    // reported live: removing a swimmer from a legacy cluster ("Team KFS")
+    // also removed them from an unrelated explicit team ("עולם המים").
+    // Only the no-explicit-team (legacy) case still needs to unlink
+    // coachUids, since coachUids IS the membership mechanism there.
+    var updates = window.currentTeamId
+      ? { teamIds: arrayRemove(window.currentTeamId) }
+      : { coachUids: arrayRemove(currentUser.uid), coachEmails: arrayRemove(currentUser.email) };
     await setDoc(doc(db, "swimmers", String(swimmerId)), updates, { merge: true });
     return "removed";
   } catch (e) { return "error:" + e.message; }
@@ -5439,21 +5479,19 @@ window.clearLoadedData = function () {
 async function autoSyncProfilesFromCloud() {
   try {
     // Always scoped to this account's own roster — see refreshCloudSwimmers().
-    const q = query(collection(db, "swimmers"), where("coachUids", "array-contains", currentUser.uid));
-    const snap = await getDocs(q);
+    const { docs: allDocs } = await fetchMySwimmerDocsWithTeams(currentUser.uid);
     // If this coach's email spans more than one account, only sync/import the
     // one currently selected (see resolveTeamAndProceed / teamFilterIds).
-    const docs = teamFilterIds ? snap.docs.filter((d) => teamFilterIds.has(d.id)) : snap.docs;
+    const docs = teamFilterIds ? allDocs.filter((d) => teamFilterIds.has(d.id)) : allDocs;
     const locals = window.getAllSwimmers ? window.getAllSwimmers() : [];
-    docs.forEach((d) => {
-      const data = d.data();
-      const isLocal = locals.some((sw) => String(sw.id) === d.id);
-      if (isLocal) { if (window.applyCloudProfile) window.applyCloudProfile(d.id, data); }
-      else if (window.silentAddSwimmer) window.silentAddSwimmer(d.id, data.name, data);
+    docs.forEach((data) => {
+      const isLocal = locals.some((sw) => String(sw.id) === data.id);
+      if (isLocal) { if (window.applyCloudProfile) window.applyCloudProfile(data.id, data); }
+      else if (window.silentAddSwimmer) window.silentAddSwimmer(data.id, data.name, data);
     });
     // Clean up anything auto-imported by a past (possibly wrongly-scoped)
     // sync that isn't actually in this account's roster anymore.
-    if (window.pruneAutoImportedSwimmers) window.pruneAutoImportedSwimmers(docs.map((d) => d.id), snap.docs.map((d) => d.id));
+    if (window.pruneAutoImportedSwimmers) window.pruneAutoImportedSwimmers(docs.map((d) => d.id), allDocs.map((d) => d.id));
   } catch (e) { /* not signed in / no access yet — ignore */ }
 }
 
@@ -5534,6 +5572,16 @@ function clusterMySwimmers(mySwimmers, myUid) {
   // unambiguous home (no implicit default one needed).
   var swimmerIdsByCoach = {}, soloIds = [];
   mySwimmers.forEach(function (sw) {
+    // mySwimmers can now include swimmers fetched purely via an explicit
+    // team this coach owns (see resolveTeamAndProceed), independent of
+    // coachUids — e.g. right after this coach's own uid was removed from a
+    // swimmer's coachUids (Settings "✕ Remove" on a legacy cluster). Such a
+    // swimmer must NEVER enter the legacy union-find below: without this
+    // guard they'd still union with — and visibly reappear under — whatever
+    // legacy cluster their remaining coaches happen to share, even though
+    // this coach has no coachUids claim on them anymore. Real bug: removing
+    // a swimmer from "Team KFS" left them still showing there.
+    if ((sw.coachUids || []).indexOf(myUid) < 0) return;
     var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
     if (!others.length) { if (!(sw.teamIds && sw.teamIds.length)) soloIds.push(sw.id); return; }
     others.forEach(function (uid) { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
@@ -5542,6 +5590,7 @@ function clusterMySwimmers(mySwimmers, myUid) {
   for (var si = 1; si < soloIds.length; si++) union(soloIds[0], soloIds[si]);
   var groups = {};
   mySwimmers.forEach(function (sw) {
+    if ((sw.coachUids || []).indexOf(myUid) < 0) return; // see guard above
     var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
     if (!others.length && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no legacy home needed
     (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw);
@@ -5613,15 +5662,17 @@ function applyTeamChoice(cluster) {
 }
 async function resolveTeamAndProceed(user) {
   try {
-    var q = query(collection(db, 'swimmers'), where('coachUids', 'array-contains', user.uid));
-    var snap = await getDocs(q);
-    var mySwimmers = snap.docs.map(function (d) { return { id: d.id, coachUids: d.data().coachUids || [], teamIds: d.data().teamIds || [] }; });
+    // fetchMySwimmerDocsWithTeams also supplements coachUids-based results
+    // with swimmers in a team this coach created — see its own comment for
+    // why that matters even at this clustering step, not just the picker.
+    var fetched = await fetchMySwimmerDocsWithTeams(user.uid);
+    var myTeams = fetched.myTeams;
+    var mySwimmers = fetched.docs.map(function (d) { return { id: d.id, coachUids: d.coachUids || [], teamIds: d.teamIds || [] }; });
     var clusters = clusterMySwimmers(mySwimmers, user.uid);
     // Teams this coach created themselves that have zero swimmers so far
     // (clustering above is swimmer-driven, so a brand-new empty team
     // wouldn't otherwise surface anywhere) still need to show up as a
     // pickable — if empty — option.
-    var myTeams = await fetchMyTeams(user.uid).catch(function () { return []; });
     var emptyTeams = myTeams
       .filter(function (t) { return !clusters.some(function (cl) { return cl.teamId === t.id; }); })
       .map(function (t) { return { key: 'team:' + t.id, teamId: t.id, swimmers: [], coachUids: [] }; });
@@ -6214,6 +6265,17 @@ async function openPdfReport() {
   // nothing's in flight or the promise already settled.
   if (window.__pendingCloudLoad && window.__pendingCloudLoad.then) {
     try { await window.__pendingCloudLoad; } catch (e) {}
+  }
+  // Defensive re-check, not just a race guard on one specific switch path:
+  // if window.D doesn't actually belong to the currently active swimmer —
+  // for WHATEVER reason, tracked pending-load or not — force a fresh load
+  // before building. Real user report: this still happened for some
+  // swimmers even after the pending-load fix above, meaning at least one
+  // other switch path also leaves D stale; better a short delay here than
+  // silently building the wrong swimmer's report.
+  var activeSw = window.getActiveSwimmerData ? window.getActiveSwimmerData() : null;
+  if (activeSw && activeSw.id && window.D && String(window.D._swimmerId || '') !== String(activeSw.id) && window.swimUser && window.doLoadFromCloud) {
+    try { await window.doLoadFromCloud(); } catch (e) {}
   }
   try { buildPdfReport(); }
   catch (e) { alert('Could not build the PDF report: ' + e.message); console.error('openPdfReport failed:', e); return; }
