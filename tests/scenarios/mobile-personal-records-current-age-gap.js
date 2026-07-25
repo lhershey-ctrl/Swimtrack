@@ -39,7 +39,7 @@ module.exports = async function run() {
     const bodyText = await page.evaluate(() => document.body.innerText);
     assert(bodyText.includes('50 Free'), 'Records tab should list 50 Free, got: ' + bodyText.slice(0, 500));
     assert(!/no time yet/i.test(bodyText), 'REGRESSION: still shows the old "no ... time yet" placeholder despite having a lifetime PB, got: ' + bodyText.slice(0, 500));
-    assert(/%/.test(bodyText) || /faster than record/i.test(bodyText) || /you hold this/i.test(bodyText), 'expected a real gap (%, "faster than record", or "you hold this") vs the current age-16 record, got: ' + bodyText.slice(0, 500));
+    assert(/%/.test(bodyText) || /faster than record/i.test(bodyText) || /holds this/i.test(bodyText), 'expected a real gap (%, "faster than record", or "<name> holds this") vs the current age-16 record, got: ' + bodyText.slice(0, 500));
     steps.push({ desc: 'Records tab gap compares the lifetime PB to the current age-group record instead of showing nothing', ok: true });
 
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));

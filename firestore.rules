@@ -194,5 +194,12 @@ service cloud.firestore {
       allow read: if isMember();
       allow write: if isOwner();
     }
+
+    // World/European Masters Top-10 rankings (ISR only): every member can
+    // read; only owners can publish (loaded via the desktop app).
+    match /config/mastersTop10 {
+      allow read: if isMember();
+      allow write: if isOwner();
+    }
   }
 }

@@ -1163,7 +1163,7 @@ function RecordsTab({ D, swimmer, recordsDoc, mastersRecordsDoc, mastersTop10Doc
             <div style={{ textAlign: "right" }}>
               <div style={{ fontWeight: 800, fontSize: 16, color: c.amber }}>{fmtT(headSec)}</div>
               {rec && (holdsIt
-                ? <div style={{ fontSize: 11, fontWeight: 800, color: GOLD }}>🏅 You hold this!</div>
+                ? <div style={{ fontSize: 11, fontWeight: 800, color: GOLD }}>🏅 {(swimmer && swimmer.name) || "This swimmer"} holds this!</div>
                 : beatsRec
                   ? <div style={{ fontSize: 11, fontWeight: 800, color: c.green }}>🏅 faster than record!</div>
                   : gap == null

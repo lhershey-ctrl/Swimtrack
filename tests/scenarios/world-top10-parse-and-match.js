@@ -46,15 +46,17 @@ module.exports = async function run() {
 
     await page.click('text=World Masters Top-10 (ISR only)');
     await page.waitForTimeout(300);
-    await page.fill('#top10Year', '2025');
+
+    // New per-year/course grid (2026-07-25 redesign): click the LCM 2025
+    // chip to arm that slot, then the file chooser opens automatically.
     const [fileChooser] = await Promise.all([
       page.waitForEvent('filechooser'),
-      page.click('#top10Slot'),
+      page.click('#top10Chip-LCM-2025'),
     ]);
     await fileChooser.setFiles(path.join(__dirname, '..', 'fixtures', 'world-masters-top10-lcm-2025.pdf'));
     await page.waitForTimeout(8000); // real 263-page pdf.js parse
 
-    const parseLabel = await page.$eval('#top10Slot .wr-fname', (el) => el.textContent);
+    const parseLabel = await page.$eval('#top10UploadFname', (el) => el.textContent);
     assert(/\d+ ISR entries/.test(parseLabel), 'expected the parse label to report a count of ISR entries, got: ' + parseLabel);
     steps.push({ desc: 'Real 263-page PDF parses client-side down to ISR-only entries (' + parseLabel.trim() + ')', ok: true });
 
@@ -73,6 +75,10 @@ module.exports = async function run() {
     assert(cloudEntries && cloudEntries.length === 12, 'expected 12 entries published to Firestore, got: ' + JSON.stringify(cloudEntries));
     assert(cloudEntries.every((e) => e.source === 'world'), 'every parsed entry should be tagged source:"world", got: ' + JSON.stringify(cloudEntries.map((e) => e.source)));
     steps.push({ desc: 'Publishing writes the parsed entries to config/mastersTop10, tagged source:"world"', ok: true });
+
+    const chipText = await page.$eval('#top10Chip-LCM-2025', (el) => el.textContent);
+    assert(/✓\s*12/.test(chipText), 'expected the LCM 2025 grid chip to flip to "✓ 12" after publish, got: ' + chipText);
+    steps.push({ desc: 'The LCM 2025 grid chip reflects the newly published count without a page reload', ok: true });
 
     await page.click('#t-analyze');
     await page.waitForTimeout(300);

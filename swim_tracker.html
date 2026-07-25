@@ -51,6 +51,22 @@ details.extract-panel[open]>summary{border-radius:var(--radius-lg) var(--radius-
 details.extract-panel[open]>summary .ep-arrow{transform:rotate(180deg)}
 details.extract-panel>.extract-body{border:1px solid var(--gray-200);border-top:none;border-radius:0 0 var(--radius-lg) var(--radius-lg);padding:16px 20px}
 
+/* ── Top-10 year/course grid ── */
+.top10-row{display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap}
+.top10-row-label{width:130px;flex-shrink:0;font-size:12px;font-weight:700;color:#374151}
+.top10-row-label-sub{font-weight:500;color:#9aa6b5}
+.top10-row-chips{display:flex;gap:8px;flex-wrap:wrap}
+.top10-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:66px;height:52px;border-radius:9px;cursor:pointer;font-family:inherit;transition:transform .1s,box-shadow .1s}
+.top10-chip:hover{transform:translateY(-1px)}
+.top10-chip:active{transform:translateY(0)}
+.top10-chip-year{font-size:13px;font-weight:800}
+.top10-chip-meta{font-size:9.5px;font-weight:600;letter-spacing:.02em}
+.top10-chip-empty{border:1.5px dashed #c9d3df;background:#fafbfc;color:#9aa6b5}
+.top10-chip-empty:hover{border-color:#185FA5;color:#185FA5;background:#f2f7fc}
+.top10-chip-done{border:1.5px solid #1D9E75;background:#f0faf5;color:#1a7a4f;box-shadow:0 1px 3px rgba(29,158,117,.12)}
+.top10-chip-done:hover{border-color:#15805f;box-shadow:0 2px 6px rgba(29,158,117,.2)}
+.top10-chip-active{outline:2px solid #185FA5;outline-offset:1px}
+
 /* ── steps ── */
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
 .step{background:#fff;border-radius:var(--radius-lg);padding:20px;border:1px solid var(--gray-200);box-shadow:var(--shadow-sm);transition:box-shadow .2s}
@@ -1499,24 +1515,22 @@ function landingSignIn(){
       <span class="ep-chev"><span class="ep-arrow">▾</span> upload new data</span>
     </summary>
     <div class="extract-body">
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">World Aquatics' yearly Top-10 masters rankings (long course). Only Israeli (ISR) entries are kept — the source file covers every country. Upload one year at a time; re-uploading a year you've already published replaces just that year, other years stay untouched.<br><span style="color:#9aa6b5">Source: <a href="https://www.worldaquatics.com/masters/top-10/lcm-2030-2021" target="_blank" rel="noopener" style="color:#185FA5">worldaquatics.com/masters/top-10</a>.</span></p>
-    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
-      <div>
-        <label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Year</label>
-        <input id="top10Year" type="number" placeholder="2025" style="width:90px;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;box-sizing:border-box">
+  <p style="font-size:13px;color:#666;margin-bottom:14px;line-height:1.7">World Aquatics' yearly Top-10 masters rankings. Only Israeli (ISR) entries are kept — the source file covers every country. Click a year below to upload it — a green year means it's already published; click it again to replace with a newer file.<br><span style="color:#9aa6b5">Source: <a href="https://www.worldaquatics.com/masters/top-10/lcm-2030-2021" target="_blank" rel="noopener" style="color:#185FA5">worldaquatics.com/masters/top-10</a> (long course) / <a href="https://www.worldaquatics.com/masters/top-10/scm-2030-2021" target="_blank" rel="noopener" style="color:#185FA5">.../scm-2030-2021</a> (short course).</span></p>
+    <div id="top10Grid"></div>
+    <input type="file" id="top10FileInput" accept=".pdf" style="display:none" onchange="top10PickPdf(event)">
+    <div id="top10UploadCard" style="display:none;margin-top:14px;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fbfcfd">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div id="top10UploadLabel" style="font-size:13px;font-weight:700;color:#185FA5"></div>
+        <button type="button" onclick="top10CancelSlot()" title="Cancel" style="border:none;background:none;color:#9aa6b5;font-size:15px;cursor:pointer;line-height:1;padding:2px">✕</button>
       </div>
-      <label id="top10Slot" class="wr-slot" style="display:flex;flex-direction:column;gap:4px;border:1.5px dashed #c9d3df;border-radius:9px;padding:11px 14px;cursor:pointer;background:#fafbfc;flex:1;min-width:230px">
-        <span style="font-size:13px;font-weight:700;color:#185FA5">🥇 Long course (LCM) PDF</span>
-        <span class="wr-fname" style="font-size:11px;color:#9aa6b5">no file chosen — enter the year first</span>
-        <input type="file" accept=".pdf" style="display:none" onchange="top10PickPdf(event)">
-      </label>
+      <div id="top10UploadFname" style="font-size:12px;color:#9aa6b5;margin-top:4px"></div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px">
+        <button id="top10ReviewBtn" onclick="top10Review()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
+        <button id="top10PublishBtn" onclick="top10Publish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
+      </div>
+      <div id="top10PublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
+      <pre id="top10Preview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
     </div>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <button id="top10ReviewBtn" onclick="top10Review()" disabled style="background:#185FA5;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">🔍 Review changes vs cloud</button>
-      <button id="top10PublishBtn" onclick="top10Publish()" disabled style="background:#1D9E75;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;opacity:.5">☁ Upload changes to Cloud</button>
-    </div>
-    <div id="top10PublishStatus" style="margin-top:10px;font-size:12px;font-weight:600"></div>
-    <pre id="top10Preview" style="display:none;margin-top:12px;background:#f7f6f3;border-radius:8px;padding:12px 14px;font-size:11px;line-height:1.6;color:#374151;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
     </div>
   </details>
 
@@ -5027,28 +5041,83 @@ function clearRace2(){
 
   const $=(id)=>document.getElementById(id);
   let parsedEntries=null,parsedYear=null,mergedEntries=null;
+  let pendingCourse=null,pendingYear=null;
+  const TOP10_START_YEAR=2021,COURSE_LABEL={LCM:"Long course",SCM:"Short course"};
+
+  function top10YearRange(){
+    const years=[];for(let y=TOP10_START_YEAR;y<=new Date().getFullYear();y++)years.push(y);
+    (window.__mastersTop10Entries||[]).forEach((e)=>{if(e.source==="world"&&!years.includes(e.year))years.push(e.year);});
+    return years.sort((a,b)=>a-b);
+  }
+
+  function renderTop10Grid(){
+    const grid=$("top10Grid");if(!grid)return;
+    const byKey={};
+    (window.__mastersTop10Entries||[]).filter((e)=>e.source==="world").forEach((e)=>{
+      const k=e.course+"|"+e.year;(byKey[k]=byKey[k]||[]).push(e);
+    });
+    const years=top10YearRange();
+    grid.innerHTML=["LCM","SCM"].map((course)=>{
+      const chips=years.map((y)=>{
+        const list=byKey[course+"|"+y];
+        const active=pendingCourse===course&&pendingYear===y?" top10-chip-active":"";
+        const id="top10Chip-"+course+"-"+y;
+        if(list)return'<button type="button" id="'+id+'" class="top10-chip top10-chip-done'+active+'" onclick="top10OpenSlot(\''+course+'\','+y+')" title="'+list.length+' ISR entries published — click to replace"><span class="top10-chip-year">'+y+'</span><span class="top10-chip-meta">✓ '+list.length+'</span></button>';
+        return'<button type="button" id="'+id+'" class="top10-chip top10-chip-empty'+active+'" onclick="top10OpenSlot(\''+course+'\','+y+')" title="Upload '+COURSE_LABEL[course]+' '+y+'"><span class="top10-chip-year">'+y+'</span><span class="top10-chip-meta">+ upload</span></button>';
+      }).join("");
+      return'<div class="top10-row"><div class="top10-row-label">'+COURSE_LABEL[course]+' <span class="top10-row-label-sub">('+course+')</span></div><div class="top10-row-chips">'+chips+'</div></div>';
+    }).join("");
+  }
+  window.swimRenderTop10Grid=renderTop10Grid;
 
   window.top10ShowInfo=function(){
-    alert("World Aquatics Masters Top-10 rankings — the top 10 fastest masters swimmers per event, sex, and 5-year age bracket, worldwide, each year.\n\nOnly Israeli (ISR) entries are kept — the source file covers every country and runs 250+ pages, so everything else is discarded at parse time.\n\nUpload one year's official PDF at a time (source: worldaquatics.com/masters/top-10) — parsed entirely in your browser, nothing is sent anywhere until you click Upload. Re-uploading a year you've already published replaces just that year; other years are untouched.");
+    alert("World Aquatics Masters Top-10 rankings — the top 10 fastest masters swimmers per event, sex, and 5-year age bracket, worldwide, each year.\n\nOnly Israeli (ISR) entries are kept — the source file covers every country and runs 250+ pages, so everything else is discarded at parse time.\n\nClick a year/course box to upload its official PDF (source: worldaquatics.com/masters/top-10) — parsed entirely in your browser, nothing is sent anywhere until you click Upload. A green box means that year+course is already published; uploading again replaces just that slice, everything else stays untouched.");
+  };
+
+  window.top10OpenSlot=function(course,year){
+    pendingCourse=course;pendingYear=year;
+    parsedEntries=null;mergedEntries=null;parsedYear=null;
+    renderTop10Grid();
+    const card=$("top10UploadCard"),lbl=$("top10UploadLabel"),fn=$("top10UploadFname");
+    const list=(window.__mastersTop10Entries||[]).filter((e)=>e.source==="world"&&e.course===course&&e.year===year);
+    if(card)card.style.display="";
+    if(lbl)lbl.textContent=(course==="LCM"?"🥇":"🥈")+" "+COURSE_LABEL[course]+" ("+course+") "+year;
+    if(fn){fn.textContent=list.length?"Currently "+list.length+" ISR entries published for this slot — choose a file to replace them.":"No file chosen yet.";fn.style.color="#9aa6b5";}
+    const rb=$("top10ReviewBtn"),pv=$("top10Preview"),st=$("top10PublishStatus"),pubBtn=$("top10PublishBtn");
+    if(rb){rb.disabled=true;rb.style.opacity=".5";}
+    if(pubBtn){pubBtn.disabled=true;pubBtn.style.opacity=".5";pubBtn.textContent="☁ Upload changes to Cloud";}
+    if(pv)pv.style.display="none";
+    if(st)st.textContent="";
+    card&&card.scrollIntoView({behavior:"smooth",block:"nearest"});
+    $("top10FileInput").click();
+  };
+
+  window.top10CancelSlot=function(){
+    pendingCourse=null;pendingYear=null;parsedEntries=null;mergedEntries=null;parsedYear=null;
+    const card=$("top10UploadCard");if(card)card.style.display="none";
+    renderTop10Grid();
   };
 
   window.top10PickPdf=async function(e){
     const f=e.target.files&&e.target.files[0];if(!f)return;
-    const yearInput=$("top10Year"),year=parseInt(yearInput&&yearInput.value,10);
-    const lab=e.target.closest(".wr-slot"),fn=lab&&lab.querySelector(".wr-fname");
-    if(!year){if(fn){fn.textContent="⚠ Enter the year first";fn.style.color="#c0392b";}e.target.value="";return;}
+    const fn=$("top10UploadFname");
+    if(!pendingYear||!pendingCourse){e.target.value="";return;}
     if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
     try{
-      const{entries}=await top10ParsePdf(await f.arrayBuffer(),year);
-      parsedEntries=entries;parsedYear=year;
-      if(fn){fn.innerHTML="✓ <strong>"+entries.length+"</strong> ISR entries — "+f.name;fn.style.color="#1a7a4f";}
-      if(lab){lab.style.borderColor="#1D9E75";lab.style.background="#f0faf5";}
+      const{entries}=await top10ParsePdf(await f.arrayBuffer(),pendingYear);
+      const gotCourses=Array.from(new Set(entries.map((x)=>x.course)));
+      parsedEntries=entries;parsedYear=pendingYear;
+      const mismatch=gotCourses.length&&!gotCourses.includes(pendingCourse);
+      if(fn){
+        fn.innerHTML="✓ <strong>"+entries.length+"</strong> ISR entries — "+f.name+(mismatch?"<br>⚠ this file is actually "+gotCourses.join("/")+", not "+pendingCourse+" — it'll be filed under "+gotCourses.join("/")+" once published.":"");
+        fn.style.color=mismatch?"#b06a3a":"#1a7a4f";
+      }
     }catch(err){
       parsedEntries=null;parsedYear=null;
       if(fn){fn.textContent="⚠ "+err.message;fn.style.color="#c0392b";}
-      if(lab){lab.style.borderColor="#e5a05a";lab.style.background="#fef6ee";}
     }
     const rb=$("top10ReviewBtn");if(rb){rb.disabled=!parsedEntries;rb.style.opacity=parsedEntries?"1":".5";}
+    e.target.value="";
   };
 
   window.top10Review=async function(){
@@ -5058,7 +5127,8 @@ function clearRace2(){
     if(!(await window.swimEnsureSignIn())){if(st){st.style.color="#c0392b";st.textContent="Sign-in needed to compare with the cloud.";}return;}
     try{
       const cloud=await window.swimFetchMastersTop10();
-      const existingThisYear=((cloud&&cloud.entries)||[]).filter((e)=>e.year===parsedYear&&e.source==="world");
+      const parsedCourses=new Set(parsedEntries.map((e)=>e.course));
+      const existingThisYear=((cloud&&cloud.entries)||[]).filter((e)=>e.year===parsedYear&&e.source==="world"&&parsedCourses.has(e.course));
       const key=(e)=>e.course+"|"+e.sex+"|"+e.ageGroup+"|"+e.event+"|"+e.name;
       const existingMap={};existingThisYear.forEach((e)=>{existingMap[key(e)]=e;});
       let added=0,changed=0;const changeLines=[];const newMap={};
@@ -5092,6 +5162,8 @@ function clearRace2(){
       if(window.swimRefreshMastersTop10Status)window.swimRefreshMastersTop10Status();
     }catch(err){if(st){st.style.color="#c0392b";st.textContent=/permission/i.test(err.message)?"Only an owner can publish rankings.":"Upload failed: "+err.message;}}
   };
+
+  renderTop10Grid(); // paint empty grid immediately, before sign-in resolves
 })();
 </script>
 
@@ -5686,15 +5758,16 @@ window.swimPublishMastersRecords = async (table) => {
 // show "how many times in the World top 10" vs "the European top 10"
 // separately. ISR swimmers only — everyone else is thrown away at parse
 // time, keeping this doc small even though the source PDFs run 100-250+
-// pages. Additive per (source, year): publish REPLACES only that source's
-// entries for that specific year (so re-uploading is idempotent) and
-// leaves every other already-published source/year combination untouched
-// — years don't change after the fact, so there's never a reason to
-// re-parse one once it's in.
+// pages. Additive per (source, year, course): publish REPLACES only that
+// exact source+year+course slice (so re-uploading is idempotent) and
+// leaves every other already-published slice untouched — a year's LCM
+// and SCM files are uploaded separately, so replacing must never touch
+// the other course for the same year.
 window.swimFetchMastersTop10 = async () => { const s = await getDoc(doc(db, "config", "mastersTop10")); return s.exists() ? s.data() : null; };
 window.swimPublishMastersTop10 = async (yearEntries, year, source) => {
   const cloud = await window.swimFetchMastersTop10();
-  const kept = ((cloud && cloud.entries) || []).filter((e) => !(e.year === year && e.source === source));
+  const courses = new Set(yearEntries.map((e) => e.course));
+  const kept = ((cloud && cloud.entries) || []).filter((e) => !(e.year === year && e.source === source && courses.has(e.course)));
   const merged = kept.concat(yearEntries);
   await setDoc(doc(db, "config", "mastersTop10"), {
     entries: merged, count: merged.length, loadedAt: Date.now(), by: currentUser ? currentUser.email : "",
@@ -5707,6 +5780,7 @@ async function refreshMastersTop10Status() {
     const d = await window.swimFetchMastersTop10();
     window.__mastersTop10Entries = d && d.entries ? d.entries : [];
     if (window.buildIntlRankings && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildIntlRankings();
+    if (window.swimRenderTop10Grid) window.swimRenderTop10Grid();
     if (!el) return;
     if (!d || !d.entries.length) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No rankings published yet — upload a year's PDF below."; return; }
     const worldYears = Array.from(new Set(d.entries.filter((e) => e.source === "world").map((e) => e.year))).sort();
