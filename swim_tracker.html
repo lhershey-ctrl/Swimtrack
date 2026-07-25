@@ -4999,16 +4999,7 @@ function clearRace2(){
     return(+parts[0])*3600+(+parts[1])*60+parseFloat(parts[2]);
   };
 
-  async function top10ParsePdf(buf,year){
-    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
-    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
-    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-    let toks=[];
-    for(let p=1;p<=pdf.numPages;p++){
-      const page=await pdf.getPage(p),tc=await page.getTextContent();
-      tc.items.forEach((it)=>{const s=it.str.trim();if(s)toks.push(s);});
-    }
+  function top10ParseNewFormat(toks,year){
     const entries=[];
     let currentEvent=null,currentRank=null,i=0;
     function pushIfIsr(rank,timeStr,country,name){
@@ -5035,6 +5026,92 @@ function clearRace2(){
       if(currentRank!=null&&TOP10_TIME_RE.test(toks[i])&&TOP10_COUNTRY_RE.test(toks[i+1])){pushIfIsr(currentRank,toks[i],toks[i+1],toks[i+2]);i+=3;continue;}
       i++;
     }
+    return entries;
+  }
+
+  // Pre-2024 FINA "World Masters Top 10" layout (2021-2023) — structurally
+  // different from the 2024+ World Aquatics format handled above: no rank
+  // token at all (rank = row position after the event header), the sex+age
+  // header is separate from the distance+stroke header, "MEN" is tokenized
+  // as three separate single-char items "M"/"E"/"N" (a combined "MEN" token
+  // search finds nothing — confirmed via a real file), and names are 1-3
+  // tokens (never a fixed count) ending wherever a country-code token is
+  // confirmed by lookahead — a relay section (age brackets like "AGE
+  // 100-119" = summed team age) follows each sex's individual events and is
+  // skipped entirely (team result, not a swimmer's own top-10 appearance).
+  const OLD_EVT_RE=/^(\d{2,4})$/;
+  const OLD_STROKE_NAME={FREE:"Freestyle",BACK:"Backstroke",BRST:"Breaststroke",FLY:"Butterfly","I.M.":"Medley"};
+  const OLD_AGE_RE=/^\d{2,3}-\d{2,3}$/;
+  function oldFormatLooksLikeStart(tok){
+    if(tok==null)return true;
+    if(TOP10_TIME_RE.test(tok))return true;
+    if(OLD_EVT_RE.test(tok))return true;
+    if(tok==="WOMEN"||tok==="M"||tok==="AGE")return true;
+    if(/^\*+$/.test(tok))return true;
+    return false;
+  }
+  function top10ParseOldFormat(toks,year,course){
+    const entries=[];
+    let sex=null,ageGroup=null,stroke=null,dist=null,inRelay=false,rowIdx=0,i=0;
+    while(i<toks.length){
+      const t=toks[i];
+      if(t==="M"&&toks[i+1]==="E"&&toks[i+2]==="N"&&OLD_AGE_RE.test(toks[i+3]||"")){
+        sex="M";ageGroup=toks[i+3];stroke=null;dist=null;inRelay=false;i+=4;continue;
+      }
+      if(t==="WOMEN"&&OLD_AGE_RE.test(toks[i+1]||"")){
+        sex="F";ageGroup=toks[i+1];stroke=null;dist=null;inRelay=false;i+=2;continue;
+      }
+      if(t==="AGE"&&OLD_AGE_RE.test(toks[i+1]||"")){inRelay=true;stroke=null;dist=null;i+=2;continue;}
+      if(!inRelay&&OLD_EVT_RE.test(t)&&toks[i+1]==="M."&&OLD_STROKE_NAME[toks[i+2]]){
+        dist=t;stroke=toks[i+2];rowIdx=0;i+=3;continue;
+      }
+      if(/^\*+$/.test(t)){i++;continue;}
+      if(inRelay||!sex||!ageGroup||!dist||!stroke){i++;continue;}
+      if(TOP10_TIME_RE.test(t)){
+        let j=i+1,nameToks=[];
+        while(j<toks.length){
+          if(TOP10_COUNTRY_RE.test(toks[j])&&oldFormatLooksLikeStart(toks[j+1]))break;
+          nameToks.push(toks[j]);j++;
+        }
+        if(j<toks.length&&TOP10_COUNTRY_RE.test(toks[j])){
+          rowIdx++;
+          const country=toks[j];
+          if(country==="ISR"&&nameToks.length){
+            entries.push({source:"world",year,course,sex,ageGroup,event:dist+"m "+OLD_STROKE_NAME[stroke],rank:rowIdx,time:t,seconds:+parseTop10Time(t).toFixed(2),name:nameToks.join(" ")});
+          }
+          i=j+1;continue;
+        }
+        i++;continue;
+      }
+      i++;
+    }
+    return entries;
+  }
+
+  function top10IsBoilerplate(s){
+    return /MASTERS TOP\s?10/i.test(s)||/All Rights reserved/i.test(s)||/Masters Recorder/i.test(s)
+      ||/^Page \d+ of \d+$/.test(s)||/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s);
+  }
+
+  // courseHint: which grid slot (LCM/SCM) the user clicked. The 2024+ format
+  // ignores it (course is self-declared per-event in the header text); the
+  // pre-2024 format has no self-declared course anywhere in the text at all
+  // (its one "LONG COURSE METERS"/"SHORT COURSE METERS" mention is on the
+  // page title, which gets stripped as boilerplate — same line repeated on
+  // every page — before parsing even starts), so it relies entirely on the
+  // hint, i.e. whichever row's chip the user actually clicked.
+  async function top10ParsePdf(buf,year,courseHint){
+    const pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+    if(!pdfjsLib)throw new Error("PDF library not loaded yet — wait a moment and retry.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let toks=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p),tc=await page.getTextContent();
+      tc.items.forEach((it)=>{const s=it.str.trim();if(s&&!top10IsBoilerplate(s))toks.push(s);});
+    }
+    let entries=top10ParseNewFormat(toks,year);
+    if(!entries.length)entries=top10ParseOldFormat(toks,year,courseHint||"LCM");
     if(!entries.length)throw new Error("0 ISR entries found — wrong file, or genuinely no ISR swimmers in the top 10 this year?");
     return{entries};
   }
@@ -5104,7 +5181,7 @@ function clearRace2(){
     if(!pendingYear||!pendingCourse){e.target.value="";return;}
     if(fn){fn.textContent="parsing "+f.name+"…";fn.style.color="#666";}
     try{
-      const{entries}=await top10ParsePdf(await f.arrayBuffer(),pendingYear);
+      const{entries}=await top10ParsePdf(await f.arrayBuffer(),pendingYear,pendingCourse);
       const gotCourses=Array.from(new Set(entries.map((x)=>x.course)));
       parsedEntries=entries;parsedYear=pendingYear;
       const mismatch=gotCourses.length&&!gotCourses.includes(pendingCourse);
