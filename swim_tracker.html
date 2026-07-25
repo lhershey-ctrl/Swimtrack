@@ -609,12 +609,14 @@ function landingSignIn(){
               +'<input id="set-recname-'+i+'" value="'+(sw.recordName||'')+'" dir="rtl" placeholder="e.g. הר שי לירון — to flag records they hold" '
                 +'oninput="var _s=window.getAllSwimmers()['+i+'];_s&&(_s.recordName=this.value)" '
                 +'style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'
+              +'<div id="rec-suggest-'+i+'"></div>'
             +'</div>'
             +'<div style="flex:1;min-width:220px">'
               +'<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Name in Int\'l Rankings (Latin, optional)</label>'
               +'<input id="set-intlname-'+i+'" value="'+(sw.intlName||'')+'" placeholder="e.g. HAR-SHAI Liron — to match European/World masters rankings" '
                 +'oninput="var _s=window.getAllSwimmers()['+i+'];_s&&(_s.intlName=this.value)" '
                 +'style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box">'
+              +'<div id="intl-suggest-'+i+'"></div>'
             +'</div>'
           +'</div>'
 
@@ -649,6 +651,7 @@ function landingSignIn(){
       );
     }).join('');
     setTimeout(buildSwimmerPhysCharts,0);
+    setTimeout(function(){if(window.refreshAllNameSuggestions)window.refreshAllNameSuggestions();},0);
   }
   window.selectSwimmer=function(idx){
     activeSwimmer=idx;
@@ -3402,6 +3405,111 @@ function _recCat(age){if(age==null)return null;var a=Math.floor(age);if(a>=10&&a
 function _recKey(ev){var m=(ev||'').match(/^(\d+)/);return m?m[1]+'|'+getStroke(ev):null;}
 function _recRange(cat){if(!cat||cat==='open')return null;if(/^\d{1,2}$/.test(cat))return[+cat,+cat];var m=cat.match(/^(\d{2,3})-(\d{2,3})$/);return m?[+m[1],+m[2]]:null;}
 function _nameMatch(a,b){var n=function(x){return(x||'').toString().replace(/['’‘׳\s\-]/g,'');};return !!a&&!!b&&n(a)===n(b);}
+
+// ── Name-match suggestions (Settings "Name in Records" / "Name in Int'l
+// Rankings") — the swimmer's own Hebrew display name is fuzzy-matched
+// word-by-word (order-agnostic — the #1 real-world variation is family
+// name vs. first name swapped, e.g. "לירון הר-שי" vs "הר-שי לירון") against
+// whatever's already published, so a coach can click a suggestion instead
+// of typing blind. "Name in Records" candidates are Hebrew-to-Hebrew
+// (spelling variants like a missing hyphen); "Name in Int'l Rankings" needs
+// a rough Hebrew→Latin phonetic guess first, since Latin candidates are
+// never an exact transliteration (and even vary source-to-source, e.g.
+// "Harshay" vs "Harshai" — a Y/I ending swap, which plain Levenshtein
+// already tolerates as a 1-character edit). Never auto-fills — always a
+// click-to-confirm suggestion, since fuzzy matching can be wrong and a
+// swimmer with no published data yet has nothing to suggest.
+var HEB_TO_LATIN_MAP={'א':'','ב':'b','ג':'g','ד':'d','ה':'h','ו':'v','ז':'z','ח':'ch','ט':'t','י':'y','כ':'k','ך':'k','ל':'l','מ':'m','ם':'m','נ':'n','ן':'n','ס':'s','ע':'','פ':'p','ף':'f','צ':'tz','ץ':'tz','ק':'k','ר':'r','ש':'sh','ת':'t'};
+function _hebToLatinGuess(word){return word.split('').map(function(c){return c in HEB_TO_LATIN_MAP?HEB_TO_LATIN_MAP[c]:c;}).join('');}
+function _levenshtein(a,b){
+  var m=a.length,n=b.length,dp=[],i,j;
+  for(i=0;i<=m;i++){dp[i]=[i];}
+  for(j=0;j<=n;j++){dp[0][j]=j;}
+  for(i=1;i<=m;i++)for(j=1;j<=n;j++)dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
+}
+function _wordSim(a,b){a=a.toUpperCase();b=b.toUpperCase();var d=_levenshtein(a,b);return 1-d/Math.max(a.length,b.length,1);}
+function _cleanNameWords(s){return(s||'').replace(/['’‘׳-]/g,'').trim().split(/\s+/).filter(Boolean);}
+// Same-script (Hebrew-to-Hebrew) matches for the SAME real person cluster
+// close to 100% (near-identical spelling); cross-script (Hebrew->Latin
+// transliteration) matches only reach ~55-66% even when correct, since
+// transliteration is inherently imprecise — and at that lower range, true
+// and false positives actually OVERLAP (a real match can score lower than
+// a coincidental one, e.g. two swimmers sharing a common first name). So
+// each mode needs its own bar: high (0.85) for same-script, where it
+// cleanly separates real matches from common-name noise; lower (0.45) for
+// transliterated, chosen to eliminate cross-script false positives even
+// at the cost of missing a few genuine low-scoring matches (which can
+// still be entered manually — this errs toward missing a suggestion over
+// ever suggesting the wrong person).
+function suggestNameMatches(hebrewFullName,candidates,transliterate,topN){
+  var srcWords=_cleanNameWords(hebrewFullName);
+  var guessWords=transliterate?srcWords.map(_hebToLatinGuess).filter(Boolean):srcWords;
+  if(!guessWords.length||!candidates||!candidates.length)return[];
+  var scored=candidates.map(function(cand){
+    var candWords=_cleanNameWords(cand);
+    var total=0;
+    guessWords.forEach(function(gw){var best=0;candWords.forEach(function(cw){var s=_wordSim(gw,cw);if(s>best)best=s;});total+=best;});
+    return{cand:cand,score:total/guessWords.length};
+  });
+  var threshold=transliterate?0.45:0.85;
+  return scored.sort(function(a,b){return b.score-a.score;}).filter(function(s){return s.score>threshold;}).slice(0,topN||3);
+}
+// Distinct record-holder names currently published (Israeli age records) —
+// walked from window.__records (pool -> sex -> ageCat -> "dist|stroke" ->
+// {sec,time,name}), for "Name in Records" suggestions.
+function collectRecordNames(){
+  var recs=window.__records;if(!recs)return[];
+  var seen={};
+  Object.keys(recs).forEach(function(pool){
+    Object.keys(recs[pool]||{}).forEach(function(sex){
+      Object.keys(recs[pool][sex]||{}).forEach(function(cat){
+        Object.keys(recs[pool][sex][cat]||{}).forEach(function(key){
+          var r=recs[pool][sex][cat][key];
+          if(r&&r.name)seen[r.name]=true;
+        });
+      });
+    });
+  });
+  return Object.keys(seen);
+}
+// Distinct swimmer names from the published Masters Top-10 rankings (World
+// + Europe combined), for "Name in Int'l Rankings" suggestions.
+function collectIntlNames(){
+  var seen={};
+  (window.__mastersTop10Entries||[]).forEach(function(e){if(e.name)seen[e.name]=true;});
+  return Object.keys(seen);
+}
+// Renders (or clears) the suggestion-chip row under a swimmer's "Name in
+// Records"/"Name in Int'l Rankings" inputs. Called after the Settings UI
+// renders and again whenever records/mastersTop10 data refreshes, since
+// those load asynchronously after sign-in.
+function refreshNameSuggestions(i,sw){
+  var recEl=document.getElementById('rec-suggest-'+i), intlEl=document.getElementById('intl-suggest-'+i);
+  if(!recEl&&!intlEl)return;
+  var name=(sw&&sw.name)||'';
+  function chipsHtml(matches,targetInputId,fieldSetter){
+    if(!matches.length)return'';
+    return matches.map(function(m){
+      var esc=m.cand.replace(/'/g,"\\'");
+      return'<button type="button" onclick="var el=document.getElementById(\''+targetInputId+'\');el.value=\''+esc+'\';var _s=window.getAllSwimmers()['+i+'];_s&&(_s.'+fieldSetter+'=el.value);" '
+        +'style="font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid #c9d3df;background:#f2f7fc;color:#185FA5;cursor:pointer;margin:2px 4px 0 0">'+m.cand+' <span style="color:#9aa6b5">'+Math.round(m.score*100)+'%</span></button>';
+    }).join('');
+  }
+  if(recEl){
+    var recMatches=name?suggestNameMatches(name,collectRecordNames(),false,3):[];
+    recEl.innerHTML=recMatches.length?('<div style="font-size:10px;color:#9ca3af;margin-top:4px">Suggested: '+chipsHtml(recMatches,'set-recname-'+i,'recordName')+'</div>'):'';
+  }
+  if(intlEl){
+    var intlMatches=name?suggestNameMatches(name,collectIntlNames(),true,3):[];
+    intlEl.innerHTML=intlMatches.length?('<div style="font-size:10px;color:#9ca3af;margin-top:4px">Suggested: '+chipsHtml(intlMatches,'set-intlname-'+i,'intlName')+'</div>'):'';
+  }
+}
+function refreshAllNameSuggestions(){
+  var all=window.getAllSwimmers?window.getAllSwimmers():[];
+  all.forEach(function(sw,i){refreshNameSuggestions(i,sw);});
+}
+window.refreshAllNameSuggestions=refreshAllNameSuggestions;
 function _lookupRec(recs,S,age,pool,ev){var cat=_recCat(age),key=_recKey(ev);if(!recs||!S||!cat||!key)return null;var r=(((recs[pool]||{})[S]||{})[cat]||{})[key];return r&&r.sec?r:null;}
 function _bestInGroup(pool,bd,cat){var range=_recRange(cat),out={};seasons().forEach(function(sk){(D[sk].bests||[]).forEach(function(b){if(!b.event||!b.seconds||isRelay(b.event)||poolNorm(b.pool)!==pool)return;if(range){var a=_recAge(bd,parseDate(b.date));if(a==null||a<range[0]||a>range[1])return;}if(!out[b.event]||b.seconds<out[b.event].seconds)out[b.event]={seconds:b.seconds,time:b.time};});});return out;}
 // bestEver = this event's overall/lifetime-best entry ({seconds,time,...}
@@ -5949,6 +6057,7 @@ async function refreshRecordsStatus() {
     // Cache the records for the Analyze-tab gap columns; re-render if a swimmer is loaded.
     window.__records = d && d.records ? d.records : null;
     if (window.buildRecords && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildRecords();
+    if (window.refreshAllNameSuggestions) window.refreshAllNameSuggestions();
     if (!d) { el.style.color = "#9a6b00"; el.innerHTML = "⚠ No records published yet — upload the PDFs below."; return; }
     const segs = d.segments || {}; let anyStale = false;
     const parts = Object.keys(SEG_LABEL).map((k) => {
@@ -6080,6 +6189,7 @@ async function refreshMastersTop10Status() {
     if (window.buildIntlRankings && window.D && Object.keys(window.D).some((k) => k[0] !== "_")) window.buildIntlRankings();
     if (window.swimRenderTop10Grid) window.swimRenderTop10Grid();
     if (window.swimRenderEuTop10Grid) window.swimRenderEuTop10Grid();
+    if (window.refreshAllNameSuggestions) window.refreshAllNameSuggestions();
     const worldEntries = (d && d.entries ? d.entries : []).filter((e) => e.source === "world");
     const euEntries = (d && d.entries ? d.entries : []).filter((e) => e.source === "europe");
     if (el) {

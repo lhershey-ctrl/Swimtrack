@@ -1709,7 +1709,7 @@ function CreateTeamCard({ onCreateTeam, activeTeamName }) {
   );
 }
 
-function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTeamKey, currentTeamId, onOpenTeamSwitcher, onCreateTeam }) {
+function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTeamKey, currentTeamId, onOpenTeamSwitcher, onCreateTeam, recordsDoc, mastersTop10Doc }) {
   const { c, s, dark, setDark } = useUI();
   const owner = isOwner(user);
   const activeClusterName = (teamClusters.find((cl) => cl.key === selectedTeamKey) || {}).name;
@@ -1759,7 +1759,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
         </div>
       )}
 
-      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} coachEmail={user.email} currentTeamId={currentTeamId} />
+      <SwimmersManager swimmers={swimmers} reloadSwimmers={reloadSwimmers} coachUid={user.uid} coachEmail={user.email} currentTeamId={currentTeamId} recordsDoc={recordsDoc} mastersTop10Doc={mastersTop10Doc} />
 
       <TeamViewerManager user={user} swimmers={swimmers} reloadSwimmers={reloadSwimmers} />
 
@@ -1779,7 +1779,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
   );
 }
 
-function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail, currentTeamId }) {
+function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail, currentTeamId, recordsDoc, mastersTop10Doc }) {
   const { c, s } = useUI();
   const [editing, setEditing] = useState(null); // swimmer id
   const [newName, setNewName] = useState("");
@@ -1805,7 +1805,8 @@ function SwimmersManager({ swimmers, reloadSwimmers, coachUid, coachEmail, curre
       {swimmers.map((sw) => (
         <SwimmerEditor key={sw.id} sw={sw} open={editing === sw.id}
           onToggle={() => setEditing(editing === sw.id ? null : sw.id)} reloadSwimmers={reloadSwimmers}
-          coachUid={coachUid} coachEmail={coachEmail} currentTeamId={currentTeamId} />
+          coachUid={coachUid} coachEmail={coachEmail} currentTeamId={currentTeamId}
+          recordsDoc={recordsDoc} mastersTop10Doc={mastersTop10Doc} />
       ))}
       <Card>
         <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>Add a swimmer</div>
@@ -1897,7 +1898,79 @@ function TeamViewerManager({ user, swimmers, reloadSwimmers }) {
   );
 }
 
-function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmail, currentTeamId }) {
+// Name-match suggestions (Settings "Name in Records" / "Name in Int'l
+// Rankings") — the swimmer's own Hebrew display name is fuzzy-matched
+// word-by-word (order-agnostic — the #1 real-world variation is family
+// name vs. first name swapped, e.g. "לירון הר-שי" vs "הר-שי לירון") against
+// whatever's already published, so a coach can tap a suggestion instead of
+// typing blind. "Name in Records" candidates are Hebrew-to-Hebrew;
+// "Name in Int'l Rankings" needs a rough Hebrew->Latin phonetic guess
+// first, since Latin candidates are never an exact transliteration (and
+// vary source-to-source, e.g. "Harshay" vs "Harshai" — a Y/I ending swap,
+// which plain Levenshtein already tolerates as a 1-character edit). Never
+// auto-fills — always a tap-to-confirm suggestion. Mirrors swim_tracker.html's
+// identical desktop implementation.
+const HEB_TO_LATIN_MAP = { א: "", ב: "b", ג: "g", ד: "d", ה: "h", ו: "v", ז: "z", ח: "ch", ט: "t", י: "y", כ: "k", ך: "k", ל: "l", מ: "m", ם: "m", נ: "n", ן: "n", ס: "s", ע: "", פ: "p", ף: "f", צ: "tz", ץ: "tz", ק: "k", ר: "r", ש: "sh", ת: "t" };
+function hebToLatinGuess(word) { return word.split("").map((c) => (c in HEB_TO_LATIN_MAP ? HEB_TO_LATIN_MAP[c] : c)).join(""); }
+function levenshtein(a, b) {
+  const m = a.length, n = b.length, dp = [];
+  for (let i = 0; i <= m; i++) dp[i] = [i];
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+function wordSim(a, b) { a = a.toUpperCase(); b = b.toUpperCase(); const d = levenshtein(a, b); return 1 - d / Math.max(a.length, b.length, 1); }
+function cleanNameWords(s) { return (s || "").replace(/['’‘׳-]/g, "").trim().split(/\s+/).filter(Boolean); }
+// Same-script (Hebrew-to-Hebrew) matches for the SAME real person cluster
+// close to 100%; cross-script (Hebrew->Latin transliteration) matches only
+// reach ~55-66% even when correct, and at that lower range true and false
+// positives actually overlap — so each mode gets its own bar: high (0.85)
+// for same-script, lower (0.45) for transliterated, chosen to eliminate
+// cross-script false positives even at the cost of missing a few genuine
+// low-scoring matches (still enterable manually). Mirrors swim_tracker.html.
+function suggestNameMatches(hebrewFullName, candidates, transliterate, topN) {
+  const srcWords = cleanNameWords(hebrewFullName);
+  const guessWords = transliterate ? srcWords.map(hebToLatinGuess).filter(Boolean) : srcWords;
+  if (!guessWords.length || !candidates || !candidates.length) return [];
+  const scored = candidates.map((cand) => {
+    const candWords = cleanNameWords(cand);
+    let total = 0;
+    guessWords.forEach((gw) => { total += Math.max(...candWords.map((cw) => wordSim(gw, cw))); });
+    return { cand, score: total / guessWords.length };
+  });
+  const threshold = transliterate ? 0.45 : 0.85;
+  return scored.sort((a, b) => b.score - a.score).filter((s) => s.score > threshold).slice(0, topN || 3);
+}
+function collectRecordNames(recordsDoc) {
+  const recs = recordsDoc && recordsDoc.records; if (!recs) return [];
+  const seen = new Set();
+  Object.keys(recs).forEach((pool) => Object.keys(recs[pool] || {}).forEach((sex) => Object.keys(recs[pool][sex] || {}).forEach((cat) => Object.keys(recs[pool][sex][cat] || {}).forEach((key) => {
+    const r = recs[pool][sex][cat][key]; if (r && r.name) seen.add(r.name);
+  }))));
+  return Array.from(seen);
+}
+function collectIntlNames(mastersTop10Doc) {
+  const seen = new Set();
+  ((mastersTop10Doc && mastersTop10Doc.entries) || []).forEach((e) => { if (e.name) seen.add(e.name); });
+  return Array.from(seen);
+}
+function NameSuggestChips({ matches, onPick }) {
+  if (!matches.length) return null;
+  const { c } = useUI();
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+      <span style={{ fontSize: 10.5, color: c.dim }}>Suggested:</span>
+      {matches.map((m, i) => (
+        <button key={i} type="button" onClick={() => onPick(m.cand)}
+          style={{ fontSize: 11, padding: "3px 9px", borderRadius: 999, border: `1px solid ${c.line}`, background: c.blueTint || "rgba(24,95,165,.08)", color: c.blue, cursor: "pointer" }}>
+          {m.cand} <span style={{ color: c.dim }}>{Math.round(m.score * 100)}%</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmail, currentTeamId, recordsDoc, mastersTop10Doc }) {
   const { c, s } = useUI();
   const [name, setName] = useState(sw.name || "");
   const [dob, setDob] = useState(sw.birthdate || "");
@@ -1907,6 +1980,9 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmai
   const [heights, setHeights] = useState(sw.heights || []);
   const [weights, setWeights] = useState(sw.weights || []);
   const [status, setStatus] = useState("");
+
+  const recordSuggestions = useMemo(() => suggestNameMatches(sw.name, collectRecordNames(recordsDoc), false, 3), [sw.name, recordsDoc]);
+  const intlSuggestions = useMemo(() => suggestNameMatches(sw.name, collectIntlNames(mastersTop10Doc), true, 3), [sw.name, mastersTop10Doc]);
 
   function addMeas(setArr, arr, date, value) {
     const v = parseFloat(value);
@@ -1944,8 +2020,14 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmai
               <button onClick={() => setSex("male")} style={s.pill(sex === "male")}>👦 Male</button>
             </div>
           </Field>
-          <Field label="Name in records (Hebrew, optional)"><input value={recordName} onChange={(e) => setRecordName(e.target.value)} placeholder="e.g. הר-שי לירון — to flag records they hold" style={s.input} dir="rtl" /></Field>
-          <Field label="Name in int'l rankings (Latin, optional)"><input value={intlName} onChange={(e) => setIntlName(e.target.value)} placeholder="e.g. HAR-SHAI Liron — to match European/World masters rankings" style={s.input} /></Field>
+          <Field label="Name in records (Hebrew, optional)">
+            <input value={recordName} onChange={(e) => setRecordName(e.target.value)} placeholder="e.g. הר-שי לירון — to flag records they hold" style={s.input} dir="rtl" />
+            <NameSuggestChips matches={recordSuggestions} onPick={setRecordName} />
+          </Field>
+          <Field label="Name in int'l rankings (Latin, optional)">
+            <input value={intlName} onChange={(e) => setIntlName(e.target.value)} placeholder="e.g. HAR-SHAI Liron — to match European/World masters rankings" style={s.input} />
+            <NameSuggestChips matches={intlSuggestions} onPick={setIntlName} />
+          </Field>
 
           <MeasEditor title="📏 Height (cm)" unit="cm" color={c.blue} arr={heights} setArr={setHeights} onAdd={addMeas} />
           <MeasEditor title="⚖️ Weight (kg)" unit="kg" color={c.amber} arr={weights} setArr={setWeights} onAdd={addMeas} />
@@ -2288,7 +2370,8 @@ export default function App() {
       {tab === "settings" ? (
         <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers}
           teamClusters={teamClusters} selectedTeamKey={selectedTeamKey} currentTeamId={currentTeamId}
-          onOpenTeamSwitcher={() => setTeamSwitcherOpen(true)} onCreateTeam={createNewTeam} />
+          onOpenTeamSwitcher={() => setTeamSwitcherOpen(true)} onCreateTeam={createNewTeam}
+          recordsDoc={recordsDoc} mastersTop10Doc={mastersTop10Doc} />
       ) : (
         <>
           {loadErr && <div style={s.pad}><Card style={{ borderColor: "#ef4444" }}>{loadErr}</Card></div>}
