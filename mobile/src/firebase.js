@@ -177,8 +177,19 @@ export async function saveSwimmerProfile(swimmerId, profile) {
 // to more than one team/cluster at once (see clusterMySwimmers), so typing
 // in an already-existing player ID here never "moves" them out of wherever
 // else they already show, only adds this team alongside it.
+// Also shares the new swimmer with every standing viewer this coach has
+// already granted access to (coaches/{coachUid}.viewerUids/viewerEmails —
+// see redeemInviteCode) — otherwise a viewer who joined before this
+// swimmer existed would never see them without a fresh, separate share.
 export async function createSwimmer(swimmerId, name, coachUid, coachEmail, teamId) {
-  const payload = { id: String(swimmerId), name, createdAt: Date.now(), coachUids: arrayUnion(coachUid), coachEmails: arrayUnion(coachEmail) };
+  const coachDoc = await fetchCoach(coachUid);
+  const viewerUids = (coachDoc && coachDoc.viewerUids) || [];
+  const viewerEmails = (coachDoc && coachDoc.viewerEmails) || [];
+  const payload = {
+    id: String(swimmerId), name, createdAt: Date.now(),
+    coachUids: arrayUnion(coachUid, ...viewerUids),
+    coachEmails: arrayUnion(coachEmail, ...viewerEmails),
+  };
   if (teamId) payload.teamIds = arrayUnion(teamId);
   await setDoc(doc(db, "swimmers", String(swimmerId)), payload, { merge: true });
 }
@@ -337,7 +348,11 @@ export async function createInviteCode(user, note, shareWith) {
 // (which grants access to the whole roster at once). Resolves email → uid
 // via the coaches collection first (coachUids/coachEmails only store
 // uids/emails, not a ready-made mapping), then arrayRemove on each swimmer.
-export async function removeViewer(swimmers, email) {
+// `myUid` is the caller's own uid — also strips the viewer from
+// coaches/{myUid}.viewerUids/viewerEmails (self-write, always allowed) so a
+// future createSwimmer() doesn't keep re-sharing new swimmers with someone
+// who was just removed.
+export async function removeViewer(swimmers, email, myUid) {
   const q = query(collection(db, "coaches"), where("email", "==", email));
   const snap = await getDocs(q);
   if (!snap.docs.length) throw new Error("Could not find that coach account.");
@@ -346,6 +361,9 @@ export async function removeViewer(swimmers, email) {
     const realEmail = (sw.coachEmails || []).find((e) => e.toLowerCase() === email.toLowerCase());
     if (!realEmail) continue;
     await setDoc(doc(db, "swimmers", String(sw.id)), { coachUids: arrayRemove(targetUid), coachEmails: arrayRemove(realEmail) }, { merge: true });
+  }
+  if (myUid) {
+    await setDoc(doc(db, "coaches", myUid), { viewerUids: arrayRemove(targetUid), viewerEmails: arrayRemove(email) }, { merge: true });
   }
 }
 
@@ -373,22 +391,34 @@ export async function fetchInviteCode(code) {
 
 // Redeem an invite code: marks it used by this account, creates the
 // coaches/{uid} doc that grants base access, and — if this was a "join my
-// team" code — self-writes pendingShares/{uid} then adds this account to
-// every listed swimmer's coachUids (see the matching bridge in
-// firestore.rules). Throws if the code is missing/already used — caller
-// should show that message to the user.
+// team" code — self-writes pendingShares/{uid} (now also recording which
+// coach this was redeemed for), registers this account as a standing
+// VIEWER of the inviting coach (coaches/{targetCoachUid}.viewerUids —
+// see firestore.rules), then shares the CURRENT roster snapshot from
+// inv.swimmerIds. The viewer registration is what makes swimmers the
+// inviter adds AFTER this redemption also visible automatically (see
+// createSwimmer/swimSaveProfile), not just the one-time snapshot — so this
+// runs even when inv.swimmerIds is empty (inviter had no swimmers yet when
+// they generated the code). Throws if the code is missing/already used —
+// caller should show that message to the user.
 export async function redeemInviteCode(code, user) {
   const inv = await fetchInviteCode(code);
   if (!inv) throw new Error("Invite code not found.");
   if (inv.usedBy) throw new Error("This invite code has already been used.");
   await setDoc(doc(db, "inviteCodes", code), { usedBy: user.email, usedAt: Date.now() }, { merge: true });
   await createCoachDoc(user);
-  if (inv.targetCoachUid && Array.isArray(inv.swimmerIds) && inv.swimmerIds.length) {
-    await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds: inv.swimmerIds, claimedAt: Date.now() });
-    const results = await Promise.allSettled(inv.swimmerIds.map((id) =>
-      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
-    ));
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
+  if (inv.targetCoachUid) {
+    const swimmerIds = Array.isArray(inv.swimmerIds) ? inv.swimmerIds : [];
+    await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds, targetCoachUid: inv.targetCoachUid, claimedAt: Date.now() });
+    await setDoc(doc(db, "coaches", inv.targetCoachUid), {
+      viewerUids: arrayUnion(user.uid), viewerEmails: arrayUnion(user.email),
+    }, { merge: true });
+    if (swimmerIds.length) {
+      const results = await Promise.allSettled(swimmerIds.map((id) =>
+        setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
+      ));
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
+    }
   }
 }

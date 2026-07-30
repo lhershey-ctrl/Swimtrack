@@ -1984,12 +1984,11 @@ function TeamViewerManager({ user, swimmers, reloadSwimmers }) {
 
   async function removeOne(email) {
     if (!confirm("Remove " + email + "'s access to your swimmers?")) return;
-    try { await removeViewer(swimmers, email); reloadSwimmers(); }
+    try { await removeViewer(swimmers, email, user.uid); reloadSwimmers(); }
     catch (e) { setStatus("❌ " + e.message); }
   }
 
   async function generate() {
-    if (!swimmers.length) { setStatus("Add a swimmer first — there's nothing to share yet."); return; }
     setBusy(true); setStatus("");
     try {
       const code = await createInviteCode(user, note.trim(), { targetCoachUid: user.uid, swimmerIds: swimmers.map((sw) => sw.id) });
@@ -2007,8 +2006,11 @@ function TeamViewerManager({ user, swimmers, reloadSwimmers }) {
       <div style={s.h2}>Add a Viewer</div>
       <Card>
         <div style={{ fontSize: 12, color: c.dim, marginBottom: 10 }}>
-          Generate a one-time code for someone to see and manage the same {swimmers.length} swimmer{swimmers.length !== 1 ? "s" : ""} you do
+          Generate a one-time code for someone to see and manage the same swimmers you do
           (like a co-coach or parent) — not a separate, independent account.
+          {swimmers.length
+            ? " Shares your current " + swimmers.length + " swimmer" + (swimmers.length !== 1 ? "s" : "") + ", plus any you add later."
+            : " You have no swimmers yet — that's fine, whatever you add from now on will be shared with them automatically."}
         </div>
         {others.length > 0 && (
           <div style={{ marginBottom: 10 }}>

@@ -277,6 +277,32 @@ table.rpt-table tr:last-child td{border-bottom:none}
 </head>
 <body>
 
+<!-- MOBILE-VISITOR BANNER — this page is the desktop extraction/analysis
+     tool (wide tables, drag-to-bookmarks-bar workflow) and isn't built for
+     phones. If a phone visitor lands here (wrong bookmark/link, a
+     home-screen icon pointing at the old URL, etc.) nudge them to the real
+     mobile app instead of leaving them stuck looking at a cramped desktop
+     layout with no obvious way out. Dismissible per-session (sessionStorage)
+     so it doesn't nag anyone who deliberately needs this page on a phone
+     (e.g. the "paste HTML" extraction fallback). -->
+<div id="mobileToolBanner" style="display:none;position:sticky;top:0;z-index:10000;background:#0f3d72;color:#fff;padding:10px 16px;font-size:13px;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap">
+  <span>📱 This is the desktop extraction tool — not built for phones.</span>
+  <a href="/" style="color:#fff;font-weight:800;text-decoration:underline">Open the SwimTrack app →</a>
+  <button onclick="document.getElementById('mobileToolBanner').style.display='none';sessionStorage.setItem('sw_hide_mobile_banner','1')"
+    style="background:none;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px">✕</button>
+</div>
+<script>
+(function () {
+  try {
+    var narrow = window.matchMedia && window.matchMedia('(max-width:700px)').matches;
+    var mobileUA = /iPhone|iPod|Android.*Mobile/i.test(navigator.userAgent);
+    if ((narrow || mobileUA) && !sessionStorage.getItem('sw_hide_mobile_banner')) {
+      document.getElementById('mobileToolBanner').style.display = 'flex';
+    }
+  } catch (e) { /* sessionStorage blocked (private mode etc.) — just skip the banner */ }
+})();
+</script>
+
 <!-- LANDING OVERLAY — shown once per browser until dismissed (sign in or "continue without an account") -->
 <div id="landingOverlay" style="display:none">
   <div class="ld-hero">
@@ -1299,7 +1325,7 @@ function landingSignIn(){
   <div id="createTeamCard" class="card" style="padding:16px 20px;margin-bottom:28px"></div>
 
   <div class="section-title">👥 Add a Viewer</div>
-  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.7">Generate a one-time code for someone to see and manage the <strong>same swimmers you do — including any you add later</strong> (like a co-coach or parent) — not a separate, independent account. Sign in above first.</p>
   <div id="viewerTeamList" style="margin-bottom:12px"></div>
   <div class="card" style="padding:16px 20px;margin-bottom:28px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -5741,6 +5767,7 @@ let currentUser = null;
 let lastSyncedAt = null;
 let cloudSwimmers = []; // [{id, name}] fetched from Firestore when signed in
 let coachStatus = "checking"; // "checking" | "needsInvite" | "ok" — gates the cloud UI for non-owners
+let myCoachDoc = {}; // this account's own coaches/{uid} doc (teamName, viewerUids/viewerEmails) — refreshed on sign-in
 
 // Keep in sync with ownerEmails() in firestore.rules.
 const OWNER_EMAILS = ["lhershey@gmail.com"];
@@ -5860,7 +5887,6 @@ function renderViewerBar() {
   }
   if (!currentUser) { out.innerHTML = '<span style="font-size:12px;color:#9a6b00">Sign in above first.</span>'; return; }
   out.appendChild(btn("Generate code", async () => {
-    if (!cloudSwimmers.length) { alert("You don't have any synced swimmers yet — sync at least one before sharing."); return; }
     try {
       const code = await createInviteCode(noteInput ? noteInput.value.trim() : "", {
         targetCoachUid: currentUser.uid,
@@ -5897,6 +5923,11 @@ window.removeViewer = async function (email) {
       if (!realEmail) continue;
       await setDoc(doc(db, "swimmers", String(s.id)), { coachUids: arrayRemove(targetUid), coachEmails: arrayRemove(realEmail) }, { merge: true });
     }
+    // Also stop future swimmers from auto-sharing with this viewer (see
+    // createSwimmer/swimSaveProfile's viewerUids lookup) — self-write on our
+    // own coach doc, always allowed.
+    await setDoc(doc(db, "coaches", currentUser.uid), { viewerUids: arrayRemove(targetUid), viewerEmails: arrayRemove(email) }, { merge: true });
+    myCoachDoc = await fetchCoach(currentUser.uid) || {};
     await refreshCloudSwimmers();
     renderViewerBar();
   } catch (e) { alert("Failed to remove viewer: " + e.message); }
@@ -6049,12 +6080,18 @@ async function doSync() {
     if (st) { st.style.color = "#c0392b"; st.textContent = "No active swimmer selected (set one in Settings)."; }
     return;
   }
+  if (coachStatus !== "ok") {
+    if (st) { st.style.color = "#c0392b"; st.textContent = "Activate your account first — enter your invite code above."; }
+    return;
+  }
   // Build the seasons map (strip internal _keys). May be empty if no JSON is
   // loaded — in that case we still push the profile (name/DOB/height/weight).
   const seasons = {};
   Object.keys(D || {}).forEach((k) => { if (k[0] !== "_") seasons[k] = D[k]; });
   if (st) { st.style.color = "#666"; st.textContent = "Syncing…"; }
   try {
+    const viewerUids = (myCoachDoc && myCoachDoc.viewerUids) || [];
+    const viewerEmails = (myCoachDoc && myCoachDoc.viewerEmails) || [];
     // merge:true; we push season data AND profile fields edited here on desktop.
     const payload = {
       name: sw.name || ("Swimmer " + sw.id),
@@ -6066,8 +6103,8 @@ async function doSync() {
       weights: Array.isArray(sw.weights) ? sw.weights : [],
       seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
       updatedAt: Date.now(),
-      coachUids: arrayUnion(currentUser.uid),
-      coachEmails: arrayUnion(currentUser.email),
+      coachUids: arrayUnion(currentUser.uid, ...viewerUids),
+      coachEmails: arrayUnion(currentUser.email, ...viewerEmails),
     };
     if (Object.keys(seasons).length) payload.seasons = seasons;
     // Additive — arrayUnion so this never overwrites teamIds this swimmer
@@ -6095,6 +6132,9 @@ async function doSync() {
 async function swimSaveProfile(sw) {
   if (!sw || !sw.id) throw new Error("missing swimmer id");
   if (!currentUser) throw new Error("not signed in");
+  if (coachStatus !== "ok") throw new Error("Activate your account first — enter your invite code in the cloud bar (Analyze tab) before saving.");
+  var viewerUids = (myCoachDoc && myCoachDoc.viewerUids) || [];
+  var viewerEmails = (myCoachDoc && myCoachDoc.viewerEmails) || [];
   var payload = {
     name: sw.name || ("Swimmer " + sw.id),
     id: String(sw.id),
@@ -6105,8 +6145,8 @@ async function swimSaveProfile(sw) {
     weights: Array.isArray(sw.weights) ? sw.weights : [],
     seasonIds: Array.isArray(sw.seasonIds) ? sw.seasonIds : [],
     updatedAt: Date.now(),
-    coachUids: arrayUnion(currentUser.uid),
-    coachEmails: arrayUnion(currentUser.email),
+    coachUids: arrayUnion.apply(null, [currentUser.uid].concat(viewerUids)),
+    coachEmails: arrayUnion.apply(null, [currentUser.email].concat(viewerEmails)),
   };
   // Additive — arrayUnion so this never overwrites teamIds this swimmer
   // already has (e.g. from another team they were separately added to); a
@@ -6869,6 +6909,13 @@ async function createInviteCode(note, shareWith) {
   await setDoc(doc(db, "inviteCodes", code), payload);
   return code;
 }
+// Self-registers as a standing VIEWER of the inviting coach
+// (coaches/{targetCoachUid}.viewerUids/viewerEmails — see firestore.rules)
+// in addition to sharing the current inv.swimmerIds snapshot — this is what
+// makes swimmers the inviter adds AFTER this redemption also visible
+// automatically (see swimSaveProfile/doSync), not just a one-time snapshot.
+// Runs even when inv.swimmerIds is empty (inviter had no swimmers yet when
+// they generated the code) — that's the whole point.
 async function redeemInviteCode(code, user) {
   const snap = await getDoc(doc(db, "inviteCodes", code));
   if (!snap.exists()) throw new Error("Invite code not found.");
@@ -6876,13 +6923,19 @@ async function redeemInviteCode(code, user) {
   if (inv.usedBy) throw new Error("This invite code has already been used.");
   await setDoc(doc(db, "inviteCodes", code), { usedBy: user.email, usedAt: Date.now() }, { merge: true });
   await createCoachDoc(user);
-  if (inv.targetCoachUid && Array.isArray(inv.swimmerIds) && inv.swimmerIds.length) {
-    await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds: inv.swimmerIds, claimedAt: Date.now() });
-    const results = await Promise.allSettled(inv.swimmerIds.map((id) =>
-      setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
-    ));
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
+  if (inv.targetCoachUid) {
+    const swimmerIds = Array.isArray(inv.swimmerIds) ? inv.swimmerIds : [];
+    await setDoc(doc(db, "pendingShares", user.uid), { swimmerIds, targetCoachUid: inv.targetCoachUid, claimedAt: Date.now() });
+    await setDoc(doc(db, "coaches", inv.targetCoachUid), {
+      viewerUids: arrayUnion(user.uid), viewerEmails: arrayUnion(user.email),
+    }, { merge: true });
+    if (swimmerIds.length) {
+      const results = await Promise.allSettled(swimmerIds.map((id) =>
+        setDoc(doc(db, "swimmers", id), { coachUids: arrayUnion(user.uid), coachEmails: arrayUnion(user.email) }, { merge: true })
+      ));
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length) console.error("redeemInviteCode: failed to share some swimmers", failed);
+    }
   }
 }
 
@@ -7717,7 +7770,7 @@ function refreshSharedTables() {
 onAuthStateChanged(auth, (u) => {
   currentUser = u; window.swimUser = u;
   if (u) {
-    coachStatus = "checking"; render();
+    coachStatus = "checking"; myCoachDoc = {}; render();
     (isOwner(u) ? claimOrphanedSwimmers(u).then(() => backfillCoachEmails(u)) : migrateLegacyAccess(u).then(() => fetchCoach(u.uid)))
       .then((coach) => {
         coachStatus = (isOwner(u) || coach) ? "ok" : "needsInvite";
@@ -7725,8 +7778,12 @@ onAuthStateChanged(auth, (u) => {
         render();
       })
       .catch((e) => { console.error("Coach status check failed:", e); coachStatus = "needsInvite"; render(); });
+    // Independent of the coachStatus branching above (which, for owners,
+    // doesn't resolve to a coach doc) — cache our own coach doc so
+    // doSync/swimSaveProfile can read viewerUids/viewerEmails off it.
+    fetchCoach(u.uid).then((c) => { myCoachDoc = c || {}; }).catch(() => {});
   } else {
-    cloudSwimmers = []; coachStatus = "checking";
+    cloudSwimmers = []; coachStatus = "checking"; myCoachDoc = {};
     teamFilterIds = null; myTeamClusters = []; selectedTeamKey = null; currentTeamId = null; window.currentTeamId = null; closeTeamGate();
     refreshSharedTables(); // resets each status line back to "sign in…"
   }

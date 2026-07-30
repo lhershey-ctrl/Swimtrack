@@ -57,12 +57,34 @@ service cloud.firestore {
       // create one for someone else.
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.email == request.auth.token.email;
-      // Only the owner can edit/remove a coach in general, EXCEPT a coach
-      // may self-update just their own teamName (account/team display name,
-      // set from Settings) — nothing else about another coach's doc.
+      // Only the owner can edit/remove a coach in general, EXCEPT:
+      // (a) a coach may freely self-update teamName/viewerUids/viewerEmails
+      //     on their OWN doc (add or remove) — viewerUids/viewerEmails is
+      //     "who I've granted standing viewer access to," maintained by
+      //     Add-a-Viewer / Remove-a-Viewer in Settings;
+      // (b) a redeemer of a "join my team" code may self-register as a
+      //     standing viewer of the INVITING coach (this uid) by appending
+      //     ONLY their own uid/email to viewerUids/viewerEmails (never
+      //     removing anyone else's) — proven via their own pendingShares
+      //     doc (self-written right after redemption, see the swimmers
+      //     rule below), which records which coach they redeemed for. This
+      //     is what lets swimmers the inviter adds LATER auto-share with
+      //     already-redeemed viewers (see createSwimmer/swimSaveProfile),
+      //     instead of only the one-time roster snapshot baked into the
+      //     invite code at generation time.
       allow update: if isOwner()
         || (request.auth.uid == uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName', 'viewerUids', 'viewerEmails']))
+        || (
+          request.auth != null && request.auth.uid != uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewerUids', 'viewerEmails']) &&
+          request.resource.data.viewerUids ==
+            (('viewerUids' in resource.data) ? resource.data.viewerUids : []).concat([request.auth.uid]) &&
+          request.resource.data.viewerEmails ==
+            (('viewerEmails' in resource.data) ? resource.data.viewerEmails : []).concat([request.auth.token.email]) &&
+          exists(/databases/$(database)/documents/pendingShares/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/pendingShares/$(request.auth.uid)).data.targetCoachUid == uid
+        );
       allow delete: if isOwner();
     }
 

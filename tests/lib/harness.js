@@ -10,9 +10,10 @@ const FB_VERSION = '12.11.0'; // must match the <script type="module"> imports i
 // tests/mocks/*.js (in-memory auth + Firestore), so scenarios can drive the
 // REAL, unmodified app UI with only the network boundary faked. `seed` is
 // installed via addInitScript so it exists before the app's own script runs.
-async function openDesktopApp(seed) {
+async function openDesktopApp(seed, opts) {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+  const viewport = (opts && opts.viewport) || { width: 1100, height: 900 };
+  const page = await browser.newPage({ viewport });
   const consoleErrors = [];
   page.on('pageerror', (err) => consoleErrors.push(err.message));
 
