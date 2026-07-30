@@ -5747,7 +5747,7 @@ function clearRace2(){
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, where, arrayUnion, arrayRemove }
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, collection, getDocs, query, where, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -6500,6 +6500,53 @@ async function fetchMyTeams(uid) {
   var snap = await getDocs(query(collection(db, 'teams'), where('createdBy', '==', uid)));
   return snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
 }
+// Deletes an explicit team a coach created: best-effort strips this teamId
+// from every swimmer currently tagged with it (arrayRemove — never touches
+// their other teams or legacy coachUids access), then deletes the
+// teams/{id} doc itself. firestore.rules restricts the actual delete to
+// the team's creator (or the owner); a swimmer this coach doesn't directly
+// coach (e.g. added independently by another viewer) may not be reachable
+// by the arrayRemove — logged, not fatal, since the team doc is still
+// deleted either way.
+async function deleteTeam(teamId) {
+  var snap = await getDocs(query(collection(db, 'swimmers'), where('teamIds', 'array-contains', teamId)));
+  var results = await Promise.allSettled(snap.docs.map(function (d) {
+    return setDoc(doc(db, 'swimmers', d.id), { teamIds: arrayRemove(teamId) }, { merge: true });
+  }));
+  var failed = results.filter(function (r) { return r.status === 'rejected'; });
+  if (failed.length) console.error('deleteTeam: failed to unlink some swimmers', failed);
+  await deleteDoc(doc(db, 'teams', teamId));
+}
+// Owner-only, Admin panel: fully removes ONE coach's account from the app.
+// Strips their access from every swimmer they coach (arrayRemove — never
+// deletes a swimmer doc), removes them from every OTHER coach's
+// viewerUids/viewerEmails (so they stop being an auto-share target for
+// swimmers added in the future too — see swimSaveProfile/doSync), then
+// deletes their own coaches/{uid} doc. The account holder's Google login
+// itself is untouched — they'd just need a fresh invite code to use the
+// app again.
+async function removeCoachAccount(uid, email) {
+  var swimmerSnap = await getDocs(collection(db, 'swimmers'));
+  var coachSnap = await getDocs(collection(db, 'coaches'));
+  var ops = [];
+  swimmerSnap.docs.forEach(function (d) {
+    var data = d.data();
+    if ((data.coachUids || []).includes(uid)) {
+      ops.push(setDoc(doc(db, 'swimmers', d.id), { coachUids: arrayRemove(uid), coachEmails: arrayRemove(email) }, { merge: true }));
+    }
+  });
+  coachSnap.docs.forEach(function (d) {
+    if (d.id === uid) return;
+    var data = d.data();
+    if ((data.viewerUids || []).includes(uid)) {
+      ops.push(setDoc(doc(db, 'coaches', d.id), { viewerUids: arrayRemove(uid), viewerEmails: arrayRemove(email) }, { merge: true }));
+    }
+  });
+  var results = await Promise.allSettled(ops);
+  var failed = results.filter(function (r) { return r.status === 'rejected'; });
+  if (failed.length) console.error('removeCoachAccount: failed to unlink some docs', failed);
+  await deleteDoc(doc(db, 'coaches', uid));
+}
 
 // ── Account/team switcher — mirrors mobile's clusterMySwimmers/nameClusters
 // (App.jsx). A coach's email can be shared into more than one otherwise-
@@ -6740,7 +6787,8 @@ async function renderAccountCard() {
         '<button onclick="saveActiveTeamName(\'' + activeTeam.id + '\')" style="padding:9px 16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Save</button>' +
         '</div>' +
         '<div id="activeTeamNameStatus" style="font-size:12px;color:#888;margin-bottom:4px"></div>' +
-        '<div style="font-size:11.5px;color:#999;margin-bottom:12px">Renames the team itself (shown to everyone with access to it) — you can, since you created it.</div>'
+        '<div style="font-size:11.5px;color:#999;margin-bottom:12px">Renames the team itself (shown to everyone with access to it) — you can, since you created it.</div>' +
+        '<button onclick="window.deleteActiveTeam(\'' + activeTeam.id + '\')" style="background:none;border:none;cursor:pointer;color:#a32d2d;font-size:12.5px;font-weight:700;padding:0;margin-bottom:12px">🗑 Delete this team</button>'
       : '') +
     (myTeamClusters.length > 1
       ? '<button onclick="window.openTeamSwitcher()" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f5f4f0;font-weight:700;cursor:pointer">👥 Switch Account (' + (activeCluster ? activeCluster.name : '…') + ')</button>'
@@ -6783,6 +6831,19 @@ window.saveActiveTeamName = async function (teamId) {
     myTeamClusters = myTeamClusters.map(function (cl) { return cl.teamId === teamId ? Object.assign({}, cl, { name: name }) : cl; });
     setTimeout(function () { status.textContent = ''; renderAccountCard(); }, 900);
   } catch (e) { status.textContent = '❌ ' + (/permission/i.test(e.message) ? 'Only this team\'s creator can rename it.' : e.message); }
+};
+window.deleteActiveTeam = async function (teamId) {
+  var status = document.getElementById('activeTeamNameStatus');
+  var nameEl = document.getElementById('activeTeamNameInput');
+  var teamName = nameEl ? nameEl.value : 'this team';
+  if (!confirm('Delete "' + teamName + '"? Its swimmers stay in the app and in any other team/roster they belong to — they just stop showing up under this team. This can\'t be undone.')) return;
+  if (status) status.textContent = 'Deleting…';
+  try {
+    await deleteTeam(teamId);
+    await resolveTeamAndProceed(currentUser);
+  } catch (e) {
+    if (status) status.textContent = '❌ ' + (/permission/i.test(e.message) ? 'Only this team\'s creator can delete it.' : e.message);
+  }
 };
 
 // A brand-new, empty, independently-named roster under this SAME login —
@@ -7702,11 +7763,19 @@ async function renderAdminStats() {
       '<div class="metric green"><div class="lbl">Open Codes</div><div class="val">' + openCodes.length + '</div></div>';
 
     coachesEl.innerHTML = teams.length ? teams.map(function (team, i) {
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;' +
+      return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 14px;' +
         (i < teams.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
-        '<div><div style="font-size:13px;font-weight:800;color:#185FA5">' + team.name + '</div>' +
-        '<div style="font-size:12px;font-weight:600;margin-top:1px">' + team.members.map(function (m) { return m.name || m.email; }).join(' + ') + '</div>' +
-        '<div style="font-size:11px;color:#999">' + team.members.map(function (m) { return m.email; }).join(' · ') + '</div></div>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:800;color:#185FA5;margin-bottom:4px">' + team.name + '</div>' +
+        team.members.map(function (m) {
+          var isOwnerAcct = OWNER_EMAILS.indexOf((m.email || '').toLowerCase()) >= 0;
+          return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">' +
+            '<span style="font-size:12px;font-weight:600">' + (m.name || m.email) + '</span>' +
+            '<span style="font-size:11px;color:#999">' + m.email + '</span>' +
+            (isOwnerAcct ? '' :
+              '<button onclick="window.removeCoachAccount(\'' + m.uid + '\',\'' + (m.email || '').replace(/'/g, "\\'") + '\')" ' +
+              'title="Remove this coach\'s account" style="background:none;border:none;cursor:pointer;color:#a32d2d;font-size:11px;font-weight:700;padding:0">✕ Remove account</button>') +
+            '</div>';
+        }).join('') + '</div>' +
         '<div style="font-size:14px;font-weight:800;color:#185FA5">' + team.swimmerCount + '</div></div>';
     }).join('') : '<div style="padding:14px;color:#aaa;font-size:13px">No coaches yet.</div>';
 
@@ -7752,6 +7821,22 @@ async function renderAdminStats() {
   }
 }
 window.renderAdminStats = renderAdminStats;
+window.removeCoachAccount = async function (uid, email) {
+  if (!isOwner(currentUser)) return;
+  if (OWNER_EMAILS.indexOf((email || '').toLowerCase()) >= 0) { alert("The owner account can't be removed."); return; }
+  if (!confirm('Remove ' + email + '\'s coach account? They\'ll lose access to every swimmer and stop being able to sign in as a coach — their Google account itself is untouched. This can\'t be undone from here.')) return;
+  try {
+    await removeCoachAccount(uid, email);
+    renderAdminStats();
+    // The removed coach may have shared a swimmer with the signed-in owner
+    // (coachEmails/coachUids just changed on that doc) — cloudSwimmers is a
+    // separate cache from this panel's own fetch, and would otherwise keep
+    // showing the removed coach in "Add a Viewer"'s "Current Team" until
+    // the next full reload.
+    await refreshCloudSwimmers();
+    renderViewerBar();
+  } catch (e) { alert('Failed to remove account: ' + e.message); }
+};
 
 // Fetch the shared reference tables (records/Rudolph/USA standards/masters
 // WR) — only once coachStatus is actually "ok". A brand-new coach's very

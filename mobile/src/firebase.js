@@ -266,6 +266,24 @@ export async function fetchMyTeams(uid) {
   const snap = await getDocs(query(collection(db, "teams"), where("createdBy", "==", uid)));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
+// Deletes an explicit team a coach created: best-effort strips this teamId
+// from every swimmer currently tagged with it (arrayRemove — never touches
+// their other teams or legacy coachUids access), then deletes the
+// teams/{id} doc itself. firestore.rules restricts the actual delete to
+// the team's creator (or the owner) — a non-creator's call fails there,
+// this function doesn't re-check that client-side. A swimmer this coach
+// doesn't directly coach (e.g. added independently by another viewer while
+// this team was active) may not be reachable by the arrayRemove — logged,
+// not fatal, since the team doc itself is still deleted either way.
+export async function deleteTeam(teamId) {
+  const swimmers = await fetchSwimmersByTeam(teamId);
+  const results = await Promise.allSettled(swimmers.map((sw) =>
+    setDoc(doc(db, "swimmers", String(sw.id)), { teamIds: arrayRemove(teamId) }, { merge: true })
+  ));
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length) console.error("deleteTeam: failed to unlink some swimmers", failed);
+  await deleteDoc(doc(db, "teams", teamId));
+}
 
 async function createCoachDoc(user) {
   await setDoc(doc(db, "coaches", user.uid), {
@@ -382,6 +400,35 @@ export async function fetchAllSwimmersAdmin() {
 export async function fetchAllInviteCodes() {
   const snap = await getDocs(collection(db, "inviteCodes"));
   return snap.docs.map((d) => ({ code: d.id, ...d.data() }));
+}
+
+// Owner-only, Admin panel: fully removes ONE coach's account from the app.
+// Strips their access from every swimmer they coach (arrayRemove — never
+// deletes a swimmer doc), removes them from every OTHER coach's
+// viewerUids/viewerEmails (so they stop being an auto-share target for
+// swimmers added in the future too — see createSwimmer), then deletes their
+// own coaches/{uid} doc. The account holder's Google login itself is
+// untouched — they'd just need a fresh invite code to use the app again.
+// firestore.rules only lets the owner delete a coaches/{uid} doc or write
+// arbitrary swimmers/coaches fields, so this is owner-gated by the rules
+// themselves, not just the Admin-only UI that calls it.
+export async function removeCoachAccount(uid, email) {
+  const [swimmers, coaches] = await Promise.all([fetchAllSwimmersAdmin(), fetchAllCoaches()]);
+  const ops = [];
+  swimmers.forEach((sw) => {
+    if ((sw.coachUids || []).includes(uid)) {
+      ops.push(setDoc(doc(db, "swimmers", String(sw.id)), { coachUids: arrayRemove(uid), coachEmails: arrayRemove(email) }, { merge: true }));
+    }
+  });
+  coaches.forEach((co) => {
+    if (co.uid !== uid && (co.viewerUids || []).includes(uid)) {
+      ops.push(setDoc(doc(db, "coaches", co.uid), { viewerUids: arrayRemove(uid), viewerEmails: arrayRemove(email) }, { merge: true }));
+    }
+  });
+  const results = await Promise.allSettled(ops);
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length) console.error("removeCoachAccount: failed to unlink some docs", failed);
+  await deleteDoc(doc(db, "coaches", uid));
 }
 
 export async function fetchInviteCode(code) {

@@ -102,7 +102,11 @@ service cloud.firestore {
       allow update: if isOwner()
         || (isCoach() && resource.data.createdBy == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
-      allow delete: if isOwner();
+      // A coach may delete a team they created themselves (Settings "Delete
+      // this team") — the client also best-effort strips the teamId from
+      // every member swimmer first (see deleteTeam), but that's a separate
+      // write against the swimmers rule below, not gated here.
+      allow delete: if isOwner() || (isCoach() && resource.data.createdBy == request.auth.uid);
     }
 
     match /inviteCodes/{code} {

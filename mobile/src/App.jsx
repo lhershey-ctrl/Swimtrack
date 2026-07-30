@@ -11,7 +11,7 @@ import {
   fetchRecords, fetchRudolph, fetchUsaStandards, fetchMastersRecords, fetchMastersTop10,
   migrateLegacyAccess, fetchCoach, redeemInviteCode, createInviteCode, claimOrphanedSwimmers, removeViewer,
   fetchAllCoaches, fetchAllSwimmersAdmin, fetchAllInviteCodes, saveTeamName,
-  createTeam, renameTeam, fetchTeam, fetchMyTeams,
+  createTeam, renameTeam, fetchTeam, fetchMyTeams, deleteTeam, removeCoachAccount, OWNER_EMAILS,
 } from "./firebase.js";
 import {
   fmtT, fmtDateShort, parseDate, poolNorm, allResults, seasons, personalRecords, lookupRecordByCat, isMastersCat,
@@ -1765,11 +1765,12 @@ function TeamNameEditor({ user }) {
 // own label was ever editable, with no way to rename the actual team.
 // Only the team's creator can (matches firestore.rules), so this only
 // renders for them — null otherwise, same as if it didn't exist.
-function ActiveTeamNameEditor({ user, teamId }) {
+function ActiveTeamNameEditor({ user, teamId, reloadSwimmers }) {
   const { c } = useUI();
   const [team, setTeam] = useState(null);
   const [value, setValue] = useState("");
   const [status, setStatus] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1789,6 +1790,13 @@ function ActiveTeamNameEditor({ user, teamId }) {
     catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Only this team's creator can rename it." : e.message)); }
   }
 
+  async function remove() {
+    if (!confirm('Delete "' + (team.name || "this team") + '"? Its swimmers stay in the app and in any other team/roster they belong to — they just stop showing up under this team. This can\'t be undone.')) return;
+    setDeleting(true);
+    try { await deleteTeam(teamId); if (reloadSwimmers) reloadSwimmers(); }
+    catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Only this team's creator can delete it." : e.message)); setDeleting(false); }
+  }
+
   return (
     <div style={{ marginTop: 14 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Current Team's Name</div>
@@ -1799,6 +1807,8 @@ function ActiveTeamNameEditor({ user, teamId }) {
       </div>
       {status && <div style={{ fontSize: 12, color: c.dim, marginTop: 6 }}>{status}</div>}
       <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>Renames the team itself (shown to everyone with access to it) — you can, since you created it.</div>
+      <button onClick={remove} disabled={deleting} style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer",
+        color: c.red, fontSize: 12.5, fontWeight: 700, padding: 0 }}>{deleting ? "Deleting…" : "🗑 Delete this team"}</button>
     </div>
   );
 }
@@ -1889,7 +1899,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
           {owner && <span style={{ fontSize: 11, fontWeight: 800, color: c.amber, border: `1px solid ${c.amber}`, borderRadius: 999, padding: "3px 9px" }}>OWNER</span>}
         </div>
         <TeamNameEditor user={user} />
-        <ActiveTeamNameEditor user={user} teamId={currentTeamId} />
+        <ActiveTeamNameEditor user={user} teamId={currentTeamId} reloadSwimmers={reloadSwimmers} />
         {teamClusters.length > 1 && (
           <button onClick={onOpenTeamSwitcher} style={{ marginTop: 10, width: "100%", padding: 11, borderRadius: 12, border: `1px solid ${c.line}`,
             background: c.card2, color: c.text, fontWeight: 700, cursor: "pointer" }}>
@@ -1915,7 +1925,7 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
       <AccessManager owner={owner} />
 
       {owner && <>
-        <AdminStatsPanel owner={owner} />
+        <AdminStatsPanel owner={owner} reloadMySwimmers={reloadSwimmers} />
         <InviteCodeManager owner={owner} user={user} />
       </>}
 
@@ -2798,7 +2808,7 @@ function PerfSplitTable({ title, rows, c }) {
   );
 }
 
-function AdminStatsPanel({ owner }) {
+function AdminStatsPanel({ owner, reloadMySwimmers }) {
   const { c, s } = useUI();
   const [coaches, setCoaches] = useState(null);
   const [swimmers, setSwimmers] = useState(null);
@@ -2808,13 +2818,35 @@ function AdminStatsPanel({ owner }) {
   const [mastersRecordsDoc, setMastersRecordsDoc] = useState(null);
   const [namedTeams, setNamedTeams] = useState(null);
   const [err, setErr] = useState("");
+  const [busyUid, setBusyUid] = useState(null);
+
+  function load() {
+    return Promise.all([fetchAllCoaches(), fetchAllSwimmersAdmin(), fetchAllInviteCodes(), fetchRudolph(), fetchUsaStandards(), fetchMastersRecords()])
+      .then(([co, sw, cd, rud, usa, masters]) => { setCoaches(co); setSwimmers(sw); setCodes(cd); setRudolphDoc(rud); setUsaStandardsDoc(usa); setMastersRecordsDoc(masters); })
+      .catch((e) => setErr(e.message));
+  }
 
   useEffect(() => {
     if (!owner) return;
-    Promise.all([fetchAllCoaches(), fetchAllSwimmersAdmin(), fetchAllInviteCodes(), fetchRudolph(), fetchUsaStandards(), fetchMastersRecords()])
-      .then(([co, sw, cd, rud, usa, masters]) => { setCoaches(co); setSwimmers(sw); setCodes(cd); setRudolphDoc(rud); setUsaStandardsDoc(usa); setMastersRecordsDoc(masters); })
-      .catch((e) => setErr(e.message));
+    load();
   }, [owner]);
+
+  async function removeAccount(m) {
+    if (OWNER_EMAILS.includes((m.email || "").toLowerCase())) { alert("The owner account can't be removed."); return; }
+    if (!confirm("Remove " + (m.name || m.email) + "'s coach account? They'll lose access to every swimmer and stop being able to sign in as a coach — their Google account itself is untouched. This can't be undone from here.")) return;
+    setBusyUid(m.uid);
+    try {
+      await removeCoachAccount(m.uid, m.email);
+      await load();
+      // The removed coach may have shared a swimmer with the signed-in
+      // owner (coachEmails/coachUids just changed on that doc) — the
+      // Settings tab's own swimmer list (feeding "Add a Viewer"'s "Current
+      // Team") is a separate fetch from this panel's, and would otherwise
+      // keep showing the removed coach until the next full reload.
+      if (reloadMySwimmers) reloadMySwimmers();
+    } catch (e) { alert("Failed to remove account: " + e.message); }
+    setBusyUid(null);
+  }
 
   // Named the same way the sign-in picker names clusters (nameClusters only
   // reads .teamId/.coachUids off each entry — .members/.swimmers/
@@ -2844,14 +2876,24 @@ function AdminStatsPanel({ owner }) {
       </div>
       <Card style={{ padding: 6 }}>
         {teams.map((team, i) => (
-          <div key={team.members[0].uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+          <div key={team.members[0].uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
             padding: "9px 10px", borderBottom: i < teams.length - 1 ? `1px solid ${c.line}` : "none" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 800, color: c.blue }}>{team.name}</div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 1 }}>
-                {team.members.map((m) => m.name || m.email).join(" + ")}
-              </div>
-              <div style={{ fontSize: 11, color: c.dim }}>{team.members.map((m) => m.email).join(" · ")}</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: c.blue, marginBottom: 4 }}>{team.name}</div>
+              {team.members.map((m) => (
+                <div key={m.uid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{m.name || m.email}</span>
+                    <span style={{ fontSize: 11, color: c.dim, marginLeft: 6 }}>{m.email}</span>
+                  </div>
+                  {!OWNER_EMAILS.includes((m.email || "").toLowerCase()) && (
+                    <button onClick={() => removeAccount(m)} disabled={busyUid === m.uid} title="Remove this coach's account"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: c.red, fontSize: 12, fontWeight: 700, padding: "0 2px" }}>
+                      {busyUid === m.uid ? "…" : "✕ Remove account"}
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
             <div style={{ fontSize: 13, fontWeight: 800, color: c.blue }}>{team.swimmerCount}</div>
           </div>

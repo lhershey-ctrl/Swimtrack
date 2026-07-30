@@ -53,6 +53,11 @@ export function getDoc(ref) {
     return { exists: function () { return !!data; }, data: function () { return data; }, id: ref.__id };
   });
 }
+export function deleteDoc(ref) {
+  var c = col(ref.__col);
+  delete c[ref.__id];
+  return Promise.resolve();
+}
 export function collection(db, name) { return { __col: name }; }
 export function query(colRef) {
   var conds = Array.prototype.slice.call(arguments, 1);
