@@ -3,6 +3,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   BarChart, Bar, Cell, ComposedChart, Scatter,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  PieChart, Pie, Legend,
 } from "recharts";
 import { useUI, GRAD } from "./theme.jsx";
 import {
@@ -2841,6 +2842,128 @@ function PerfSplitTable({ title, rows, c }) {
   );
 }
 
+// Monday-start week label for a timestamp — mirrors desktop's
+// _weekStartLabel (swim_tracker.html) exactly, so "swimmers added per
+// week" buckets the same way in both apps.
+function weekStartLabel(ts) {
+  const d = new Date(ts);
+  const day = (d.getDay() + 6) % 7; // Monday=0
+  d.setDate(d.getDate() - day);
+  return (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear();
+}
+const ADMIN_PIE_COLORS = ["#3b82f6", "#e05252", "#c9d3df"];
+
+// Mirrors desktop's renderAdminDataStats (swim_tracker.html) — same 4
+// charts (added-per-week, sex split w/ %, age distribution, swimmers per
+// team), same bucketing rules, just Recharts instead of Chart.js. Directly
+// requested: "i dont see data statistics in mobile. please add."
+function AdminDataStatsPanel({ swimmers, teams, c }) {
+  const [open, setOpen] = useState(false);
+
+  const withCreatedAt = swimmers.filter((s) => s.createdAt);
+  const byWeek = {};
+  withCreatedAt.forEach((s) => { const k = weekStartLabel(s.createdAt); byWeek[k] = (byWeek[k] || 0) + 1; });
+  const addedData = Object.keys(byWeek).sort((a, b) => new Date(a) - new Date(b)).map((k) => ({ week: k, count: byWeek[k] }));
+
+  let nMale = 0, nFemale = 0, nUnknown = 0;
+  swimmers.forEach((s) => { if (s.sex === "male") nMale++; else if (s.sex === "female") nFemale++; else nUnknown++; });
+  const sexTotal = swimmers.length || 1;
+  const sexData = [{ name: "Male", value: nMale }, { name: "Female", value: nFemale }].concat(nUnknown ? [{ name: "Unknown", value: nUnknown }] : []);
+
+  // Single-year buckets for ages 9-18 (the range that matters swim-by-swim
+  // for this roster), 5-year bands outside it — same rule as desktop.
+  const ageLabels = ["<9"].concat(Array.from({ length: 10 }, (_, i) => String(9 + i))).concat(["19-23", "24-28", "29-33", "34-38", "39-43", "44-48", "49+"]);
+  const ageCounts = ageLabels.map(() => 0);
+  swimmers.forEach((s) => {
+    if (!s.birthdate) return;
+    const ts = parseDate(s.birthdate);
+    if (!ts) return;
+    const age = new Date().getFullYear() - new Date(ts).getFullYear(); // year-end age, matches desktop's _recAge
+    let idx;
+    if (age < 9) idx = 0;
+    else if (age <= 18) idx = 1 + (age - 9);
+    else idx = 11 + Math.min(Math.floor((age - 19) / 5), 6);
+    ageCounts[idx]++;
+  });
+  const ageData = ageLabels.map((label, i) => ({ label, count: ageCounts[i] }));
+
+  const teamSizeData = teams.slice().sort((a, b) => b.swimmerCount - a.swimmerCount).map((t) => ({ name: t.name, count: t.swimmerCount }));
+
+  return (
+    <>
+      <button onClick={() => setOpen(!open)} style={{ width: "100%", textAlign: "left", display: "flex",
+        alignItems: "center", justifyContent: "space-between", background: "none", border: "none", cursor: "pointer",
+        padding: "10px 2px 6px" }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: c.blue }}>📈 Data Statistics</span>
+        <span style={{ color: c.dim }}>{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <Card style={{ marginBottom: 14, padding: 10 }}>
+          {withCreatedAt.length < swimmers.length && (
+            <div style={{ fontSize: 11, color: c.dim, marginBottom: 10 }}>
+              Note: {withCreatedAt.length} of {swimmers.length} swimmers have a recorded creation date — "Added Per Week" only covers those.
+            </div>
+          )}
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: c.dim, marginBottom: 4 }}>Swimmers Added Per Week</div>
+          <div style={{ height: 160, marginBottom: 18 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={addedData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={c.line} />
+                <XAxis dataKey="week" tick={{ fontSize: 9, fill: c.dim }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: c.dim }} />
+                <Tooltip />
+                <Bar dataKey="count" name="Swimmers added" fill={c.blue} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: c.dim, marginBottom: 4 }}>Male / Female Split</div>
+          <div style={{ height: 190, marginBottom: 18 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={sexData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60}>
+                  {sexData.map((_, i) => <Cell key={i} fill={ADMIN_PIE_COLORS[i]} />)}
+                </Pie>
+                <Tooltip formatter={(v, n) => [v + " (" + Math.round((v / sexTotal) * 100) + "%)", n]} />
+                {/* % in the legend text itself, not in-slice labels — more
+                    reliable to render and reads better on a small screen. */}
+                <Legend wrapperStyle={{ fontSize: 11 }}
+                  formatter={(value, entry) => value + ": " + entry.payload.value + " (" + Math.round((entry.payload.value / sexTotal) * 100) + "%)"} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: c.dim, marginBottom: 4 }}>Age Distribution</div>
+          <div style={{ height: 160, marginBottom: 18 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={ageData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={c.line} />
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: c.dim }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: c.dim }} />
+                <Tooltip />
+                <Bar dataKey="count" name="Swimmers" fill={c.green} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: c.dim, marginBottom: 4 }}>Swimmers Per Team</div>
+          <div style={{ height: Math.max(120, teamSizeData.length * 34) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={teamSizeData} layout="vertical" margin={{ left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={c.line} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: c.dim }} />
+                <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10, fill: c.dim }} />
+                <Tooltip />
+                <Bar dataKey="count" name="Swimmers" fill={c.amber} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
+    </>
+  );
+}
+
 // Full-screen owner-only page, reachable only via the hidden "🔑 Admin" item
 // in TopBar's avatar menu (see TopBar) — deliberately NOT a 7th bottom-nav
 // tab (mobile's nav is already at its intentional 6-icon limit) and NOT
@@ -2974,6 +3097,8 @@ function AdminStatsPanel({ owner, reloadMySwimmers }) {
           </div>
         ))}
       </Card>
+
+      <AdminDataStatsPanel swimmers={swimmers} teams={teams} c={c} />
 
       <div style={s.h2}>Performance Split</div>
       {teams.map((team) => {

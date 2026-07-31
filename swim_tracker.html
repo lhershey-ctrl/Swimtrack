@@ -1472,7 +1472,6 @@ function landingSignIn(){
       <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Male / Female Split</div><div style="height:180px"><canvas id="adminSexChart"></canvas></div></div>
       <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Age Distribution</div><div style="height:180px"><canvas id="adminAgeChart"></canvas></div></div>
       <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Swimmers Per Team</div><div style="height:180px"><canvas id="adminTeamSizeChart"></canvas></div></div>
-      <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Best FINA Points Distribution</div><div style="height:180px"><canvas id="adminPointsChart"></canvas></div></div>
     </div>
   </details>
 
@@ -7911,7 +7910,7 @@ function groupCoachesIntoTeams(coaches, swimmers) {
 // module-scoped, NOT auto-exposed on window. Every chart instance below is
 // assigned directly onto window so it's reachable the same way as
 // window.btChartInst etc. (used by tests and any future debugging).
-window.adminAddedChartInst=null;window.adminSexChartInst=null;window.adminAgeChartInst=null;window.adminTeamSizeChartInst=null;window.adminPointsChartInst=null;
+window.adminAddedChartInst=null;window.adminSexChartInst=null;window.adminAgeChartInst=null;window.adminTeamSizeChartInst=null;
 function _weekStartLabel(ts){
   var d=new Date(ts);
   var day=(d.getDay()+6)%7; // Monday=0
@@ -7940,7 +7939,7 @@ function renderAdminDataStats(swimmers,teams){
     });}catch(e){console.error('[chart] adminAddedChart error:',e);}
   }
 
-  // 2. Male/female split.
+  // 2. Male/female split — with % on both the legend and the tooltip.
   var nMale=0,nFemale=0,nUnknown=0;
   swimmers.forEach(function(s){if(s.sex==='male')nMale++;else if(s.sex==='female')nFemale++;else nUnknown++;});
   if(window.adminSexChartInst)window.adminSexChartInst.destroy();
@@ -7949,20 +7948,42 @@ function renderAdminDataStats(swimmers,teams){
     var sexLabels=['Male','Female'].concat(nUnknown?['Unknown']:[]);
     var sexData=[nMale,nFemale].concat(nUnknown?[nUnknown]:[]);
     var sexColors=['#185FA5','#e05252'].concat(nUnknown?['#c9d3df']:[]);
+    var sexTotal=sexData.reduce(function(a,b){return a+b;},0)||1;
     try{window.adminSexChartInst=new Chart(sexCvs.getContext('2d'),{
       type:'pie',
       data:{labels:sexLabels,datasets:[{data:sexData,backgroundColor:sexColors}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#666',font:{size:11},boxWidth:12}}}}
+      options:{responsive:true,maintainAspectRatio:false,plugins:{
+        legend:{position:'bottom',labels:{color:'#666',font:{size:11},boxWidth:12,
+          generateLabels:function(chart){
+            var ds=chart.data.datasets[0];
+            return chart.data.labels.map(function(l,i){
+              var pct=Math.round(ds.data[i]/sexTotal*100);
+              return{text:l+' — '+ds.data[i]+' ('+pct+'%)',fillStyle:ds.backgroundColor[i],strokeStyle:ds.backgroundColor[i],index:i};
+            });
+          }}},
+        tooltip:{callbacks:{label:function(c){var pct=Math.round(c.parsed/sexTotal*100);return ' '+c.label+': '+c.parsed+' ('+pct+'%)';}}}
+      }}
     });}catch(e){console.error('[chart] adminSexChart error:',e);}
   }
 
-  // 3. Age distribution (5-year bands) — from birthdate, skips swimmers with none set.
-  var ageBands=['5-9','10-14','15-19','20-24','25-29','30-39','40-49','50+'];
-  var ageCounts=ageBands.map(function(){return 0;});
+  // 3. Age distribution — single-year bars for ages 9-18 (the age range that
+  // actually matters swim-by-swim for this roster), 5-year bands outside
+  // that range. From birthdate, skips swimmers with none set.
+  var ageLabels=['<9'];
+  for(var yr=9;yr<=18;yr++)ageLabels.push(String(yr));
+  var oldBands=['19-23','24-28','29-33','34-38','39-43','44-48','49+'];
+  ageLabels=ageLabels.concat(oldBands);
+  var ageCounts=ageLabels.map(function(){return 0;});
   swimmers.forEach(function(s){
     var age=s.birthdate?_recAge(s.birthdate):null;
-    if(age==null||age<5)return;
-    var idx=age<10?0:age<15?1:age<20?2:age<25?3:age<30?4:age<40?5:age<50?6:7;
+    if(age==null)return;
+    var idx;
+    if(age<9)idx=0;
+    else if(age<=18)idx=1+(age-9); // 9->1, 10->2, ... 18->10
+    else{
+      var bandIdx=Math.min(Math.floor((age-19)/5),oldBands.length-1);
+      idx=11+bandIdx;
+    }
     ageCounts[idx]++;
   });
   if(window.adminAgeChartInst)window.adminAgeChartInst.destroy();
@@ -7970,9 +7991,9 @@ function renderAdminDataStats(swimmers,teams){
   if(ageCvs){
     try{window.adminAgeChartInst=new Chart(ageCvs.getContext('2d'),{
       type:'bar',
-      data:{labels:ageBands,datasets:[{label:'Swimmers',data:ageCounts,backgroundColor:'#1D9E75',borderRadius:4}]},
+      data:{labels:ageLabels,datasets:[{label:'Swimmers',data:ageCounts,backgroundColor:'#1D9E75',borderRadius:4}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-        scales:{x:{ticks:{color:'#888',font:{size:10}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}}}}
+        scales:{x:{ticks:{color:'#888',font:{size:9}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}}}}
     });}catch(e){console.error('[chart] adminAgeChart error:',e);}
   }
 
@@ -7989,27 +8010,6 @@ function renderAdminDataStats(swimmers,teams){
       options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
         scales:{x:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}},y:{ticks:{color:'#555',font:{size:10}},grid:{display:false}}}}
     });}catch(e){console.error('[chart] adminTeamSizeChart error:',e);}
-  }
-
-  // 5. Best-ever FINA points distribution (recommended addition) — a quick
-  // read on the team's overall competitive level/spread at a glance.
-  var pointsBands=['<300','300-349','350-399','400-449','450+'];
-  var pointsCounts=pointsBands.map(function(){return 0;});
-  swimmers.forEach(function(s){
-    var best=_teamBestPoints(s.seasons||{});
-    if(!best)return;
-    var idx=best<300?0:best<350?1:best<400?2:best<450?3:4;
-    pointsCounts[idx]++;
-  });
-  if(window.adminPointsChartInst)window.adminPointsChartInst.destroy();
-  var pointsCvs=document.getElementById('adminPointsChart');
-  if(pointsCvs){
-    try{window.adminPointsChartInst=new Chart(pointsCvs.getContext('2d'),{
-      type:'bar',
-      data:{labels:pointsBands,datasets:[{label:'Swimmers',data:pointsCounts,backgroundColor:'#9b7bc4',borderRadius:4}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-        scales:{x:{ticks:{color:'#888',font:{size:10}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}}}}
-    });}catch(e){console.error('[chart] adminPointsChart error:',e);}
   }
 }
 

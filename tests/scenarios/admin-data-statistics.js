@@ -1,7 +1,9 @@
 // New capability, directly requested: a collapsed "Data Statistics" panel
-// in the Admin tab — swimmers added per week, male/female split, age
-// distribution, plus 2 recommended additions (swimmers per team, best
-// FINA points distribution). See renderAdminDataStats in swim_tracker.html.
+// in the Admin tab — swimmers added per week, male/female split (with %),
+// age distribution (single-year bars for ages 9-18, 5-year bands outside
+// that range), and swimmers-per-team. See renderAdminDataStats in
+// swim_tracker.html. (An initial "best FINA points" chart was removed
+// after live feedback — "doesn't matter for this aspect".)
 const { openDesktopApp, assert } = require('../lib/harness');
 
 module.exports = async function run() {
@@ -59,23 +61,34 @@ module.exports = async function run() {
     assert(unknownIdx >= 0 && sexData.datasets[0].data[unknownIdx] === 1, 'expected 1 unknown-sex swimmer, got: ' + JSON.stringify(sexData));
     steps.push({ desc: 'Male/Female split chart correctly counts 2 male / 1 female / 1 unknown', ok: true });
 
+    // % now shown on the legend (Chart.js legend labels aren't part of
+    // chart.data — read them via the chart's own legend plugin generator).
+    const sexLegendTexts = await page.evaluate(() => {
+      const c = window.adminSexChartInst;
+      return c.options.plugins.legend.labels.generateLabels(c).map((l) => l.text);
+    });
+    assert(sexLegendTexts.some((t) => /Male.*2.*\(50%\)/.test(t)), 'expected the Male legend entry to show a 50% share, got: ' + JSON.stringify(sexLegendTexts));
+    assert(sexLegendTexts.some((t) => /Female.*1.*\(25%\)/.test(t)), 'expected the Female legend entry to show a 25% share, got: ' + JSON.stringify(sexLegendTexts));
+    steps.push({ desc: 'Male/Female split chart legend shows each share as a percentage', ok: true });
+
     const teamSizeData = await page.evaluate(() => window.adminTeamSizeChartInst && window.adminTeamSizeChartInst.data);
     assert(teamSizeData, 'expected the swimmers-per-team chart to render');
     const jsIdx = teamSizeData.labels.indexOf('Junior Squad');
     assert(jsIdx >= 0 && teamSizeData.datasets[0].data[jsIdx] === 4, 'expected Junior Squad to show 4 swimmers, got: ' + JSON.stringify(teamSizeData));
     steps.push({ desc: 'Swimmers-per-team chart correctly shows 4 swimmers in Junior Squad', ok: true });
 
+    // Age distribution: single-year buckets for 9-18, 5-year bands outside.
+    // Seed has 3 swimmers born 2012 (year-end age 14 as of "now") and 1
+    // born 1980 (year-end age 46, falling in the 44-48 band).
     const ageData = await page.evaluate(() => window.adminAgeChartInst && window.adminAgeChartInst.data);
     assert(ageData, 'expected the age-distribution chart to render');
+    assert(ageData.labels.includes('14') && ageData.labels.includes('44-48'), 'expected single-year "14" and banded "44-48" labels, got: ' + JSON.stringify(ageData.labels));
+    const idx14 = ageData.labels.indexOf('14'), idx4448 = ageData.labels.indexOf('44-48');
+    assert(ageData.datasets[0].data[idx14] === 3, 'expected 3 swimmers in the single-year "14" bucket, got: ' + JSON.stringify(ageData));
+    assert(ageData.datasets[0].data[idx4448] === 1, 'expected 1 swimmer in the "44-48" band, got: ' + JSON.stringify(ageData));
     const totalAgeCounted = ageData.datasets[0].data.reduce((a, b) => a + b, 0);
-    assert(totalAgeCounted === 4, 'expected all 4 swimmers (3 age ~13, 1 masters ~45+) to be counted across age bands, got: ' + JSON.stringify(ageData));
-    steps.push({ desc: 'Age distribution chart accounts for all swimmers with a birthdate, including the masters one', ok: true });
-
-    const pointsData = await page.evaluate(() => window.adminPointsChartInst && window.adminPointsChartInst.data);
-    assert(pointsData, 'expected the FINA points distribution chart to render');
-    const totalPointsCounted = pointsData.datasets[0].data.reduce((a, b) => a + b, 0);
-    assert(totalPointsCounted === 4, 'expected all 4 swimmers to have a best-points bucket, got: ' + JSON.stringify(pointsData));
-    steps.push({ desc: 'Best FINA points distribution chart accounts for all 4 swimmers', ok: true });
+    assert(totalAgeCounted === 4, 'expected all 4 swimmers to be counted across age buckets, got: ' + JSON.stringify(ageData));
+    steps.push({ desc: 'Age distribution chart uses single-year buckets for 9-18 and 5-year bands outside that range', ok: true });
 
     const addedData = await page.evaluate(() => window.adminAddedChartInst && window.adminAddedChartInst.data);
     assert(addedData, 'expected the swimmers-added-per-week chart to render');
