@@ -705,15 +705,97 @@ function landingSignIn(){
     if(window.swimUser&&window.doLoadFromCloud)window.__pendingCloudLoad=window.doLoadFromCloud();
   };
 
+  // Real gap, reported live: this used to push straight into SWIMMERS with
+  // no check at all — typing an ID already in the roster (or a name that
+  // matched an existing entry under a different ID) silently created a
+  // duplicate. Now routes through the same find-existing-or-open-the-modal
+  // flow as the auto-load path below, so a match gets selected instead.
   window.addSwimmer=function(){
     var nameEl=document.getElementById('newSwimmerName');
     var idEl=document.getElementById('newSwimmerId');
     var name=(nameEl.value||'').trim();
     var id=(idEl.value||'').trim().replace(/[^0-9]/g,'');
     if(!name||!id){alert('Please enter both a name and a player ID.');return;}
-    SWIMMERS.push({name:name,id:id,seasonIds:[],_manuallyAdded:true});
-    saveSettings();nameEl.value='';idEl.value='';
-    renderSwimmerMgmt();renderSwimmerSelectors();
+    nameEl.value='';idEl.value='';
+    var existingIdx=window.findExistingSwimmer?window.findExistingSwimmer(id,name):-1;
+    if(existingIdx>=0){window.selectSwimmer(existingIdx);renderSwimmerMgmt();renderSwimmerSelectors();return;}
+    window.openNewSwimmerModal({id:id,name:name,mode:'manual'});
+  };
+
+  // Matches an existing local swimmer by ID OR by exact name — used to
+  // avoid duplicate entries whether adding by ID (auto-load from a file)
+  // or by name (manual "+ Add Swimmer"), per explicit request: "the auto
+  // should be based on id or name".
+  window.findExistingSwimmer=function(id,name){
+    var idStr=id?String(id):'';
+    var nameNorm=(name||'').trim();
+    for(var i=0;i<SWIMMERS.length;i++){
+      if(idStr&&String(SWIMMERS[i].id)===idStr)return i;
+      if(nameNorm&&SWIMMERS[i].name&&SWIMMERS[i].name.trim()===nameNorm)return i;
+    }
+    return -1;
+  };
+
+  // Opens the shared new-swimmer modal. `opts.mode` is 'confirm' (an
+  // unrecognized LogLig ID was just loaded — ID is fixed, other fields
+  // pre-filled from whatever extraction found) or 'manual' (Settings
+  // "+ Add Swimmer" — ID/name pre-filled from the inline inputs, DOB/sex
+  // still blank for the user to optionally fill in).
+  window.openNewSwimmerModal=function(opts){
+    opts=opts||{};
+    var mode=opts.mode||'manual';
+    window.__nsmMode=mode;
+    document.getElementById('newSwimmerModalTitle').textContent=mode==='confirm'?'New swimmer detected':'Add a swimmer';
+    document.getElementById('newSwimmerModalNote').textContent=mode==='confirm'
+      ?'This player ID isn\'t in your roster yet — review the details below (auto-filled from LogLig where available) before adding them.'
+      :'Review the details, then add — if this ID or name already matches someone in your roster, they\'ll be selected instead of duplicated.';
+    var idInput=document.getElementById('nsmId');
+    idInput.value=opts.id||'';
+    idInput.readOnly=(mode==='confirm');
+    idInput.style.background=(mode==='confirm')?'#f5f4f0':'#fff';
+    // _swimmerName is underscore-joined (it doubles as a filename in the
+    // extraction tools) — convert back to spaces for display/editing here.
+    document.getElementById('nsmName').value=opts.name?String(opts.name).replace(/_/g,' ').trim():'';
+    document.getElementById('nsmBirthdate').value=opts.birthYear?(opts.birthYear+'-01-01'):'';
+    document.getElementById('nsmSex').value=opts.sex||'';
+    document.getElementById('nsmStatus').textContent='';
+    document.getElementById('newSwimmerModal').style.display='';
+  };
+  window.closeNewSwimmerModal=function(){
+    document.getElementById('newSwimmerModal').style.display='none';
+  };
+  window.confirmNewSwimmerModal=function(){
+    var status=document.getElementById('nsmStatus');
+    var id=(document.getElementById('nsmId').value||'').trim().replace(/[^0-9]/g,'');
+    var name=(document.getElementById('nsmName').value||'').trim();
+    var birthdateIso=document.getElementById('nsmBirthdate').value||'';
+    var sex=document.getElementById('nsmSex').value||'';
+    if(!id||!name){status.textContent='Please enter both a name and a player ID.';return;}
+    var bm=birthdateIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    var birthdate=bm?(bm[3]+'/'+bm[2]+'/'+bm[1]):'';
+    var existingIdx=window.findExistingSwimmer?window.findExistingSwimmer(id,name):-1;
+    if(existingIdx>=0){
+      window.closeNewSwimmerModal();
+      // selectSwimmer() alone doesn't refresh the banner/analysis (that's
+      // selectLoadSwimmer's job, which also kicks off a cloud fetch we
+      // don't want here) — this modal can confirm a swimmer whose season
+      // data is ALREADY sitting in window.D (loaded moments ago via
+      // finalize(), before this modal even opened), so it must render that
+      // directly instead.
+      window.selectSwimmer(existingIdx);
+      if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
+      if(typeof buildAll==='function')buildAll();
+      return;
+    }
+    var newSw={name:name,id:id,seasonIds:[],heights:[],weights:[],birthdate:birthdate,_manuallyAdded:true};
+    if(sex)newSw.sex=sex;
+    SWIMMERS.push(newSw);
+    saveSettings();
+    window.closeNewSwimmerModal();
+    window.selectSwimmer(SWIMMERS.length-1);
+    if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
+    if(typeof buildAll==='function')buildAll();
+    renderSettingsUI();
   };
 
   window.removeSwimmer=function(idx){
@@ -727,27 +809,6 @@ function landingSignIn(){
   window.getActiveSwimmerSids=function(){return SWIMMERS[activeSwimmer]?SWIMMERS[activeSwimmer].seasonIds||[]:[]; };
   window.getActiveSwimmerData=function(){return SWIMMERS[activeSwimmer]||null;};
   window.getAllSwimmers=function(){return SWIMMERS;};
-
-  // Auto-add an unknown swimmer when loading their JSON file. `name`, when
-  // given, comes from the extraction tools' `_swimmerName` (bm2.js/
-  // extractFromHtml scrape it off the LogLig page) — real bug, reported
-  // live: this was already captured in the downloaded JSON and just never
-  // read here, so every auto-added swimmer got a placeholder "Swimmer
-  // 12345" name regardless. `_swimmerName` is underscore-joined (it's also
-  // used as a filename), so convert back to spaces for display.
-  window.addSwimmerById=function(pid,name){
-    // Check not already in list
-    for(var i=0;i<SWIMMERS.length;i++){if(String(SWIMMERS[i].id)===String(pid))return window.selectSwimmer(i);}
-    var cleanName=name?String(name).replace(/_/g,' ').trim():'';
-    var newSw={name:cleanName||('Swimmer '+pid),id:String(pid),seasonIds:[],heights:[],weights:[],birthdate:''};
-    SWIMMERS.push(newSw);
-    saveSettings();
-    window.selectSwimmer(SWIMMERS.length-1);
-    renderSettingsUI();
-    // Show a subtle prompt to rename
-    var st=document.getElementById('loadStatus');
-    if(st) st.innerText+=cleanName?' · New swimmer "'+cleanName+'" added — check details in ⚙️ Settings.':' · New swimmer added — rename in ⚙️ Settings.';
-  };
 
   // Add-or-select a swimmer by id with a proper name (used by cloud loads so
   // swimmers synced from another device appear in the local roster + picker).
@@ -1940,6 +2001,17 @@ window.extractFromHtml = function(){
   if(activeSw && activeSw.name) swName = activeSw.name.replace(/\s+/g,'_');
   else if(pid) swName = 'swimmer_'+pid;
 
+  // Birth year + sex — shown as pills under the swimmer's name on the page
+  // header ("שנת לידה 1980", "מגדר זכר"/"נקבה"). Matched against the raw
+  // page text rather than a specific CSS selector/class, same reasoning as
+  // the results-table detection above: LogLig's markup has changed before
+  // (see swimtrack-loglig-extraction memory) and a text-pattern match is
+  // more resilient to that than a brittle structural selector.
+  var byMatch = html.match(/שנת\s*לידה[^0-9]{0,12}(\d{4})/);
+  var birthYear = byMatch ? byMatch[1] : '';
+  var sexMatch = html.match(/מגדר[^א-ת]{0,12}(זכר|נקבה)/);
+  var sex = sexMatch ? (sexMatch[1] === 'זכר' ? 'male' : 'female') : '';
+
   var data = {};
   data[yr] = {seasonId: sid, bests: bests, results: results};
   if(pid) data._swimmerId = pid;
@@ -2070,12 +2142,14 @@ function mergeRaw(raw,errs){
     window.__loadedSwimmerId=_pid;
   }
   if(!D)D={};
-  // Capture top-level _swimmerId before iterating season keys
+  // Capture top-level _swimmerId/_swimmerName/_birthYear/_sex before iterating season keys
   if(parsed._swimmerId&&!D._swimmerId)D._swimmerId=parsed._swimmerId;
   if(parsed._swimmerName&&!D._swimmerName)D._swimmerName=parsed._swimmerName;
+  if(parsed._birthYear&&!D._birthYear)D._birthYear=parsed._birthYear;
+  if(parsed._sex&&!D._sex)D._sex=parsed._sex;
   var mergeSwimmerId=parsed._swimmerId||window.__loadedSwimmerId;
   Object.keys(parsed).forEach(function(k){
-    if(k==='_swimmerId'||k==='_swimmerName')return;
+    if(k==='_swimmerId'||k==='_swimmerName'||k==='_birthYear'||k==='_sex')return;
     var s=parsed[k];
     var label=k;
     if(/^\d+$/.test(k)){
@@ -2134,13 +2208,15 @@ function renderSwimmerBanner(){
 function finalize(errs){
   var st=document.getElementById('loadStatus');
   st.className='';st.innerText='';
-  // Grab _swimmerId/_swimmerName BEFORE cleaning D
+  // Grab _swimmerId/_swimmerName/_birthYear/_sex BEFORE cleaning D
   var detectedPid=D&&D._swimmerId?String(D._swimmerId):'';
   var detectedName=D&&D._swimmerName?String(D._swimmerName):'';
+  var detectedBirthYear=D&&D._birthYear?String(D._birthYear):'';
+  var detectedSex=D&&D._sex?String(D._sex):'';
   // Keep seasons that have any data
   var cleaned={};
   Object.keys(D||{}).forEach(function(k){
-    if(k==='_swimmerId'||k==='_swimmerName')return;
+    if(k==='_swimmerId'||k==='_swimmerName'||k==='_birthYear'||k==='_sex')return;
     var s=D[k];
     if(s&&typeof s==='object'&&((s.bests&&s.bests.length)||(s.results&&s.results.length)))cleaned[k]=s;
   });
@@ -2151,16 +2227,17 @@ function finalize(errs){
   st.innerText='✅ Loaded: '+seasons.join(', ')+(errs.length?' ('+errs.length+' error(s))':'');
   document.getElementById('ph2').style.display='none';
   document.getElementById('analysis').style.display='';
-  // Auto-detect swimmer by player ID
+  // Auto-detect swimmer by player ID (or name, in case the ID doesn't match
+  // but this is clearly the same person under a different/blank ID).
   if(detectedPid){
-    var swimmers=window.getAllSwimmers?window.getAllSwimmers():[];
-    var matched=-1;
-    swimmers.forEach(function(sw,i){if(String(sw.id)===detectedPid)matched=i;});
+    var matched=window.findExistingSwimmer?window.findExistingSwimmer(detectedPid,detectedName):-1;
     if(matched>=0&&window.selectSwimmer){
       window.selectSwimmer(matched);
-    } else if(matched===-1&&window.addSwimmerById){
-      // Unknown swimmer — add them automatically and select
-      window.addSwimmerById(detectedPid,detectedName);
+    } else if(matched===-1&&window.openNewSwimmerModal){
+      // Unknown swimmer — review before adding instead of silently creating
+      // one (real gap, reported live: this used to auto-add with no
+      // confirmation and a placeholder "Swimmer <id>" name).
+      window.openNewSwimmerModal({id:detectedPid,name:detectedName,birthYear:detectedBirthYear,sex:detectedSex,mode:'confirm'});
     }
   }
   if(detectedPid)window.__loadedSwimmerId=detectedPid;
@@ -7924,6 +8001,39 @@ window.doLoadFromCloud = doLoadFromCloud;
     </div>
     <p style="margin:0;padding:14px 20px 0;font-size:13px;color:#666;line-height:1.6">Your email has access to more than one roster. Pick which one to view — you can switch anytime from Settings.</p>
     <div id="teamGateBody" style="overflow:auto;padding:16px 20px 20px"></div>
+  </div>
+</div>
+
+<!-- New/existing swimmer confirm modal — used both when loading a file for
+     an unrecognized LogLig ID (auto-fills whatever extraction found: name,
+     birth year → Jan 1 DOB, sex) and from Settings "+ Add Swimmer" (starts
+     from whatever was typed there) — same review-before-creating flow
+     either way, and the same duplicate check (by ID OR name) so a swimmer
+     already in the roster gets selected instead of re-created. -->
+<div id="newSwimmerModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999">
+  <div style="max-width:380px;margin:12vh auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #eee">
+      <strong id="newSwimmerModalTitle" style="flex:1;font-size:16px;color:#0f3d72">New swimmer</strong>
+      <button onclick="closeNewSwimmerModal()" style="background:#f0f2f5;border:none;border-radius:999px;width:30px;height:30px;font-size:15px;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+      <div id="newSwimmerModalNote" style="font-size:12.5px;color:#666;line-height:1.5;margin-bottom:4px"></div>
+      <label style="font-size:10.5px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Player ID</label>
+      <input id="nsmId" style="padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box" placeholder="e.g. 115352">
+      <label style="font-size:10.5px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Name</label>
+      <input id="nsmName" style="padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box" placeholder="Full name">
+      <label style="font-size:10.5px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Date of birth</label>
+      <input id="nsmBirthdate" type="date" style="padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box">
+      <label style="font-size:10.5px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em">Sex</label>
+      <select id="nsmSex" style="padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box">
+        <option value="">—</option><option value="male">Male</option><option value="female">Female</option>
+      </select>
+      <div id="nsmStatus" style="font-size:12px;color:#c0392b;min-height:16px"></div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button onclick="closeNewSwimmerModal()" style="flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:none;cursor:pointer">Cancel</button>
+        <button onclick="window.confirmNewSwimmerModal()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">Add Swimmer</button>
+      </div>
+    </div>
   </div>
 </div>
 

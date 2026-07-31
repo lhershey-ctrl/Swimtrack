@@ -43,6 +43,15 @@ module.exports = async function run() {
 
   try {
     await pasteJson(page, SEASON_1);
+    // Unrecognized swimmer ID (999002) opens the new-swimmer confirm modal
+    // (see swimtrack-cloud-architecture memory, 2026-07-31) instead of
+    // silently auto-creating them — confirm it before the second paste,
+    // same as a real user would after their first file for a new swimmer.
+    const modalOpen = await page.$eval('#newSwimmerModal', (el) => getComputedStyle(el).display !== 'none');
+    assert(modalOpen, 'expected the new-swimmer confirm modal to open for an unrecognized ID');
+    await page.click('#newSwimmerModal button:has-text("Add Swimmer")');
+    await page.waitForTimeout(300);
+
     await pasteJson(page, SEASON_2);
 
     const seasonKeys = await page.evaluate(() => Object.keys(window.D || {}).sort());
