@@ -1,11 +1,12 @@
 // Regression test for a real gap reported live: "how do I change team
 // name?" only ever had ONE answer in the app — the coach's own personal
-// "Team / Account Name" label (coaches/{uid}.teamName) — with no way to
+// "Your Account Label" (coaches/{uid}.teamName) — with no way to
 // rename an actual TEAM (teams/{id}.name, e.g. "עולם המים מאסטרס") at
 // all. Firestore rules already permitted the team's creator to rename it
 // (name-field-only diff); this just needed the function + UI. Covers both
-// the happy path (creator can rename) and the negative case (a non-creator
-// viewer of the same team never sees the rename field at all).
+// the happy path (creator can rename) and the negative case (a non-creator,
+// non-owner coach who shares the same team never sees the rename field at
+// all — the app owner CAN, see the owner-bypass-rename-delete test).
 const { openDesktopApp, assert } = require('../lib/harness');
 
 module.exports = async function run() {
@@ -29,7 +30,7 @@ module.exports = async function run() {
       await page.waitForTimeout(400);
 
       const fieldText = await page.$eval('#accountCard', (el) => el.textContent);
-      assert(fieldText.includes("Current Team's Name"), 'expected an editable "Current Team\'s Name" field, got: ' + fieldText.slice(0, 400));
+      assert(fieldText.includes("This Team's Name"), 'expected an editable "This Team\'s Name" field, got: ' + fieldText.slice(0, 400));
       const inputVal = await page.$eval('#activeTeamNameInput', (el) => el.value);
       assert(inputVal === 'עולם המים מאסטרס', 'expected the field to be pre-filled with the team\'s real name, got: ' + inputVal);
       steps.push({ desc: 'Team creator sees a "Current Team\'s Name" field, pre-filled with the team\'s actual name', ok: true });
@@ -45,7 +46,7 @@ module.exports = async function run() {
       await browser.close();
     }
 
-    // ── Non-creator: a viewer of the SAME team never sees the field ──
+    // ── Non-creator, non-owner: a coach sharing the SAME team never sees the field ──
     {
       const { browser, page, consoleErrors } = await openDesktopApp(function seed() {
         window.__FAKE_USER = { uid: 'coachViewer', email: 'viewer@example.com', displayName: 'Viewer' };
@@ -61,18 +62,16 @@ module.exports = async function run() {
       });
       await page.click('text=☁ Sign in with Google');
       await page.waitForTimeout(900);
-      // This swimmer has BOTH an explicit team AND a 2nd coach, so it lands
-      // in both an explicit-team cluster and a legacy coachUids cluster —
-      // the picker gate opens; choose the team cluster (same as the real
-      // "עולם המים" scenario reported live).
-      await page.click('#teamGateBody button:has-text("עולם המים מאסטרס")');
-      await page.waitForTimeout(400);
+      // This swimmer has an explicit team AND a 2nd coach, but (since a
+      // swimmer with an explicit team no longer ALSO joins a legacy
+      // cluster — see multi-team-membership.js) coachViewer only has ONE
+      // cluster here, so no picker gate appears — straight to Settings.
       await page.click('#t-settings');
       await page.waitForTimeout(400);
 
       const fieldText = await page.$eval('#accountCard', (el) => el.textContent);
-      assert(!fieldText.includes("Current Team's Name"), 'a coach who did NOT create this team should never see a rename field for it, got: ' + fieldText.slice(0, 400));
-      steps.push({ desc: 'A non-creator viewer of the same team never sees the rename field', ok: true });
+      assert(!fieldText.includes("This Team's Name"), 'a coach who did NOT create this team (and isn\'t the app owner) should never see a rename field for it, got: ' + fieldText.slice(0, 400));
+      steps.push({ desc: 'A non-creator, non-owner coach sharing the same team never sees the rename field', ok: true });
 
       assert(consoleErrors.length === 0, 'unexpected page errors (non-creator): ' + consoleErrors.join(' | '));
       await browser.close();

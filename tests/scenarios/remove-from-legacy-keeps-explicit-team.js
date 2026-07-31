@@ -1,15 +1,21 @@
-// Regression test for a real, live-reported bug: a swimmer shared between
-// two coaches (a legacy, coachUids-based cluster — e.g. "Team KFS") who is
-// ALSO in an explicit team the SAME coach created (e.g. "עולם המים") —
-// removing them from the legacy cluster stripped the coach's own uid from
-// coachUids, which also made them vanish from the explicit team, even
-// though the swimmer's teamIds was never touched. Root cause: the explicit
-// team's swimmer list was fetched via the same coachUids-gated query used
-// for the legacy cluster. Fixed by (a) never touching coachUids when
-// removing while viewing an explicit team (already covered by
-// remove-swimmer-stays-removed.js) and (b) fetching a coach's OWNED teams'
-// swimmers independent of coachUids, so losing coachUids on one cluster
-// can't cut off an unrelated explicit team.
+// Regression test for a real, live-reported bug: an explicit team's (e.g.
+// "עולם המים") swimmer list used to be fetched via the same coachUids-gated
+// query used for legacy clusters — so unlinking a coach's own coachUids from
+// an unrelated legacy-cluster swimmer (e.g. "Team KFS") could cut off the
+// explicit team's view too. Fixed by fetching a coach's OWNED teams'
+// swimmers independent of coachUids (see loadSwimmers/resolveTeamAndProceed:
+// fetchSwimmersByTeam(t.id) runs alongside fetchSwimmers(user), unconditionally).
+//
+// NOTE: this used to use ONE swimmer with dual membership (legacy AND an
+// explicit teamId) to prove the point, matching the original live bug
+// report. That setup is no longer reachable through the UI: a swimmer with
+// an explicit teamId no longer ALSO surfaces under a legacy cluster (see
+// clusterMySwimmers/groupCoachesIntoTeams — deliberately de-duped 2026-07-31
+// after live confusion, "why do I have 2 similar teams," turned out to be
+// exactly this dual-membership case producing a phantom duplicate row). So
+// this now uses two separate swimmers to exercise the same underlying
+// fetch-independence guarantee: removing legacy access to one swimmer must
+// never affect a different swimmer's explicit-team visibility.
 const { openDesktopApp, assert } = require('../lib/harness');
 
 module.exports = async function run() {
@@ -23,12 +29,16 @@ module.exports = async function run() {
       },
       teams: { teamX: { name: 'Olam HaMayim', createdBy: 'coachMain', createdAt: 500 } },
       swimmers: {
-        // Shared legacy (with coachOther, whose team is named "Team KFS")
-        // AND in the explicit team coachMain owns — exactly the real case.
-        201: { id: '201', name: 'Shared Swimmer', coachUids: ['coachOther', 'coachMain'], coachEmails: ['coachother@example.com', 'coachmain@example.com'], teamIds: ['teamX'] },
+        // Purely legacy — shared with coachOther, no explicit team. This is
+        // the one that gets its coachMain access removed.
+        201: { id: '201', name: 'Shared Swimmer', coachUids: ['coachOther', 'coachMain'], coachEmails: ['coachother@example.com', 'coachmain@example.com'] },
         // A second Team-KFS swimmer, purely so removing "Shared Swimmer"
         // doesn't trip the app's "must keep at least one swimmer" guard.
         202: { id: '202', name: 'Other KFS Swimmer', coachUids: ['coachOther', 'coachMain'], coachEmails: ['coachother@example.com', 'coachmain@example.com'] },
+        // In coachMain's explicit team AND separately shares coachOther as a
+        // legacy co-coach too — the swimmer whose visibility must survive
+        // the unrelated removal above.
+        203: { id: '203', name: 'Explicit Team Swimmer', coachUids: ['coachMain', 'coachOther'], coachEmails: ['coachmain@example.com', 'coachother@example.com'], teamIds: ['teamX'] },
       },
       config: {},
     };
@@ -43,6 +53,8 @@ module.exports = async function run() {
 
     const pickerOnKFS = await page.$eval('#loadSwimmerPicker', (el) => el.textContent);
     assert(pickerOnKFS.includes('Shared Swimmer'), 'Team KFS should show the shared swimmer, got: ' + pickerOnKFS);
+    assert(!pickerOnKFS.includes('Explicit Team Swimmer'), 'Team KFS must NOT show the swimmer that already has an explicit team (de-duped), got: ' + pickerOnKFS);
+    steps.push({ desc: 'Team KFS shows only its purely-legacy swimmers, not the one with an explicit team', ok: true });
 
     await page.click('#t-settings');
     await page.waitForTimeout(400);
@@ -58,17 +70,16 @@ module.exports = async function run() {
     const doc = await page.evaluate(() => window.__mockStore.swimmers['201']);
     assert(!doc.coachUids.includes('coachMain'), 'coachMain should be unlinked from the legacy cluster, got: ' + JSON.stringify(doc.coachUids));
     assert(doc.coachUids.includes('coachOther'), 'coachOther\'s access must be untouched, got: ' + JSON.stringify(doc.coachUids));
-    assert(doc.teamIds.includes('teamX'), 'REGRESSION: teamIds should be untouched by a legacy-cluster removal, got: ' + JSON.stringify(doc.teamIds));
-    steps.push({ desc: 'Removing from the legacy cluster only unlinks coachUids, never touches teamIds', ok: true });
+    steps.push({ desc: 'Removing from the legacy cluster only unlinks coachUids on that swimmer', ok: true });
 
-    // Switch to the explicit team — the swimmer must still be there.
+    // Switch to the explicit team — the UNRELATED swimmer must still be there.
     await page.click('text=Switch Account');
     await page.waitForTimeout(400);
     await page.click('#teamGateBody button:has-text("Olam HaMayim")');
     await page.waitForTimeout(900);
     const pickerOnExplicit = await page.$eval('#loadSwimmerPicker', (el) => el.textContent);
-    assert(pickerOnExplicit.includes('Shared Swimmer'), 'REGRESSION: swimmer removed from a legacy cluster vanished from an unrelated explicit team too, got: ' + pickerOnExplicit);
-    steps.push({ desc: 'Swimmer still shows in the explicit team after being removed from an unrelated legacy cluster (the regression this test guards against)', ok: true });
+    assert(pickerOnExplicit.includes('Explicit Team Swimmer'), 'REGRESSION: an unrelated legacy-cluster removal broke the explicit team\'s own fetch, got: ' + pickerOnExplicit);
+    steps.push({ desc: 'The explicit team\'s swimmer is unaffected by an unrelated legacy-cluster removal (the regression this test guards against)', ok: true });
 
     assert(consoleErrors.length === 0, 'unexpected page errors: ' + consoleErrors.join(' | '));
     steps.push({ desc: 'No uncaught page errors during the flow', ok: true });

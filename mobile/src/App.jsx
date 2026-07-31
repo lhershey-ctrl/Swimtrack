@@ -1746,25 +1746,31 @@ function TeamNameEditor({ user }) {
   if (!loaded) return null;
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Team / Account Name</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Your Account Label</div>
       <div style={{ display: "flex", gap: 8 }}>
         <input value={value} onChange={(e) => setValue(e.target.value)}
           style={{ flex: 1, padding: "9px 12px", borderRadius: 10, background: c.card2, color: c.text, border: `1px solid ${c.line}`, fontSize: 14 }} />
         <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
       </div>
       {status && <div style={{ fontSize: 12, color: c.dim, marginTop: 6 }}>{status}</div>}
-      <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>Shown to teammates and used to tell accounts apart if your email ever has access to more than one roster.</div>
+      <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>
+        A personal label so YOU can tell your own accounts apart if this email ever has access to more than one roster —
+        this is <strong>not</strong> the name of any team, and is separate from the actual team's name (editable below, when you're viewing one you can rename).
+      </div>
     </div>
   );
 }
 
 // A team the coach is currently VIEWING (teamId) has its OWN name
 // (teams/{id}.name, e.g. "עולם המים מאסטרס") — a completely separate
-// thing from TeamNameEditor above, which renames the coach's own account
+// thing from TeamNameEditor above, which renames the coach's own personal
 // label, not any specific team. Real gap, reported live: only the coach's
 // own label was ever editable, with no way to rename the actual team.
-// Only the team's creator can (matches firestore.rules), so this only
-// renders for them — null otherwise, same as if it didn't exist.
+// Rename/delete require either being the team's creator OR the app owner
+// (matches firestore.rules: teams/{id} update/delete both allow isOwner()
+// as well as the creator) — previously the UI only ever checked creator,
+// so the owner couldn't manage a team a teammate created even though the
+// backend already let them; null otherwise, same as if it didn't exist.
 function ActiveTeamNameEditor({ user, teamId, reloadSwimmers }) {
   const { c } = useUI();
   const [team, setTeam] = useState(null);
@@ -1780,33 +1786,36 @@ function ActiveTeamNameEditor({ user, teamId, reloadSwimmers }) {
     return () => { cancelled = true; };
   }, [teamId]);
 
-  if (!team || team.createdBy !== user.uid) return null;
+  const isCreator = !!team && team.createdBy === user.uid;
+  if (!team || (!isCreator && !isOwner(user))) return null;
 
   async function save() {
     const name = value.trim();
     if (!name) { setStatus("Enter a name."); return; }
     setStatus("Saving…");
     try { await renameTeam(teamId, name); setStatus("✅ Saved"); setTimeout(() => setStatus(""), 2500); }
-    catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Only this team's creator can rename it." : e.message)); }
+    catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Only this team's creator (or the app owner) can rename it." : e.message)); }
   }
 
   async function remove() {
     if (!confirm('Delete "' + (team.name || "this team") + '"? Its swimmers stay in the app and in any other team/roster they belong to — they just stop showing up under this team. This can\'t be undone.')) return;
     setDeleting(true);
     try { await deleteTeam(teamId); if (reloadSwimmers) reloadSwimmers(); }
-    catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Only this team's creator can delete it." : e.message)); setDeleting(false); }
+    catch (e) { setStatus("❌ " + (/permission/i.test(e.message) ? "Only this team's creator (or the app owner) can delete it." : e.message)); setDeleting(false); }
   }
 
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Current Team's Name</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: c.dim, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>This Team's Name</div>
       <div style={{ display: "flex", gap: 8 }}>
         <input value={value} onChange={(e) => setValue(e.target.value)}
           style={{ flex: 1, padding: "9px 12px", borderRadius: 10, background: c.card2, color: c.text, border: `1px solid ${c.line}`, fontSize: 14 }} />
         <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
       </div>
       {status && <div style={{ fontSize: 12, color: c.dim, marginTop: 6 }}>{status}</div>}
-      <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>Renames the team itself (shown to everyone with access to it) — you can, since you created it.</div>
+      <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>
+        Renames the team itself (shown to everyone with access to it) — {isCreator ? "you can, since you created it." : "you can, as the app owner, even though you didn't create this team."}
+      </div>
       <button onClick={remove} disabled={deleting} style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer",
         color: c.red, fontSize: 12.5, fontWeight: 700, padding: 0 }}>{deleting ? "Deleting…" : "🗑 Delete this team"}</button>
     </div>
@@ -2591,11 +2600,17 @@ function defaultTeamName(email) {
 // A swimmer can belong to more than one team at once (e.g. Liron is shared
 // with sharos88 on Team Har-Shai AND was separately added to a brand-new
 // team) — teamIds is an ARRAY, and a swimmer with entries in it appears in
-// EACH of those teams' clusters (duplicated across them on purpose), not
-// moved exclusively into one. They can ALSO still appear in their legacy
-// coachUids-based cluster alongside that — the two aren't mutually
-// exclusive, UNLESS they have no other coach at all AND already have an
-// explicit team (nothing left for the legacy "solo" bucket to add).
+// EACH of those teams' clusters. They do NOT also appear in their legacy
+// coachUids-based cluster once they have an explicit team — that used to be
+// "on purpose" (a swimmer showed in both), but in practice it just produced
+// a confusing phantom duplicate: the same swimmers, the same coach pair,
+// listed twice under two different names (once the explicit team's real
+// name, once whichever coach happens to be earliest-created's personal
+// label). Real bug, reported live: "דולפין נתניה" and a same-membership
+// "Team Har-Shai" row were the identical 2 swimmers, double-counted this
+// way. An explicit team is always their one home now; the legacy grouping
+// (coachUids-only, no team) still exists for swimmers that were NEVER
+// added to an explicit team at all.
 function clusterMySwimmers(mySwimmers, myUid) {
   const teamGroups = {};
   mySwimmers.forEach((sw) => {
@@ -2627,8 +2642,9 @@ function clusterMySwimmers(mySwimmers, myUid) {
     // this coach has no coachUids claim on them anymore. Real bug: removing
     // a swimmer from "Team KFS" left them still showing there.
     if (!(sw.coachUids || []).includes(myUid)) return;
+    if (sw.teamIds && sw.teamIds.length) return; // has an explicit team home already — never ALSO needs a legacy one (see comment above)
     const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
-    if (!others.length) { if (!(sw.teamIds && sw.teamIds.length)) soloIds.push(sw.id); return; }
+    if (!others.length) { soloIds.push(sw.id); return; }
     others.forEach((uid) => { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
   });
   Object.values(swimmerIdsByCoach).forEach((ids) => { for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
@@ -2636,8 +2652,7 @@ function clusterMySwimmers(mySwimmers, myUid) {
   const groups = {};
   mySwimmers.forEach((sw) => {
     if (!(sw.coachUids || []).includes(myUid)) return; // see guard above
-    const others = (sw.coachUids || []).filter((uid) => uid !== myUid);
-    if (!others.length && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no legacy home needed
+    if (sw.teamIds && sw.teamIds.length) return; // see guard above
     (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw);
   });
   const legacyClusters = Object.values(groups).map((swArr) => {
@@ -2689,10 +2704,11 @@ function groupCoachesIntoTeams(coaches, swimmers) {
   swimmers.forEach((sw) => {
     const uids = (sw.coachUids || []).filter((uid) => uid in byUid);
     // Explicit team(s) (see clusterMySwimmers) — unambiguous, group by each
-    // teamId directly. A swimmer can belong to more than one team AND still
-    // show in its root-coach group below (not mutually exclusive) — only
-    // skipped from the root-coach pass if it has no other coach at all AND
-    // already has an explicit team (nothing left for that pass to add).
+    // teamId directly. A swimmer with an explicit team never ALSO joins the
+    // root-coach pass below (see clusterMySwimmers's comment for why: it
+    // used to, "on purpose," and just produced a confusing duplicate row —
+    // same swimmers/coaches, once under the team's real name, once under
+    // whichever member's personal label happened to be earliest-created).
     (sw.teamIds || []).forEach((teamId) => {
       const key = "team:" + teamId;
       if (!groups[key]) groups[key] = { swimmers: [], uids: new Set() };
@@ -2700,7 +2716,7 @@ function groupCoachesIntoTeams(coaches, swimmers) {
       uids.forEach((u) => groups[key].uids.add(u));
     });
     if (!uids.length) return;
-    if (uids.length === 1 && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no root-coach home needed
+    if (sw.teamIds && sw.teamIds.length) return; // has an explicit team home already — see comment above
     const root = uids.reduce((a, b) => (byUid[a].createdAt || 0) <= (byUid[b].createdAt || 0) ? a : b);
     if (!groups[root]) groups[root] = { swimmers: [], uids: new Set() };
     groups[root].swimmers.push(sw);
@@ -2879,7 +2895,20 @@ function AdminStatsPanel({ owner, reloadMySwimmers }) {
           <div key={team.members[0].uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
             padding: "9px 10px", borderBottom: i < teams.length - 1 ? `1px solid ${c.line}` : "none" }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 800, color: c.blue, marginBottom: 4 }}>{team.name}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 800, color: c.blue }}>{team.name}</span>
+                {/* Distinguishes a real, nameable teams/{id} doc from a
+                    legacy coachUids-inferred grouping (whose displayed name
+                    is just borrowed from whichever member's personal
+                    account label is earliest-created) — the confusion
+                    between these two was reported live as "why do I have 2
+                    similar teams." */}
+                <span style={{ fontSize: 9.5, fontWeight: 700, padding: "1px 6px", borderRadius: 999, textTransform: "uppercase", letterSpacing: ".04em",
+                  color: team.teamId ? c.green : c.dim, border: `1px solid ${team.teamId ? c.green : c.line}` }}
+                  title={team.teamId ? "A real, nameable team — created explicitly via \"+ Create a New Team.\"" : "Not a real team — just swimmers auto-grouped by shared coaches, labeled with one member's personal account label."}>
+                  {team.teamId ? "Team" : "Shared roster"}
+                </span>
+              </div>
               {team.members.map((m) => (
                 <div key={m.uid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
                   <div style={{ minWidth: 0 }}>

@@ -6561,11 +6561,17 @@ function defaultTeamName(email) {
 // A swimmer can belong to more than one team at once (e.g. Liron is shared
 // with sharos88 on Team Har-Shai AND was separately added to a brand-new
 // team) — teamIds is an ARRAY, and a swimmer with entries in it appears in
-// EACH of those teams' clusters (duplicated across them on purpose), not
-// moved exclusively into one. They can ALSO still appear in their legacy
-// coachUids-based cluster alongside that — the two aren't mutually
-// exclusive, UNLESS they have no other coach at all AND already have an
-// explicit team (nothing left for the legacy "solo" bucket to add).
+// EACH of those teams' clusters. They do NOT also appear in their legacy
+// coachUids-based cluster once they have an explicit team — that used to be
+// "on purpose" (a swimmer showed in both), but in practice it just produced
+// a confusing phantom duplicate: the same swimmers, the same coach pair,
+// listed twice under two different names (once the explicit team's real
+// name, once whichever coach happens to be earliest-created's personal
+// label). Real bug, reported live: "דולפין נתניה" and a same-membership
+// "Team Har-Shai" row were the identical 2 swimmers, double-counted this
+// way. An explicit team is always their one home now; the legacy grouping
+// (coachUids-only, no team) still exists for swimmers that were NEVER
+// added to an explicit team at all.
 function clusterMySwimmers(mySwimmers, myUid) {
   var teamGroups = {};
   mySwimmers.forEach(function (sw) {
@@ -6599,8 +6605,9 @@ function clusterMySwimmers(mySwimmers, myUid) {
     // this coach has no coachUids claim on them anymore. Real bug: removing
     // a swimmer from "Team KFS" left them still showing there.
     if ((sw.coachUids || []).indexOf(myUid) < 0) return;
+    if (sw.teamIds && sw.teamIds.length) return; // has an explicit team home already — never ALSO needs a legacy one (see comment above)
     var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
-    if (!others.length) { if (!(sw.teamIds && sw.teamIds.length)) soloIds.push(sw.id); return; }
+    if (!others.length) { soloIds.push(sw.id); return; }
     others.forEach(function (uid) { (swimmerIdsByCoach[uid] = swimmerIdsByCoach[uid] || []).push(sw.id); });
   });
   Object.values(swimmerIdsByCoach).forEach(function (ids) { for (var i = 1; i < ids.length; i++) union(ids[0], ids[i]); });
@@ -6608,8 +6615,7 @@ function clusterMySwimmers(mySwimmers, myUid) {
   var groups = {};
   mySwimmers.forEach(function (sw) {
     if ((sw.coachUids || []).indexOf(myUid) < 0) return; // see guard above
-    var others = (sw.coachUids || []).filter(function (uid) { return uid !== myUid; });
-    if (!others.length && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no legacy home needed
+    if (sw.teamIds && sw.teamIds.length) return; // see guard above
     (groups[find(sw.id)] = groups[find(sw.id)] || []).push(sw);
   });
   var legacyClusters = Object.values(groups).map(function (swArr) {
@@ -6757,37 +6763,41 @@ async function renderAccountCard() {
   var activeCluster = myTeamClusters.filter(function (c) { return c.key === selectedTeamKey; })[0];
   // A team the coach is currently VIEWING (window.currentTeamId) has its
   // OWN name (teams/{id}.name, e.g. "עולם המים מאסטרס") — a completely
-  // separate thing from the coach's own "Team / Account Name" label above.
+  // separate thing from the coach's own "Your Account Label" field above.
   // Real gap, reported live: only the coach's own label was ever editable,
-  // with no way to rename the actual team. Only the team's creator can
-  // (matches firestore.rules), so this only shows up for them. Deliberately
+  // with no way to rename the actual team. Rename/delete require either
+  // being the team's creator OR the app owner (matches firestore.rules:
+  // teams/{id} update/delete both allow isOwner() too) — previously this
+  // only ever checked creator, so the owner couldn't manage a team a
+  // teammate created even though the backend already let them. Deliberately
   // reads window.currentTeamId, NOT activeCluster.teamId — myTeamClusters
   // is only ever populated when there's real cluster ambiguity (2+ options
   // needing a picker); in the common single-team case it's `[]`, which
   // would've silently hidden this for the most common scenario.
   var activeTeam = window.currentTeamId ? await fetchTeam(window.currentTeamId).catch(function () { return null; }) : null;
-  var canRenameTeam = !!(activeTeam && activeTeam.createdBy === currentUser.uid);
+  var isTeamCreator = !!(activeTeam && activeTeam.createdBy === currentUser.uid);
+  var canRenameTeam = !!(activeTeam && (isTeamCreator || isOwner(currentUser)));
   el.innerHTML =
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
     '<div style="width:40px;height:40px;border-radius:999px;background:#0f3d72;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px">' + (currentUser.email || '?')[0].toUpperCase() + '</div>' +
     '<div style="flex:1;min-width:0"><div style="font-weight:700">' + (currentUser.displayName || 'Signed in') + '</div>' +
     '<div style="font-size:12.5px;color:#888;overflow:hidden;text-overflow:ellipsis">' + currentUser.email + '</div></div>' +
     '</div>' +
-    '<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Team / Account Name</label>' +
+    '<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Your Account Label</label>' +
     '<div style="display:flex;gap:8px;margin-bottom:6px">' +
     '<input id="teamNameInput" value="' + teamName.replace(/"/g, '&quot;') + '" style="flex:1;padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box">' +
     '<button onclick="saveMyTeamName()" style="padding:9px 16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Save</button>' +
     '</div>' +
     '<div id="teamNameStatus" style="font-size:12px;color:#888;margin-bottom:4px"></div>' +
-    '<div style="font-size:11.5px;color:#999;margin-bottom:12px">Shown to teammates and used to tell accounts apart if your email ever has access to more than one roster. This does <b>not</b> rename any team you view — see below.</div>' +
+    '<div style="font-size:11.5px;color:#999;margin-bottom:12px">A personal label so YOU can tell your own accounts apart if this email ever has access to more than one roster — this is <b>not</b> the name of any team, and is separate from the actual team\'s name (editable below, when you\'re viewing one you can rename).</div>' +
     (canRenameTeam
-      ? '<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Current Team\'s Name</label>' +
+      ? '<label style="font-size:10px;font-weight:700;color:#9ca3af;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">This Team\'s Name</label>' +
         '<div style="display:flex;gap:8px;margin-bottom:6px">' +
         '<input id="activeTeamNameInput" value="' + activeTeam.name.replace(/"/g, '&quot;') + '" style="flex:1;padding:9px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;box-sizing:border-box">' +
         '<button onclick="saveActiveTeamName(\'' + activeTeam.id + '\')" style="padding:9px 16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Save</button>' +
         '</div>' +
         '<div id="activeTeamNameStatus" style="font-size:12px;color:#888;margin-bottom:4px"></div>' +
-        '<div style="font-size:11.5px;color:#999;margin-bottom:12px">Renames the team itself (shown to everyone with access to it) — you can, since you created it.</div>' +
+        '<div style="font-size:11.5px;color:#999;margin-bottom:12px">Renames the team itself (shown to everyone with access to it) — ' + (isTeamCreator ? 'you can, since you created it.' : 'you can, as the app owner, even though you didn\'t create this team.') + '</div>' +
         '<button onclick="window.deleteActiveTeam(\'' + activeTeam.id + '\')" style="background:none;border:none;cursor:pointer;color:#a32d2d;font-size:12.5px;font-weight:700;padding:0;margin-bottom:12px">🗑 Delete this team</button>'
       : '') +
     (myTeamClusters.length > 1
@@ -6830,7 +6840,7 @@ window.saveActiveTeamName = async function (teamId) {
     status.textContent = '✅ Saved';
     myTeamClusters = myTeamClusters.map(function (cl) { return cl.teamId === teamId ? Object.assign({}, cl, { name: name }) : cl; });
     setTimeout(function () { status.textContent = ''; renderAccountCard(); }, 900);
-  } catch (e) { status.textContent = '❌ ' + (/permission/i.test(e.message) ? 'Only this team\'s creator can rename it.' : e.message); }
+  } catch (e) { status.textContent = '❌ ' + (/permission/i.test(e.message) ? 'Only this team\'s creator (or the app owner) can rename it.' : e.message); }
 };
 window.deleteActiveTeam = async function (teamId) {
   var status = document.getElementById('activeTeamNameStatus');
@@ -6842,7 +6852,7 @@ window.deleteActiveTeam = async function (teamId) {
     await deleteTeam(teamId);
     await resolveTeamAndProceed(currentUser);
   } catch (e) {
-    if (status) status.textContent = '❌ ' + (/permission/i.test(e.message) ? 'Only this team\'s creator can delete it.' : e.message);
+    if (status) status.textContent = '❌ ' + (/permission/i.test(e.message) ? 'Only this team\'s creator (or the app owner) can delete it.' : e.message);
   }
 };
 
@@ -7701,10 +7711,11 @@ function groupCoachesIntoTeams(coaches, swimmers) {
   swimmers.forEach((sw) => {
     const uids = (sw.coachUids || []).filter((uid) => uid in byUid);
     // Explicit team(s) (see clusterMySwimmers) — unambiguous, group by each
-    // teamId directly. A swimmer can belong to more than one team AND still
-    // show in its root-coach group below (not mutually exclusive) — only
-    // skipped from the root-coach pass if it has no other coach at all AND
-    // already has an explicit team (nothing left for that pass to add).
+    // teamId directly. A swimmer with an explicit team never ALSO joins the
+    // root-coach pass below (see clusterMySwimmers's comment for why: it
+    // used to, "on purpose," and just produced a confusing duplicate row —
+    // same swimmers/coaches, once under the team's real name, once under
+    // whichever member's personal label happened to be earliest-created).
     (sw.teamIds || []).forEach((teamId) => {
       const key = "team:" + teamId;
       if (!groups[key]) groups[key] = { swimmers: [], uids: new Set() };
@@ -7712,7 +7723,7 @@ function groupCoachesIntoTeams(coaches, swimmers) {
       uids.forEach((u) => groups[key].uids.add(u));
     });
     if (!uids.length) return;
-    if (uids.length === 1 && sw.teamIds && sw.teamIds.length) return; // explicit-team-only, no root-coach home needed
+    if (sw.teamIds && sw.teamIds.length) return; // has an explicit team home already — see comment above
     const root = uids.reduce((a, b) => (byUid[a].createdAt || 0) <= (byUid[b].createdAt || 0) ? a : b);
     if (!groups[root]) groups[root] = { swimmers: [], uids: new Set() };
     groups[root].swimmers.push(sw);
@@ -7763,9 +7774,17 @@ async function renderAdminStats() {
       '<div class="metric green"><div class="lbl">Open Codes</div><div class="val">' + openCodes.length + '</div></div>';
 
     coachesEl.innerHTML = teams.length ? teams.map(function (team, i) {
+      // Distinguishes a real, nameable teams/{id} doc from a legacy
+      // coachUids-inferred grouping (whose displayed name is just borrowed
+      // from whichever member's personal account label is earliest-created)
+      // — the confusion between these two was reported live as "why do I
+      // have 2 similar teams."
+      var badge = team.teamId
+        ? '<span title="A real, nameable team — created explicitly via &quot;+ Create a New Team.&quot;" style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em;color:#1a7a4f;border:1px solid #1a7a4f">Team</span>'
+        : '<span title="Not a real team — just swimmers auto-grouped by shared coaches, labeled with one member\'s personal account label." style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em;color:#999;border:1px solid #e5e7eb">Shared roster</span>';
       return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 14px;' +
         (i < teams.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
-        '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:800;color:#185FA5;margin-bottom:4px">' + team.name + '</div>' +
+        '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:13px;font-weight:800;color:#185FA5">' + team.name + '</span>' + badge + '</div>' +
         team.members.map(function (m) {
           var isOwnerAcct = OWNER_EMAILS.indexOf((m.email || '').toLowerCase()) >= 0;
           return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">' +
