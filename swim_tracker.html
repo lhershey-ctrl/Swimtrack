@@ -783,16 +783,37 @@ function landingSignIn(){
       // finalize(), before this modal even opened), so it must render that
       // directly instead.
       window.selectSwimmer(existingIdx);
+      // Real bug, live-reported: window.__recProfile (sex/birthdate/
+      // recordName — what the Records tab's age-group-record comparison
+      // actually reads, see buildRecords) is normally refreshed by
+      // doLoadFromCloud whenever a swimmer loads. This modal deliberately
+      // skips that cloud fetch (see comment above), so without this it's
+      // left holding whatever the PREVIOUSLY viewed swimmer's sex was — a
+      // male swimmer selected right after a female one was open would
+      // silently get compared against women's records. Same root cause
+      // class as the desktop PDF-report "wrong swimmer" bug in
+      // swimtrack-cloud-architecture memory, different stale global.
+      var existingSw=SWIMMERS[existingIdx];
+      window.__recProfile={sex:existingSw.sex||'',birthdate:existingSw.birthdate||'',recordName:existingSw.recordName||''};
       if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
       if(typeof buildAll==='function')buildAll();
       return;
     }
     var newSw={name:name,id:id,seasonIds:[],heights:[],weights:[],birthdate:birthdate,_manuallyAdded:true};
     if(sex)newSw.sex=sex;
+    // Real bug, live-reported: this was missing entirely, so every swimmer
+    // created via this modal (both the auto-load path and the Extract-tab
+    // quick-add) landed with NO team at all — silently falling into a
+    // legacy "solo" grouping instead of the team the user was actually
+    // viewing. addSettingsSwimmer (Settings tab's own separate add-swimmer
+    // form) already did this correctly; this modal just never matched it.
+    if(window.currentTeamId)newSw.teamIds=[window.currentTeamId];
     SWIMMERS.push(newSw);
     saveSettings();
     window.closeNewSwimmerModal();
     window.selectSwimmer(SWIMMERS.length-1);
+    // See the __recProfile comment above — same fix, brand-new-swimmer branch.
+    window.__recProfile={sex:newSw.sex||'',birthdate:newSw.birthdate||'',recordName:''};
     if(typeof renderSwimmerBanner==='function')renderSwimmerBanner();
     if(typeof buildAll==='function')buildAll();
     renderSettingsUI();
