@@ -90,7 +90,11 @@ export function subscribeSwimmer(swimmerId, callback) {
   return onSnapshot(
     doc(db, "swimmers", swimmerId),
     (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
-    (err) => console.error("Swimmer listener error:", err)
+    // Previously only logged — the caller's state was left however it was,
+    // which (combined with nothing clearing it on swimmerId change either)
+    // could mean a stale, PREVIOUS swimmer's data stays on screen forever
+    // if the new subscription is denied/fails. Explicitly clear it instead.
+    (err) => { console.error("Swimmer listener error:", err); callback(null); }
   );
 }
 

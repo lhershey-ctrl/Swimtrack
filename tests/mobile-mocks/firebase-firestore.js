@@ -81,7 +81,11 @@ export function onSnapshot(ref, onNext, onError) {
   L[key] = L[key] || [];
   L[key].push(onNext);
   const data = col(ref.__col)[ref.__id];
-  setTimeout(() => onNext({ exists: () => !!data, data: () => data, id: ref.__id }), 0);
+  // Optional per-doc delay (window.__mockDocDelayMs = {docId: ms}), mirrors
+  // the desktop mock — for constructing adversarial "slow subscription"
+  // races deterministically in a test, instead of a real network.
+  const delay = (window.__mockDocDelayMs && window.__mockDocDelayMs[ref.__id]) || 0;
+  setTimeout(() => onNext({ exists: () => !!data, data: () => data, id: ref.__id }), delay);
   return () => { L[key] = (L[key] || []).filter((cb) => cb !== onNext); };
 }
 export function arrayUnion(...args) { return { __arrayUnion: args }; }

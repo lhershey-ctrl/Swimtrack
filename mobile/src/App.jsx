@@ -2510,6 +2510,12 @@ export default function App() {
   useEffect(() => {
     if (!user || !swimmerId) return;
     if (unsubRef.current) unsubRef.current();
+    // Real bug, live-reported: switching swimmers kept showing the PREVIOUS
+    // swimmer's name/stats until the new doc happened to arrive — nothing
+    // ever cleared the old one in between, so a slow network (or a denied
+    // subscription, see subscribeSwimmer's error path) could leave stale,
+    // wrong-swimmer data on screen indefinitely, not just for a flicker.
+    setSwimmer(null);
     unsubRef.current = subscribeSwimmer(swimmerId, setSwimmer);
     return () => unsubRef.current && unsubRef.current();
   }, [user, swimmerId]);
