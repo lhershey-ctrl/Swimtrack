@@ -7607,21 +7607,45 @@ function _teamSeasonRecap(D) {
     var pct = (firstIn[k] - bestIn[k]) / firstIn[k] * 100;
     if (pct > impPct) { impPct = pct; impEv = k; }
   });
-  return { nMeets: meetSet.size, nSwims: res.length, nPBs: nPBs, bestPts: bestPts, impEv: impEv ? impEv.replace('|', ' ') : null, impPct: impPct };
+  // Flip side of "most improved": an event swum often (>5 times this
+  // season — enough starts that a flat/worse best isn't just noise from a
+  // single off day) where the season's BEST time is no better than the
+  // FIRST time. Requested explicitly as an early-warning signal — a heavily
+  // repeated event with zero improvement can point to a stroke/technique
+  // issue or a growth-spurt-driven power/technique mismatch worth a coach's
+  // attention, not visible from "most improved" alone. Picks the single
+  // worst (most negative pct) qualifying event, same one-highlight
+  // convention as impEv/bestPts above.
+  var countIn = {};
+  res.forEach(function (r) { var k = r.event + '|' + (poolNorm(r.pool) || ''); countIn[k] = (countIn[k] || 0) + 1; });
+  var stagnantEv = null, stagnantPct = null, stagnantCount = 0;
+  Object.keys(firstIn).forEach(function (k) {
+    if ((countIn[k] || 0) <= 5) return;
+    var pct = (firstIn[k] - bestIn[k]) / firstIn[k] * 100;
+    if (pct <= 0 && (stagnantPct === null || pct < stagnantPct)) { stagnantPct = pct; stagnantEv = k; stagnantCount = countIn[k]; }
+  });
+  return {
+    nMeets: meetSet.size, nSwims: res.length, nPBs: nPBs, bestPts: bestPts,
+    impEv: impEv ? impEv.replace('|', ' ') : null, impPct: impPct,
+    stagnantEv: stagnantEv ? stagnantEv.replace('|', ' ') : null, stagnantPct: stagnantPct, stagnantCount: stagnantCount
+  };
 }
 // roster = [{swimmer:{id,name,birthdate,sex}, D, updatedAt}, ...]
 function _teamHighlights(roster) {
-  var out = [], bestImp = null, bestPB = null, busiest = null;
+  var out = [], bestImp = null, bestPB = null, busiest = null, needsAttention = null;
   roster.forEach(function (r) {
     var recap = _teamSeasonRecap(r.D);
     if (!recap) return;
     if (recap.impEv && (!bestImp || recap.impPct > bestImp.pct)) bestImp = { name: r.swimmer.name, event: recap.impEv, pct: recap.impPct };
     if (recap.bestPts && (!bestPB || recap.bestPts.points > bestPB.points)) bestPB = { name: r.swimmer.name, event: recap.bestPts.event, points: recap.bestPts.points };
     if (!busiest || recap.nMeets > busiest.nMeets) busiest = { name: r.swimmer.name, nMeets: recap.nMeets };
+    if (recap.stagnantEv && (!needsAttention || recap.stagnantPct < needsAttention.pct)) needsAttention = { name: r.swimmer.name, event: recap.stagnantEv, pct: recap.stagnantPct, count: recap.stagnantCount };
   });
   if (bestImp) out.push({ type: 'green', ico: '🚀', title: 'Most improved: ' + bestImp.name, text: bestImp.event + ' · +' + bestImp.pct.toFixed(1) + '%' });
   if (bestPB) out.push({ type: 'blue', ico: '🏅', title: 'Top points swim: ' + bestPB.name, text: bestPB.event + ' · ' + bestPB.points + ' pts' });
   if (busiest && busiest.nMeets > 0) out.push({ type: 'amber', ico: '📅', title: 'Busiest competitor: ' + busiest.name, text: busiest.nMeets + ' meet' + (busiest.nMeets !== 1 ? 's' : '') + ' this season' });
+  if (needsAttention) out.push({ type: 'red', ico: '⚠️', title: 'May need attention: ' + needsAttention.name,
+    text: needsAttention.event + ' · no improvement over ' + needsAttention.count + ' swims' + (needsAttention.pct < 0 ? ' (' + Math.abs(needsAttention.pct).toFixed(1) + '% slower)' : '') });
   return out;
 }
 // Rudolph is only calibrated through the junior/youth brackets — like USA
