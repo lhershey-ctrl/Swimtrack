@@ -54,13 +54,16 @@ module.exports = async function run() {
 
     await page.click('#t-analyze');
     await page.waitForTimeout(300);
-    // Note: pasting JSON auto-creates an unrecognized swimmer as "Swimmer <id>"
-    // (addSwimmerById) — it does not read _swimmerName back out, that field
-    // only guards against mixing two different swimmers' data together.
+    // Pasting JSON for an unrecognized swimmer auto-creates them
+    // (addSwimmerById), using the real name from _swimmerName (bm2.js/
+    // extractFromHtml already scrape this off the LogLig page) — real bug,
+    // fixed 2026-07-31: this field was captured but never read back out, so
+    // every auto-added swimmer got a placeholder "Swimmer <id>" name.
     const bannerText = await page.$eval('#swimmerBanner', (el) => el.textContent);
+    assert(bannerText.includes('Chart Test Swimmer'), 'banner should show the swimmer\'s real name from _swimmerName, not a "Swimmer <id>" placeholder, got: ' + bannerText);
     assert(bannerText.includes('999002'), 'banner should show the loaded swimmer\'s player ID, got: ' + bannerText);
     assert(bannerText.includes('2'), 'banner should reflect 2 seasons loaded, got: ' + bannerText);
-    steps.push({ desc: 'Swimmer banner reflects the loaded player ID and season count', ok: true });
+    steps.push({ desc: 'Swimmer banner reflects the auto-filled real name, player ID, and season count', ok: true });
 
     const chartState = await page.evaluate(() => ({
       bestTimesPoints: window.btChartInst ? window.btChartInst.data.datasets.reduce((a, d) => a + d.data.length, 0) : -1,

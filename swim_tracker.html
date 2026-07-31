@@ -728,18 +728,25 @@ function landingSignIn(){
   window.getActiveSwimmerData=function(){return SWIMMERS[activeSwimmer]||null;};
   window.getAllSwimmers=function(){return SWIMMERS;};
 
-  // Auto-add an unknown swimmer when loading their JSON file
-  window.addSwimmerById=function(pid){
+  // Auto-add an unknown swimmer when loading their JSON file. `name`, when
+  // given, comes from the extraction tools' `_swimmerName` (bm2.js/
+  // extractFromHtml scrape it off the LogLig page) — real bug, reported
+  // live: this was already captured in the downloaded JSON and just never
+  // read here, so every auto-added swimmer got a placeholder "Swimmer
+  // 12345" name regardless. `_swimmerName` is underscore-joined (it's also
+  // used as a filename), so convert back to spaces for display.
+  window.addSwimmerById=function(pid,name){
     // Check not already in list
     for(var i=0;i<SWIMMERS.length;i++){if(String(SWIMMERS[i].id)===String(pid))return window.selectSwimmer(i);}
-    var newSw={name:'Swimmer '+pid,id:String(pid),seasonIds:[],heights:[],weights:[],birthdate:''};
+    var cleanName=name?String(name).replace(/_/g,' ').trim():'';
+    var newSw={name:cleanName||('Swimmer '+pid),id:String(pid),seasonIds:[],heights:[],weights:[],birthdate:''};
     SWIMMERS.push(newSw);
     saveSettings();
     window.selectSwimmer(SWIMMERS.length-1);
     renderSettingsUI();
     // Show a subtle prompt to rename
     var st=document.getElementById('loadStatus');
-    if(st) st.innerText+=' · New swimmer added — rename in ⚙️ Settings.';
+    if(st) st.innerText+=cleanName?' · New swimmer "'+cleanName+'" added — check details in ⚙️ Settings.':' · New swimmer added — rename in ⚙️ Settings.';
   };
 
   // Add-or-select a swimmer by id with a proper name (used by cloud loads so
@@ -2127,8 +2134,9 @@ function renderSwimmerBanner(){
 function finalize(errs){
   var st=document.getElementById('loadStatus');
   st.className='';st.innerText='';
-  // Grab _swimmerId BEFORE cleaning D
+  // Grab _swimmerId/_swimmerName BEFORE cleaning D
   var detectedPid=D&&D._swimmerId?String(D._swimmerId):'';
+  var detectedName=D&&D._swimmerName?String(D._swimmerName):'';
   // Keep seasons that have any data
   var cleaned={};
   Object.keys(D||{}).forEach(function(k){
@@ -2152,7 +2160,7 @@ function finalize(errs){
       window.selectSwimmer(matched);
     } else if(matched===-1&&window.addSwimmerById){
       // Unknown swimmer — add them automatically and select
-      window.addSwimmerById(detectedPid);
+      window.addSwimmerById(detectedPid,detectedName);
     }
   }
   if(detectedPid)window.__loadedSwimmerId=detectedPid;
