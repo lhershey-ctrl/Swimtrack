@@ -44,7 +44,11 @@ module.exports = async function run() {
     // Admin sees every team regardless of which one is picked here.
     const gateOpen = await page.evaluate(() => document.body.innerText.includes('Which account?'));
     if (gateOpen) { await page.click('text=Which account?').catch(() => {}); await page.click('button >> nth=0').catch(() => {}); await page.waitForTimeout(400); }
-    await page.click('button:has-text("Settings")');
+    // Admin moved out of Settings into its own hidden full-screen page
+    // (2026-07-31) — reachable via the avatar menu's "🔑 Admin" item.
+    await page.click('#topbarAvatarBtn');
+    await page.waitForTimeout(150);
+    await page.click('#topbarMenuAdmin');
     await page.waitForTimeout(1500);
 
     const bodyText = await page.evaluate(() => document.body.innerText);

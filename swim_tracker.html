@@ -799,7 +799,7 @@ function landingSignIn(){
       if(typeof buildAll==='function')buildAll();
       return;
     }
-    var newSw={name:name,id:id,seasonIds:[],heights:[],weights:[],birthdate:birthdate,_manuallyAdded:true};
+    var newSw={name:name,id:id,seasonIds:[],heights:[],weights:[],birthdate:birthdate,_manuallyAdded:true,createdAt:Date.now()};
     if(sex)newSw.sex=sex;
     // Real bug, live-reported: this was missing entirely, so every swimmer
     // created via this modal (both the auto-load path and the Extract-tab
@@ -1023,7 +1023,7 @@ function landingSignIn(){
     };
 
   window.addSettingsSwimmer=function(){
-    var sw={name:'New Swimmer',id:'',seasonIds:[],_manuallyAdded:true};
+    var sw={name:'New Swimmer',id:'',seasonIds:[],_manuallyAdded:true,createdAt:Date.now()};
     // If currently viewing an explicit team (see createTeam), add it to
     // this swimmer's teamIds — additive (a swimmer can belong to more than
     // one team/cluster at once), never a move: an already-existing swimmer
@@ -1460,6 +1460,22 @@ function landingSignIn(){
   <div class="section-title">📊 Stats</div>
   <div class="metrics" id="adminMetrics" style="margin-bottom:20px"></div>
   <div id="adminCoachesCard" class="card" style="padding:6px;margin-bottom:20px"></div>
+
+  <!-- Collapsed by default, like Performance Split's per-team sections
+       below — this is a "check in on occasionally" panel, not everyday
+       workflow. -->
+  <details class="card" style="padding:0;margin-bottom:20px;overflow:hidden">
+    <summary style="cursor:pointer;padding:16px 20px;font-size:13px;font-weight:800;color:#185FA5">📈 Data Statistics</summary>
+    <div id="adminDataStatsNote" style="padding:0 20px;font-size:11.5px;color:#999"></div>
+    <div style="padding:12px 20px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:20px">
+      <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Swimmers Added Per Week</div><div style="height:180px"><canvas id="adminAddedChart"></canvas></div></div>
+      <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Male / Female Split</div><div style="height:180px"><canvas id="adminSexChart"></canvas></div></div>
+      <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Age Distribution</div><div style="height:180px"><canvas id="adminAgeChart"></canvas></div></div>
+      <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Swimmers Per Team</div><div style="height:180px"><canvas id="adminTeamSizeChart"></canvas></div></div>
+      <div><div style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px">Best FINA Points Distribution</div><div style="height:180px"><canvas id="adminPointsChart"></canvas></div></div>
+    </div>
+  </details>
+
   <div class="section-title">📊 Performance Split (all coaches)</div>
   <div id="adminPerf" style="margin-bottom:20px"></div>
   <div class="section-title">🩺 Least Recently Synced</div>
@@ -6259,6 +6275,12 @@ async function swimSaveProfile(sw) {
   // swimmer can belong to more than one team/cluster at once (see
   // clusterMySwimmers), so this is never a "move," only an "also add."
   if (sw.teamIds && sw.teamIds.length) payload.teamIds = arrayUnion.apply(null, sw.teamIds);
+  // Only forward it when the LOCAL object already carries one (stamped
+  // once, at creation, by confirmNewSwimmerModal/addSettingsSwimmer) — an
+  // older swimmer with no local createdAt must never get a fabricated
+  // "created now" timestamp just because they were re-saved. Powers the
+  // Admin "Swimmers Added Per Week" chart.
+  if (sw.createdAt) payload.createdAt = sw.createdAt;
   await setDoc(doc(db, "swimmers", String(sw.id)), payload, { merge: true });
 }
 
@@ -7876,6 +7898,121 @@ function groupCoachesIntoTeams(coaches, swimmers) {
 // ── Admin stats (owner-only; deliberately separate from every other query
 // in the app, which is always scoped to the signed-in account's own
 // roster). This is the one place cross-coach visibility is intentional. ──
+// ── Admin "Data Statistics" panel (added 2026-07-31, directly requested):
+// swimmers-added-per-week, sex split, age histogram, plus 2 recommended
+// additions (swimmers-per-team, best-FINA-points distribution) — same
+// destroy-before-recreate Chart.js pattern used everywhere else in this
+// file. Collapsed by default (native <details>), so it only fetches
+// nothing extra — it's handed the SAME coaches/swimmers/teams data
+// renderAdminStats already pulled, no second round-trip.
+// This whole file's Admin/records code runs inside <script type="module">
+// (needs the Firebase modular SDK imports) — unlike the classic-script
+// Analyze-tab charts elsewhere in this file, a plain `var` here is
+// module-scoped, NOT auto-exposed on window. Every chart instance below is
+// assigned directly onto window so it's reachable the same way as
+// window.btChartInst etc. (used by tests and any future debugging).
+window.adminAddedChartInst=null;window.adminSexChartInst=null;window.adminAgeChartInst=null;window.adminTeamSizeChartInst=null;window.adminPointsChartInst=null;
+function _weekStartLabel(ts){
+  var d=new Date(ts);
+  var day=(d.getDay()+6)%7; // Monday=0
+  d.setDate(d.getDate()-day);
+  return (d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear();
+}
+function renderAdminDataStats(swimmers,teams){
+  var noteEl=document.getElementById('adminDataStatsNote');
+  var withCreatedAt=swimmers.filter(function(s){return s.createdAt;});
+  if(noteEl)noteEl.textContent=withCreatedAt.length<swimmers.length
+    ?('Note: '+withCreatedAt.length+' of '+swimmers.length+' swimmers have a recorded creation date — "Added Per Week" only covers those (older swimmers predate this field).')
+    :'';
+
+  // 1. Swimmers added per week (only those with a createdAt on record).
+  var byWeek={};
+  withCreatedAt.forEach(function(s){var k=_weekStartLabel(s.createdAt);byWeek[k]=(byWeek[k]||0)+1;});
+  var weekKeys=Object.keys(byWeek).sort(function(a,b){return new Date(a)-new Date(b);});
+  if(window.adminAddedChartInst)window.adminAddedChartInst.destroy();
+  var addedCvs=document.getElementById('adminAddedChart');
+  if(addedCvs){
+    try{window.adminAddedChartInst=new Chart(addedCvs.getContext('2d'),{
+      type:'bar',
+      data:{labels:weekKeys,datasets:[{label:'Swimmers added',data:weekKeys.map(function(k){return byWeek[k];}),backgroundColor:'#185FA5',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:'#888',font:{size:9}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}}}}
+    });}catch(e){console.error('[chart] adminAddedChart error:',e);}
+  }
+
+  // 2. Male/female split.
+  var nMale=0,nFemale=0,nUnknown=0;
+  swimmers.forEach(function(s){if(s.sex==='male')nMale++;else if(s.sex==='female')nFemale++;else nUnknown++;});
+  if(window.adminSexChartInst)window.adminSexChartInst.destroy();
+  var sexCvs=document.getElementById('adminSexChart');
+  if(sexCvs){
+    var sexLabels=['Male','Female'].concat(nUnknown?['Unknown']:[]);
+    var sexData=[nMale,nFemale].concat(nUnknown?[nUnknown]:[]);
+    var sexColors=['#185FA5','#e05252'].concat(nUnknown?['#c9d3df']:[]);
+    try{window.adminSexChartInst=new Chart(sexCvs.getContext('2d'),{
+      type:'pie',
+      data:{labels:sexLabels,datasets:[{data:sexData,backgroundColor:sexColors}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#666',font:{size:11},boxWidth:12}}}}
+    });}catch(e){console.error('[chart] adminSexChart error:',e);}
+  }
+
+  // 3. Age distribution (5-year bands) — from birthdate, skips swimmers with none set.
+  var ageBands=['5-9','10-14','15-19','20-24','25-29','30-39','40-49','50+'];
+  var ageCounts=ageBands.map(function(){return 0;});
+  swimmers.forEach(function(s){
+    var age=s.birthdate?_recAge(s.birthdate):null;
+    if(age==null||age<5)return;
+    var idx=age<10?0:age<15?1:age<20?2:age<25?3:age<30?4:age<40?5:age<50?6:7;
+    ageCounts[idx]++;
+  });
+  if(window.adminAgeChartInst)window.adminAgeChartInst.destroy();
+  var ageCvs=document.getElementById('adminAgeChart');
+  if(ageCvs){
+    try{window.adminAgeChartInst=new Chart(ageCvs.getContext('2d'),{
+      type:'bar',
+      data:{labels:ageBands,datasets:[{label:'Swimmers',data:ageCounts,backgroundColor:'#1D9E75',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:'#888',font:{size:10}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}}}}
+    });}catch(e){console.error('[chart] adminAgeChart error:',e);}
+  }
+
+  // 4. Swimmers per team (recommended addition) — reuses the already-named
+  // team groups from renderAdminStats, so "Team" vs "Shared roster" rows
+  // both show up exactly as labeled in the Teams list above.
+  if(window.adminTeamSizeChartInst)window.adminTeamSizeChartInst.destroy();
+  var teamSizeCvs=document.getElementById('adminTeamSizeChart');
+  if(teamSizeCvs){
+    var sortedTeams=teams.slice().sort(function(a,b){return b.swimmerCount-a.swimmerCount;});
+    try{window.adminTeamSizeChartInst=new Chart(teamSizeCvs.getContext('2d'),{
+      type:'bar',
+      data:{labels:sortedTeams.map(function(t){return t.name;}),datasets:[{label:'Swimmers',data:sortedTeams.map(function(t){return t.swimmerCount;}),backgroundColor:'#EF9F27',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+        scales:{x:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}},y:{ticks:{color:'#555',font:{size:10}},grid:{display:false}}}}
+    });}catch(e){console.error('[chart] adminTeamSizeChart error:',e);}
+  }
+
+  // 5. Best-ever FINA points distribution (recommended addition) — a quick
+  // read on the team's overall competitive level/spread at a glance.
+  var pointsBands=['<300','300-349','350-399','400-449','450+'];
+  var pointsCounts=pointsBands.map(function(){return 0;});
+  swimmers.forEach(function(s){
+    var best=_teamBestPoints(s.seasons||{});
+    if(!best)return;
+    var idx=best<300?0:best<350?1:best<400?2:best<450?3:4;
+    pointsCounts[idx]++;
+  });
+  if(window.adminPointsChartInst)window.adminPointsChartInst.destroy();
+  var pointsCvs=document.getElementById('adminPointsChart');
+  if(pointsCvs){
+    try{window.adminPointsChartInst=new Chart(pointsCvs.getContext('2d'),{
+      type:'bar',
+      data:{labels:pointsBands,datasets:[{label:'Swimmers',data:pointsCounts,backgroundColor:'#9b7bc4',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:'#888',font:{size:10}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#888',font:{size:10},precision:0},grid:{color:'rgba(0,0,0,.04)'}}}}
+    });}catch(e){console.error('[chart] adminPointsChart error:',e);}
+  }
+}
+
 async function renderAdminStats() {
   const metricsEl = $("adminMetrics"), coachesEl = $("adminCoachesCard"), codesEl = $("adminCodesCard"),
     perfEl = $("adminPerf"), staleEl = $("adminStale");
@@ -7897,6 +8034,8 @@ async function renderAdminStats() {
     const teams = await nameClusters(rawTeams);
     const openCodes = codes.filter((cd) => !cd.usedBy);
     const usedCodes = codes.filter((cd) => cd.usedBy);
+
+    if (document.getElementById("adminAddedChart")) renderAdminDataStats(swimmers, teams);
 
     metricsEl.innerHTML =
       '<div class="metric hi"><div class="lbl">Teams</div><div class="val">' + teams.length + '</div></div>' +

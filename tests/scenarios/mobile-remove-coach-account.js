@@ -22,7 +22,11 @@ module.exports = async function run() {
   try {
     await page.click('text=Sign in with Google');
     await page.waitForTimeout(900);
-    await page.click('button:has-text("Settings")');
+    // Admin moved out of Settings into its own hidden full-screen page
+    // (2026-07-31) — reachable via the avatar menu's "🔑 Admin" item.
+    await page.click('#topbarAvatarBtn');
+    await page.waitForTimeout(150);
+    await page.click('#topbarMenuAdmin');
     await page.waitForTimeout(400);
 
     const before = await page.evaluate(() => document.body.innerText);

@@ -4,6 +4,11 @@
 // that follows AdminStatsPanel in the tree. Moved it to the end of
 // AdminStatsPanel's own output so it lands immediately before the
 // generator once both are rendered together.
+//
+// Admin moved out of the Settings tab into its own hidden full-screen page
+// (2026-07-31, directly requested) — reachable via the avatar menu's
+// "🔑 Admin" item, not inline in Settings anymore. Updated navigation
+// accordingly.
 const { openMobileApp, assert } = require('../lib/mobile-harness');
 
 module.exports = async function run() {
@@ -20,7 +25,9 @@ module.exports = async function run() {
   try {
     await page.click('text=Sign in with Google');
     await page.waitForTimeout(900);
-    await page.click('button:has-text("Settings")');
+    await page.click('#topbarAvatarBtn');
+    await page.waitForTimeout(150);
+    await page.click('#topbarMenuAdmin');
     await page.waitForTimeout(1500);
 
     const headings = await page.$$eval('div', (els) =>

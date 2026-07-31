@@ -264,12 +264,13 @@ function TeamPickerModal({ clusters, activeKey, onPick, onClose }) {
 // ════════════════════════════════════════════════════════════════════
 //  Top bar + bottom nav
 // ════════════════════════════════════════════════════════════════════
-function TopBar({ user, swimmer, swimmers, onPick, onSignOut, teamClusters, selectedTeamKey, onSwitchAccount }) {
+function TopBar({ user, swimmer, swimmers, onPick, onSignOut, teamClusters, selectedTeamKey, onSwitchAccount, onOpenAdmin }) {
   const { c, dark, toggle } = useUI();
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const icon = swimmer?.name === "Noga" ? "🏊‍♀️" : "🏊";
   const activeCluster = (teamClusters || []).find((cl) => cl.key === selectedTeamKey);
+  const owner = isOwner(user);
   return (
     <div style={{ position: "sticky", top: 0, zIndex: 30, background: GRAD, padding: "12px 14px",
       display: "flex", alignItems: "center", gap: 10, boxShadow: "0 2px 14px rgba(0,0,0,.35)" }}>
@@ -283,7 +284,7 @@ function TopBar({ user, swimmer, swimmers, onPick, onSignOut, teamClusters, sele
       <button onClick={toggle} title="Toggle theme" style={{ width: 34, height: 34, borderRadius: 999, border: "none",
         cursor: "pointer", background: "rgba(255,255,255,.2)", color: "#fff", fontSize: 15 }}>{dark ? "☀️" : "🌙"}</button>
       <div style={{ position: "relative" }}>
-        <button onClick={() => setMenuOpen((o) => !o)} title={user?.email} style={{ width: 34, height: 34, borderRadius: 999, border: "none",
+        <button id="topbarAvatarBtn" onClick={() => setMenuOpen((o) => !o)} title={user?.email} style={{ width: 34, height: 34, borderRadius: 999, border: "none",
           cursor: "pointer", background: "rgba(255,255,255,.2)", color: "#fff", fontWeight: 700 }}>
           {(user?.displayName || user?.email || "?")[0].toUpperCase()}
         </button>
@@ -295,6 +296,16 @@ function TopBar({ user, swimmer, swimmers, onPick, onSignOut, teamClusters, sele
               <button onClick={() => { setMenuOpen(false); onSwitchAccount(); }} style={{ display: "block", width: "100%", textAlign: "left",
                 padding: "12px 14px", background: "none", border: "none", borderBottom: `1px solid ${c.line}`, color: c.text, cursor: "pointer", fontSize: 14 }}>
                 👥 Switch account{activeCluster ? " (" + activeCluster.name + ")" : ""}
+              </button>
+            )}
+            {/* Owner-only, deliberately not in the bottom nav (which is
+                already at its 6-icon limit — see the 2026-07-19 mobile nav
+                decision in swimtrack-cloud-architecture memory) — reachable
+                only from this menu, same pattern as "Switch account". */}
+            {owner && (
+              <button id="topbarMenuAdmin" onClick={() => { setMenuOpen(false); onOpenAdmin(); }} style={{ display: "block", width: "100%", textAlign: "left",
+                padding: "12px 14px", background: "none", border: "none", borderBottom: `1px solid ${c.line}`, color: c.text, cursor: "pointer", fontSize: 14 }}>
+                🔑 Admin
               </button>
             )}
             <button onClick={() => { setMenuOpen(false); onSignOut(); }} style={{ display: "block", width: "100%", textAlign: "left",
@@ -1933,11 +1944,6 @@ function SettingsTab({ user, swimmers, reloadSwimmers, teamClusters, selectedTea
 
       <AccessManager owner={owner} />
 
-      {owner && <>
-        <AdminStatsPanel owner={owner} reloadMySwimmers={reloadSwimmers} />
-        <InviteCodeManager owner={owner} user={user} />
-      </>}
-
       <div style={s.h2}>About</div>
       <Card><div style={{ fontSize: 13, color: c.dim, lineHeight: 1.7 }}>
         Data is extracted on the desktop app and synced to the cloud; this phone app reads it and lets you manage swimmer profiles.
@@ -2391,6 +2397,7 @@ export default function App() {
   const [currentTeamId, setCurrentTeamId] = useState(null); // explicit team (see createTeam) a new swimmer should be tagged into; null = legacy/no explicit team
   const [teamGateOpen, setTeamGateOpen] = useState(false); // forced first-time/stale-choice picker
   const [teamSwitcherOpen, setTeamSwitcherOpen] = useState(false); // dismissable re-pick from Settings
+  const [showAdmin, setShowAdmin] = useState(false); // hidden full-screen Admin page, see TopBar's avatar menu
   const unsubRef = useRef(null);
 
   useEffect(() => watchAuth((u) => { setUser(u); setAuthErr(""); }), []);
@@ -2535,6 +2542,9 @@ export default function App() {
   if (teamGateOpen) {
     return <TeamGate clusters={teamClusters} onPick={applyTeamChoice} onSignOut={signOut} />;
   }
+  if (showAdmin) {
+    return <AdminScreen user={user} onBack={() => setShowAdmin(false)} reloadSwimmers={loadSwimmers} />;
+  }
 
   const D = swimmer?.seasons || {};
   const hasData = swimmer && Object.keys(D).length > 0;
@@ -2542,7 +2552,8 @@ export default function App() {
   return (
     <div style={s.app}>
       <TopBar user={user} swimmer={swimmer} swimmers={swimmers} onPick={setSwimmerId} onSignOut={signOut}
-        teamClusters={teamClusters} selectedTeamKey={selectedTeamKey} onSwitchAccount={() => setTeamSwitcherOpen(true)} />
+        teamClusters={teamClusters} selectedTeamKey={selectedTeamKey} onSwitchAccount={() => setTeamSwitcherOpen(true)}
+        onOpenAdmin={() => setShowAdmin(true)} />
       {tab === "settings" ? (
         <SettingsTab user={user} swimmers={swimmers} reloadSwimmers={loadSwimmers}
           teamClusters={teamClusters} selectedTeamKey={selectedTeamKey} currentTeamId={currentTeamId}
@@ -2827,6 +2838,35 @@ function PerfSplitTable({ title, rows, c }) {
       </Card>
       )}
     </>
+  );
+}
+
+// Full-screen owner-only page, reachable only via the hidden "🔑 Admin" item
+// in TopBar's avatar menu (see TopBar) — deliberately NOT a 7th bottom-nav
+// tab (mobile's nav is already at its intentional 6-icon limit) and NOT
+// inline in Settings anymore either (moved here from SettingsTab so it's
+// out of the way for every non-owner, and gets full-screen room instead of
+// competing for space in a scrolling Settings page). Same header style as
+// TopBar (GRAD background) for visual consistency; a back arrow is the
+// only way out, same pattern as every other full-screen state in this app
+// (TeamGate/InviteGate).
+function AdminScreen({ user, onBack, reloadSwimmers }) {
+  const { s } = useUI();
+  const owner = isOwner(user);
+  return (
+    <div style={s.app}>
+      <div style={{ position: "sticky", top: 0, zIndex: 30, background: GRAD, padding: "12px 14px",
+        display: "flex", alignItems: "center", gap: 12, boxShadow: "0 2px 14px rgba(0,0,0,.35)" }}>
+        <button onClick={onBack} title="Back" style={{ width: 34, height: 34, borderRadius: 999, border: "none",
+          cursor: "pointer", background: "rgba(255,255,255,.2)", color: "#fff", fontSize: 18, fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
+        <div style={{ color: "#fff", fontWeight: 800, fontSize: 17 }}>🔑 Admin</div>
+      </div>
+      <div style={s.pad}>
+        <AdminStatsPanel owner={owner} reloadMySwimmers={reloadSwimmers} />
+        <InviteCodeManager owner={owner} user={user} />
+      </div>
+    </div>
   );
 }
 
