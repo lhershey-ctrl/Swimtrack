@@ -1448,6 +1448,10 @@ function landingSignIn(){
   <div class="section-title">👥 Team</div>
   <div class="metrics" id="teamMetrics" style="margin-bottom:20px"></div>
   <div id="teamHighlights" style="margin-bottom:20px"></div>
+  <div id="teamAttentionSection" style="display:none;margin-bottom:20px">
+    <div class="section-title">⚠️ Needs Attention</div>
+    <div id="teamAttention" class="card" style="padding:6px"></div>
+  </div>
   <div class="section-title">📊 Performance Split</div>
   <div id="teamPerf" style="margin-bottom:20px"></div>
   <div class="section-title">🩺 Roster Health</div>
@@ -3512,17 +3516,23 @@ function renderEvCards(){
       '</div>';
     container.appendChild(card);
 
-    // season filter
+    // Season filter — multi-select (click toggles a season in/out), same
+    // interaction pattern as the event selector above (top5Active). Real
+    // change, directly requested: defaults to the LAST 2 seasons instead
+    // of "All" (still selectable, plus any individual season on its own
+    // or in any combination) — "show only data from last 2 seasons by
+    // default ... allow multiple selection."
     var sfDiv=document.getElementById(sfId);
-    var activeSeason=null;
+    var activeSeasons=new Set(availSeasons.slice(-2));
 
-    function renderCardData(sf){
-      activeSeason=sf;
+    function renderCardData(){
+      var allSelected=availSeasons.length>0&&activeSeasons.size===availSeasons.length;
       sfDiv.querySelectorAll('button').forEach(function(b){
-        b.className='ev-btn'+((b.dataset.sf===(sf||'all'))?(' active'):'');
+        var isAllBtn=b.dataset.sf==='all';
+        b.classList.toggle('active',isAllBtn?allSelected:activeSeasons.has(b.dataset.sf));
         b.style.fontSize='11px';b.style.padding='3px 10px';
-        });
-      var filtered=sf?evRes.filter(function(r){return r.season===sf;}):evRes;
+      });
+      var filtered=evRes.filter(function(r){return activeSeasons.has(r.season);});
       var sc25=[],lc50=[];
       filtered.forEach(function(r){
         var ts=parseDate(r.date);if(!ts)return;
@@ -3537,16 +3547,21 @@ function renderEvCards(){
 
     function addSeasonBtn(label,val){
       var b=document.createElement('button');
-      b.className='ev-btn'+(val===null?' active':'');
+      b.className='ev-btn';
       b.style.cssText='font-size:11px;padding:3px 10px';
       b.dataset.sf=val===null?'all':val;
       b.innerText=label;
-      b.onclick=function(){renderCardData(val);};
+      b.onclick=function(){
+        if(val===null)activeSeasons=new Set(availSeasons); // "All" — select every season at once
+        else if(activeSeasons.has(val))activeSeasons.delete(val);
+        else activeSeasons.add(val);
+        renderCardData();
+      };
       sfDiv.appendChild(b);
     }
     addSeasonBtn('All',null);
     availSeasons.forEach(function(s){addSeasonBtn(s,s);});
-    renderCardData(null); // default: all seasons
+    renderCardData(); // default: last 2 seasons (set via activeSeasons above)
   });
 }
 
@@ -7623,6 +7638,8 @@ function _teamPBTimeline(D) {
 }
 // Latest-season recap for one swimmer — nMeets/nPBs/bestPts/impEv/impPct —
 // same fields+convention as mobile's seasonRecap()[0], desktop-side twin.
+var TEAM_ATTENTION_MIN_SWIMS = 5;   // at least this many starts in an event this season
+var TEAM_ATTENTION_MAX_PCT = 2;     // and less than this much improvement (first vs best) — covers zero AND "marginal"
 function _teamSeasonRecap(D) {
   var ss = Object.keys(D).sort();
   if (!ss.length) return null;
@@ -7649,22 +7666,30 @@ function _teamSeasonRecap(D) {
     var pct = (firstIn[k] - bestIn[k]) / firstIn[k] * 100;
     if (pct > impPct) { impPct = pct; impEv = k; }
   });
-  // Flip side of "most improved": an event swum often (>5 times this
-  // season — enough starts that a flat/worse best isn't just noise from a
-  // single off day) where the season's BEST time is no better than the
-  // FIRST time. Requested explicitly as an early-warning signal — a heavily
-  // repeated event with zero improvement can point to a stroke/technique
-  // issue or a growth-spurt-driven power/technique mismatch worth a coach's
-  // attention, not visible from "most improved" alone. Picks the single
-  // worst (most negative pct) qualifying event, same one-highlight
-  // convention as impEv/bestPts above.
+  // Flip side of "most improved": an event swum often enough this season
+  // (>=TEAM_ATTENTION_MIN_SWIMS — enough starts that a flat/marginal best
+  // isn't just noise from a single off day) where the season's BEST time
+  // is barely or not better than the FIRST time (< TEAM_ATTENTION_MAX_PCT,
+  // covers both "no improvement" and "improved marginally" — a coach's own
+  // phrasing, live-reported: "swimmers that are not improving ... or
+  // improved marginally"). Real gap found via a live example (עדן שץ, 5
+  // swims of 100 Breast at +1.97% — the ORIGINAL >5/pct<=0 thresholds
+  // excluded him on both counts): >5 (strictly) missed anyone at exactly 5
+  // starts, and pct<=0 missed small-but-real improvement that still isn't
+  // meaningful progress. Early-warning signal — a heavily repeated event
+  // with flat results can point to a stroke/technique issue or a
+  // growth-spurt-driven power/technique mismatch, not visible from "most
+  // improved" alone. Picks this swimmer's single worst qualifying event;
+  // _teamNeedsAttentionList (below) collects EVERY qualifying swimmer, not
+  // just the roster's single worst one — this used to be a one-highlight-
+  // card pick like impEv/bestPts, but "which swimmers" implies a list.
   var countIn = {};
   res.forEach(function (r) { var k = r.event + '|' + (poolNorm(r.pool) || ''); countIn[k] = (countIn[k] || 0) + 1; });
   var stagnantEv = null, stagnantPct = null, stagnantCount = 0;
   Object.keys(firstIn).forEach(function (k) {
-    if ((countIn[k] || 0) <= 5) return;
+    if ((countIn[k] || 0) < TEAM_ATTENTION_MIN_SWIMS) return;
     var pct = (firstIn[k] - bestIn[k]) / firstIn[k] * 100;
-    if (pct <= 0 && (stagnantPct === null || pct < stagnantPct)) { stagnantPct = pct; stagnantEv = k; stagnantCount = countIn[k]; }
+    if (pct < TEAM_ATTENTION_MAX_PCT && (stagnantPct === null || pct < stagnantPct)) { stagnantPct = pct; stagnantEv = k; stagnantCount = countIn[k]; }
   });
   return {
     nMeets: meetSet.size, nSwims: res.length, nPBs: nPBs, bestPts: bestPts,
@@ -7674,21 +7699,30 @@ function _teamSeasonRecap(D) {
 }
 // roster = [{swimmer:{id,name,birthdate,sex}, D, updatedAt}, ...]
 function _teamHighlights(roster) {
-  var out = [], bestImp = null, bestPB = null, busiest = null, needsAttention = null;
+  var out = [], bestImp = null, bestPB = null, busiest = null;
   roster.forEach(function (r) {
     var recap = _teamSeasonRecap(r.D);
     if (!recap) return;
     if (recap.impEv && (!bestImp || recap.impPct > bestImp.pct)) bestImp = { name: r.swimmer.name, event: recap.impEv, pct: recap.impPct };
     if (recap.bestPts && (!bestPB || recap.bestPts.points > bestPB.points)) bestPB = { name: r.swimmer.name, event: recap.bestPts.event, points: recap.bestPts.points };
     if (!busiest || recap.nMeets > busiest.nMeets) busiest = { name: r.swimmer.name, nMeets: recap.nMeets };
-    if (recap.stagnantEv && (!needsAttention || recap.stagnantPct < needsAttention.pct)) needsAttention = { name: r.swimmer.name, event: recap.stagnantEv, pct: recap.stagnantPct, count: recap.stagnantCount };
   });
   if (bestImp) out.push({ type: 'green', ico: '🚀', title: 'Most improved: ' + bestImp.name, text: bestImp.event + ' · +' + bestImp.pct.toFixed(1) + '%' });
   if (bestPB) out.push({ type: 'blue', ico: '🏅', title: 'Top points swim: ' + bestPB.name, text: bestPB.event + ' · ' + bestPB.points + ' pts' });
   if (busiest && busiest.nMeets > 0) out.push({ type: 'amber', ico: '📅', title: 'Busiest competitor: ' + busiest.name, text: busiest.nMeets + ' meet' + (busiest.nMeets !== 1 ? 's' : '') + ' this season' });
-  if (needsAttention) out.push({ type: 'red', ico: '⚠️', title: 'May need attention: ' + needsAttention.name,
-    text: needsAttention.event + ' · no improvement over ' + needsAttention.count + ' swims' + (needsAttention.pct < 0 ? ' (' + Math.abs(needsAttention.pct).toFixed(1) + '% slower)' : '') });
   return out;
+}
+// EVERY qualifying swimmer (not just the roster's single worst) — "which
+// swimmers aren't improving" is inherently a list question, not a single
+// highlight. One row per swimmer (their own single worst qualifying
+// event), sorted worst (most negative/least-improved) first.
+function _teamNeedsAttentionList(roster) {
+  var list = [];
+  roster.forEach(function (r) {
+    var recap = _teamSeasonRecap(r.D);
+    if (recap && recap.stagnantEv) list.push({ name: r.swimmer.name, event: recap.stagnantEv, pct: recap.stagnantPct, count: recap.stagnantCount });
+  });
+  return list.sort(function (a, b) { return a.pct - b.pct; });
 }
 // Rudolph is only calibrated through the junior/youth brackets — like USA
 // Standards, it isn't meaningful for masters swimmers, so anyone currently
@@ -7804,7 +7838,8 @@ async function fetchTeamData() {
 }
 
 async function renderTeamStats() {
-  const metricsEl = $("teamMetrics"), hiEl = $("teamHighlights"), perfEl = $("teamPerf"), healthEl = $("teamHealth");
+  const metricsEl = $("teamMetrics"), hiEl = $("teamHighlights"), perfEl = $("teamPerf"), healthEl = $("teamHealth"),
+    attnSectionEl = $("teamAttentionSection"), attnEl = $("teamAttention");
   if (!metricsEl || !currentUser) return;
   metricsEl.innerHTML = '<div class="metric"><div class="lbl">Loading…</div></div>';
   try {
@@ -7812,6 +7847,7 @@ async function renderTeamStats() {
     if (!roster.length) {
       metricsEl.innerHTML = '<div class="metric"><div class="lbl">No swimmers yet</div></div>';
       hiEl.innerHTML = ""; perfEl.innerHTML = ""; healthEl.innerHTML = '<div style="padding:14px;color:#aaa;font-size:13px">No swimmers on your roster yet.</div>';
+      if (attnSectionEl) attnSectionEl.style.display = "none";
       return;
     }
     let totalPBs = 0;
@@ -7827,6 +7863,19 @@ async function renderTeamStats() {
       '<div style="font-size:22px">' + h.ico + '</div>' +
       '<div><div style="font-weight:700;font-size:14px">' + h.title + '</div>' +
       (h.text ? '<div style="font-size:12.5px;color:#888;margin-top:3px">' + h.text + '</div>' : '') + '</div></div>'
+    ).join('');
+
+    // Every qualifying swimmer, not just one — see _teamNeedsAttentionList.
+    // Whole section stays hidden when nobody qualifies, same as before.
+    const attnList = _teamNeedsAttentionList(roster);
+    if (attnSectionEl) attnSectionEl.style.display = attnList.length ? '' : 'none';
+    if (attnEl) attnEl.innerHTML = attnList.map((a, i) =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;' +
+      (i < attnList.length - 1 ? 'border-bottom:1px solid #f0efe9' : '') + '">' +
+      '<div><div style="font-size:13px;font-weight:600">' + a.name + '</div>' +
+      '<div style="font-size:11.5px;color:#999">' + a.event + ' · ' + a.count + ' swims this season</div></div>' +
+      '<div style="font-size:12.5px;font-weight:700;color:' + (a.pct < 0 ? '#a32d2d' : '#9a6b00') + '">' +
+      (a.pct < 0 ? Math.abs(a.pct).toFixed(1) + '% slower' : a.pct.toFixed(1) + '% faster') + '</div></div>'
     ).join('');
 
     const usaTable = window.__usaStandardsTable || null, rudTable = window.__rudolphTable || null, mastersTable = window.__mastersRecordsTable || null;
