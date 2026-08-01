@@ -91,21 +91,33 @@ DESKTOP (swim_tracker.html)                MOBILE (mobile/ — React+Vite)
 
 A single Google sign-in can have access to **more than one, otherwise-unrelated roster** — e.g. a coach invited into two different families' swimmers, or a coach who explicitly creates a second, empty roster for a different squad under their own login. Both apps compute this **client-side**, over whatever swimmers the signed-in coach can already query (`coachUids array-contains uid`) — no extra Firestore query, no rules change needed for the clustering itself.
 
-### Two kinds of "team," not mutually exclusive
+### Two kinds of "team" — an explicit team is always a swimmer's ONE home
 
 1. **Legacy cluster** (implicit) — a group of swimmers connected by *shared coachUids*, with no explicit `teams/{id}` behind it. This is the original, pre-teams model (e.g. a family sharing one roster). Named after the earliest-created member coach's `coaches/{uid}.teamName` (or a computed default, `"<email-local-part>'s Team"`).
 2. **Explicit team** (`teams/{id}`) — a real, named Firestore doc a coach creates via **Settings → "Start Another Team" → + Create a New Team**. Brand-new and empty at creation; swimmers join it by being added while it's the *active* team, or by already existing elsewhere and being additionally tagged with its id (see below). Named directly from `teams/{id}.name`.
 
-**A swimmer can belong to more than one of either kind at once** — `teamIds` is an **array**, not a single field, specifically so that adding an existing swimmer (already shared via legacy coachUids) to a brand-new explicit team never removes them from where they already were. This was a real, reported bug during development ("added Liron to a new team and it removed him from Team Har-Shai") before `teamId` (singular) was redesigned into `teamIds` (array) — see [[swimtrack-cloud-architecture]] in the assistant's memory for the full incident.
+**A swimmer's `teamIds` is an array, not a single field** — so a swimmer can belong to more than one *explicit* team at once (added to a brand-new team never removes them from another one they already belong to; real bug during development, before `teamId` singular was redesigned into `teamIds` array — see [[swimtrack-cloud-architecture]] in the assistant's memory).
+
+**As soon as a swimmer has ANY explicit team, they no longer also join the legacy grouping — this was reversed 2026-07-31 (real bug).** The original design ("duplicated across them on purpose") let a swimmer with both an explicit team AND legacy coachUids-sharing show up in BOTH — in practice this produced a confusing phantom duplicate: the exact same swimmers/coach-pair, once under the explicit team's real name, once again under a legacy cluster labeled with whichever member's *personal* `teamName` happened to be earliest-created (often not a name that describes that swimmer pair at all). Live-reported and confirmed with real data: "the 2nd team har shai is actually team דולפין נתניה that somehow was copied" — same 2 swimmers, same coach pair, one row correctly named after the real `teams/{id}` doc, one phantom row via the legacy grouping. Fixed in both `clusterMySwimmers`/`groupCoachesIntoTeams`: a swimmer with `teamIds.length > 0` is now excluded from the legacy pass entirely, full stop — no more "solo, and already has a team" special case, it's unconditional.
+
+**A coach's personal `teamName` label must never equal a real team's name — this WILL bite you again if it does.** If it does (e.g. after converting a legacy cluster into a real team without also renaming the coach's own personal label), any FUTURE stray/untagged swimmer that lands in a legacy grouping rooted at that coach will display with the exact same name as the real team — indistinguishable duplicate, all over again, even with the dedup fix above in place. This actually happened in production (2026-07-31): converting the legacy "Team Har-Shai" cluster into a real `teams/{id}` doc left the two coaches' personal labels still set to "Team Har-Shai," so a swimmer that briefly lacked a `teamIds` tag (see the next section) surfaced under a phantom "Team Har-Shai" a second time. Fixed by renaming both coaches' personal labels to something that can't collide (`"Liron (Owner)"`, `"Sharon"`) — keep this invariant whenever converting a legacy cluster into an explicit team.
 
 ### Clustering algorithm — `clusterMySwimmers(mySwimmers, myUid)`
 
 Implemented identically in both apps (`swim_tracker.html` and `mobile/src/App.jsx`). Input: every swimmer doc the signed-in coach's uid appears on. Output: an array of clusters, `{key, teamId?, swimmers, coachUids}`.
 
-1. **Explicit-team pass**: for every swimmer, for every id in its `teamIds`, put it in that team's cluster (`key: "team:"+teamId`). A swimmer with entries in `teamIds` still ALSO participates in the legacy pass below — UNLESS it has literally no other coach at all (nothing left for a "solo" legacy bucket to add).
-2. **Legacy pass (union-find)**: swimmers are unioned together if they share any coach **other than the signed-in coach's own uid** — using your own uid would trivially merge every swimmer you can see into one cluster, since by definition you're on all of them. Swimmers with **no other coach at all** ("solo," entirely yours) are unioned together into one combined default cluster, so each doesn't become its own singleton.
+1. **Explicit-team pass**: for every swimmer, for every id in its `teamIds`, put it in that team's cluster (`key: "team:"+teamId`).
+2. **Legacy pass (union-find)**: a swimmer with ANY `teamIds` is skipped entirely (see above — an explicit team is always its one home). Otherwise, swimmers are unioned together if they share any coach **other than the signed-in coach's own uid** — using your own uid would trivially merge every swimmer you can see into one cluster, since by definition you're on all of them. Swimmers with **no other coach at all** ("solo," entirely yours) are unioned together into one combined default cluster, so each doesn't become its own singleton.
 3. If clustering yields **only one cluster total**, nothing changes for the user — no gate, no picker, same single-roster experience as before teams existed.
 4. If it yields **more than one**, cluster names are resolved (`nameClusters()` — fetches each explicit team's real name from `teams/{id}`, or the earliest-created legacy member's `teamName`/default) and a **forced picker** ("Which account?" on mobile, `#teamGate` overlay on desktop) shows at sign-in. The choice is remembered in `localStorage` (`swimtrack:teamKey`) so it doesn't re-ask next time, and is reachable afterward via **"Switch Account"** (desktop Settings) / the account-switcher (mobile TopBar + Settings).
+
+### Renaming/deleting a team you didn't create — owner bypass
+
+`firestore.rules` lets the app **owner** rename/delete ANY team (`isOwner()` OR-branch on both `teams/{id}` update and delete), not just its creator — but the Settings UI (`ActiveTeamNameEditor` mobile / `renderAccountCard`'s `canRenameTeam` desktop) originally only ever checked `team.createdBy === user.uid`, so even the owner couldn't manage a teammate-created team despite the backend already permitting it. Fixed (2026-07-31): both UIs now also show rename/delete when `isOwner(user)` is true, with copy that says "as the app owner" instead of "since you created it" when the signed-in user isn't the creator.
+
+### Admin panel: "Team" vs "Shared roster" badge
+
+Each row in the Admin Teams list gets a small badge next to its name — green **"Team"** if `team.teamId` is set (a real, nameable `teams/{id}` doc), gray **"Shared roster"** otherwise (an inferred legacy grouping, name borrowed from a personal `teamName` label). Added specifically so the naming-collision failure mode above is visually distinguishable at a glance instead of two identical-looking rows.
 
 ### Switching teams — what actually changes
 
@@ -127,9 +139,9 @@ Picking a cluster (`applyTeamChoice`) sets:
 
 ### Renaming a team, and knowing which one you're on
 
-Two genuinely different "name" concepts exist, and confusing them was a real live support question ("how do I change team name?"):
-- **`coaches/{uid}.teamName`** — a coach's own personal account label (editable via Settings' "Team / Account Name" field, `saveMyTeamName()`). Fixed regardless of which team/cluster is currently being viewed.
-- **`teams/{id}.name`** — an explicit team's own name (e.g. "עולם המים מאסטרס"), shown to everyone with access to it. Editable only by its creator, via a "Current Team's Name" field that only appears for them (`renameTeam(teamId, name)`, both apps) — `renderAccountCard()` (desktop) / `ActiveTeamNameEditor` (mobile).
+Two genuinely different "name" concepts exist, and confusing them was a real live support question ("how do I change team name?") — the field labels were renamed 2026-07-31 to make the distinction explicit in the UI itself, not just in this doc:
+- **`coaches/{uid}.teamName`** — a coach's own personal account label, labeled **"Your Account Label"** in Settings (`saveMyTeamName()`). Fixed regardless of which team/cluster is currently being viewed — explicitly NOT a team name (see the naming-collision warning above for why conflating these two breaks things).
+- **`teams/{id}.name`** — an explicit team's own name (e.g. "עולם המים מאסטרס"), shown to everyone with access to it. Editable by its creator OR the app owner (see "owner bypass" above), via a **"This Team's Name"** field that only appears for them (`renameTeam(teamId, name)`, both apps) — `renderAccountCard()` (desktop) / `ActiveTeamNameEditor` (mobile).
 
 **Desktop's `renderAccountCard()` resolves the active team via `window.currentTeamId`, never `activeCluster.teamId`** — `myTeamClusters` (and therefore `activeCluster = myTeamClusters.filter(c => c.key === selectedTeamKey)[0]`) is only ever populated when there's real cluster ambiguity (2+ options needing a picker); in the common single-cluster case it's `[]`, which would silently hide anything gated on `activeCluster` for the most common real-world scenario. `window.currentTeamId` is set correctly in both the single-cluster bypass path and the picker-selection path — prefer it any time you need "the team currently being viewed."
 
@@ -148,7 +160,7 @@ A small-font **topbar label** (`#topbarTeamName`, top-right of the desktop nav b
 - `src/firebase.js` — init, Google auth (`signInWithPopup`), `fetchSwimmers`, `subscribeSwimmer` (live), profile CRUD, access-list read/write, `fetchRecords()`/`fetchRudolph()` (read-only; publishing is desktop-only).
 - `src/analysis.js` — pure analysis builders ported from the desktop (`allResults`, `getStroke`, `competitions`, `scLc`, `insights`, `seasonRecap`, `strokeImprovement`, `pointsTrend`, `eventHeatmap`, `recordGap`/`bestInAgeGroup`/`recordsHeldBy` (Israeli records), `rudolphAgeBracket`/`rudolphScore`/`rudolphTrend` (Rudolph age-graded score), …).
 - `src/theme.jsx` — light/dark palettes + context (`useUI`), persisted to `localStorage`.
-- `src/App.jsx` — auth gate, swimmer picker, 6 tabs (Home, Meets, Progress, Records, Seasons, Settings). Progress tab shows Points Trend + Rudolph "Age Score" trend (50m only, hidden for swimmers over 20) with a "?" info modal.
+- `src/App.jsx` — auth gate, swimmer picker, 6 tabs (Home, Meets, Progress, Records, Seasons, Settings). Progress tab shows Points Trend + Rudolph "Age Score" trend (50m only, hidden for swimmers over 20) with a "?" info modal. `AdminScreen` (owner-only, reachable via `TopBar`'s avatar menu) is a 7th, hidden full-screen state alongside these 6 tabs — not one of them, see "Admin Tab" above.
 - Build/deploy: `cd mobile && npm run build` (a `prebuild` copies `../swim_tracker.html` → `public/extract.html`; Vite also copies `mobile/public/bm2.js` verbatim into `dist/`) then `firebase deploy`.
 
 ---
@@ -309,6 +321,42 @@ The actual extraction logic lives in `mobile/public/bm2.js` (deployed with `no-c
 ### Dead code
 
 `BM`/`copyBM1` (the old "Auto Extraction," multi-season, iframe-crawling console script) still exists in the source but isn't wired to any visible button — leave it alone unless specifically asked to revive or remove it.
+
+---
+
+## New-Swimmer Approval Modal (desktop only)
+
+Loading a file for an unrecognized LogLig player ID — via the bookmarklet, paste-HTML, or the Extract tab's quick name+ID "+ Add" form — no longer silently auto-creates a swimmer. It opens a review modal (`#newSwimmerModal`) pre-filled with whatever's known, lets you edit any field, and only creates on explicit "Add Swimmer" (Cancel discards, creates nothing).
+
+**Auto-fill, from the LogLig page itself:**
+- **Name** — already scraped into the downloaded JSON's `_swimmerName` (`bm2.js`/`extractFromHtml`); previously captured but never read back out (real bug, fixed 2026-07-31) — new swimmers used to get a placeholder `"Swimmer <id>"` name.
+- **Birth year → DOB** — LogLig shows a swimmer's birth year (not exact DOB) as a pill under their name ("שנת לידה 1980"), matched via a text-pattern regex against the raw page (`/שנת\s*לידה[^0-9]{0,12}(\d{4})/`) rather than a specific CSS selector — more resilient to LogLig markup changes, same reasoning as the results-table detection above. Defaults the new swimmer's DOB to **January 1** of that year (exact DOB isn't published).
+- **Sex** — same pill row ("מגדר זכר"/"נקבה"), `/מגדר[^א-ת]{0,12}(זכר|נקבה)/`.
+- Both `_birthYear`/`_sex` flow through `mergeRaw()` → `finalize()` the same way `_swimmerId`/`_swimmerName` already did, captured before the season-data "cleaning" pass strips them.
+
+**Duplicate detection — `findExistingSwimmer(id, name)`, matches by ID *or* name.** If either matches an existing local swimmer, that swimmer is selected instead of a new one being created (fixes a real, previously-unchecked bug: the old manual "+ Add" form pushed straight into `SWIMMERS` with zero duplicate check at all).
+
+**Two real bugs found live after this shipped, both worth remembering as a pattern — a new code path skipping the "normal" load flow must explicitly refresh every piece of state that flow used to refresh as a side effect:**
+1. **New swimmer had no team.** `confirmNewSwimmerModal()`'s new-swimmer branch never stamped `teamIds` from `window.currentTeamId` — `addSettingsSwimmer` (a separate, older add-swimmer path in Settings) already did this correctly, the new modal just didn't match it. A swimmer added while a specific team was active landed with NO team at all, falling into a legacy grouping instead — this is what produced the "phantom Team Har-Shai duplicate" incident described in the Teams section above. Fixed: the modal now stamps `teamIds:[window.currentTeamId]` too.
+2. **Stale sex/DOB in the Records tab's age-group comparison.** `window.__recProfile` (what `buildRecords` actually reads for sex/birthdate/recordName — NOT the swimmer's own `sw.sex`) is normally refreshed by `doLoadFromCloud` on every real swimmer switch. The modal deliberately calls `renderSwimmerBanner()`/`buildAll()` directly instead of going through `doLoadFromCloud` (to avoid an unwanted cloud fetch for data already in memory) — so `__recProfile` was never told about the new/newly-selected swimmer, and kept whatever the PREVIOUSLY viewed swimmer's sex was. Live-reported: viewing a female swimmer's Records tab, then confirming a new male swimmer via the modal, kept comparing him against women's age-group records, even though his `sex` field was correctly saved as "male" in Firestore. Fixed: both branches of `confirmNewSwimmerModal()` now explicitly set `window.__recProfile` themselves. Same bug class as the PDF-report "wrong swimmer" race documented in the assistant's memory (a stale global not refreshed by a new code path), different global.
+
+`createdAt` is stamped once at creation (`Date.now()`, both `confirmNewSwimmerModal` and `addSettingsSwimmer`) and forwarded by `swimSaveProfile` ONLY when the local object already has one — an older swimmer re-saved after an edit never gets a fabricated "created now" timestamp. This is what powers the Admin "Swimmers Added Per Week" chart below; most pre-existing production swimmers predate this field and have no `createdAt` at all (that chart's note accounts for this rather than hiding it).
+
+Mobile has no equivalent modal — LogLig extraction (and therefore auto-add-on-load) is desktop-only.
+
+---
+
+## Admin "Data Statistics" Panel
+
+A collapsed section in the Admin tab/screen (both apps — `renderAdminDataStats()` desktop, `AdminDataStatsPanel` mobile React component), directly requested: swimmers added per week, male/female split, age distribution, and swimmers per team.
+
+- **Swimmers Added Per Week** — bar chart, bucketed by Monday-start week (`_weekStartLabel`/`weekStartLabel`, identical logic in both apps) from `createdAt`. Only counts swimmers that HAVE a `createdAt` (see above); a note shows how many don't.
+- **Male / Female Split** — pie chart, with **percentage shown in the legend text** (not in-slice labels — an earlier version tried in-slice Chart.js/Recharts labels; on mobile specifically, a screenshot taken too early caught the pie chart mid-mount-animation looking like a broken sliver, a timing artifact not a real bug, but the legend-text approach sidesteps the fragile in-slice rendering entirely and reads better on a narrow phone screen anyway).
+- **Age Distribution** — bar chart with **single-year buckets for ages 9-18** (the range that matters swim-by-swim for this roster) and **5-year bands outside that range** (`<9`, then `19-23` … `49+`) — explicit ask, not a default choice; age computed via the same year-end convention as `_recAge`/`recordAge` (see "Age / Age-Group Logic" above), not `getAgeAt`.
+- **Swimmers Per Team** — horizontal bar chart, reuses the already-named `teams` array from the Teams list above it, so "Team"/"Shared roster" badges stay consistent between the two.
+- A "Best FINA Points Distribution" chart was tried and removed after live feedback ("doesn't matter for this aspect") — don't re-add it without being asked.
+
+**Module-script gotcha (desktop only, worth knowing before adding a 6th chart here)**: this whole region of `swim_tracker.html` runs inside `<script type="module">` (needs the Firebase modular SDK imports) — unlike the classic-script Analyze-tab charts elsewhere in the file, a bare `var xChartInst` here is module-scoped, NOT auto-exposed on `window` the way `window.btChartInst` etc. are. Every chart instance here is assigned directly as `window.adminXChartInst` so both the destroy-before-recreate pattern and any test/debugging code that reads it can actually reach it.
 
 ---
 
@@ -516,9 +564,17 @@ Masters swimmers (age > `MASTERS_REPORT_AGE`, 30) get a % gap-to-World-Record co
 
 ---
 
+## Team Tab (desktop-only per-coach view)
+
+A per-coach roster view (`#tc-team`) with highlight cards (`_teamHighlights(roster)`) computed from `_teamSeasonRecap(D)` per swimmer: Most Improved, Top Points Swim, Busiest Competitor, and — added 2026-07-31, directly requested — **"May need attention"**: a swimmer who swims an event often (**>5 times in the latest season**, the threshold specified verbatim by the user) with **zero improvement** between their first and best time that season (`stagnantEv`/`stagnantPct`/`stagnantCount` in `_teamSeasonRecap`, same `firstIn[k]`/`bestIn[k]` per-event data already computed for Most Improved, plus a new per-event `countIn[k]` tally). Picks the single worst (most negative/least-improved) qualifying event across the whole roster, same one-highlight-card convention as the other three. Rendered as a red `⚠️ May need attention: <name>` card — an early-warning signal (possible stroke/technique or growth-related issue) that "most improved" alone can't surface. Mobile has no Team tab (see the 2026-07-19 nav-capacity note below).
+
+---
+
 ## Admin Tab (owner-only)
 
-Cross-coach view, gated by `isOwner()` in rules and an `owner` check in the UI (desktop: a dedicated top-nav tab, hidden for non-owners; mobile: folded into Settings, no separate bottom-nav icon — mobile's nav was already at capacity). Sections, top to bottom: Stats (teams/swimmers/open-invite-code KPIs), Coaches list, Performance Split (one table **per team**, not one combined table — `groupCoachesIntoTeams()`), Least Recently Synced, **Invite a Coach** (generate a code) sitting immediately next to **Invite Codes** (the list of all codes ever generated, open vs. redeemed) — these two were split apart by Performance Split/Least-Recently-Synced in an earlier layout and moved together since they're the same feature end-to-end, then the four reference-table upload/publish panels (Israeli Records ③, Rudolph ④, USA Standards ⑤, Masters World Records ⑥, Masters Top-10 Rankings ⑦) — owner-only "upload once in a while" tools, deliberately kept out of the everyday Extract-tab workflow.
+Cross-coach view, gated by `isOwner()` in rules and an `owner` check in the UI. **Desktop**: a dedicated top-nav tab, hidden for non-owners. **Mobile**: moved (2026-07-31, directly requested) out of the Settings tab into its own hidden, full-screen `AdminScreen` — reachable only via a "🔑 Admin" item in `TopBar`'s avatar dropdown menu (below "Switch account"), owner-gated, with a back arrow to return; deliberately NOT a 7th bottom-nav icon (mobile's nav was already at its intentional 6-icon cap — see the 2026-07-19 UI-decisions note this doc originally shipped with). `#topbarAvatarBtn`/`#topbarMenuAdmin` are the stable test-hook ids for this flow.
+
+Sections, top to bottom: Stats (teams/swimmers/open-invite-code KPIs), Coaches list, **Data Statistics** (collapsed — see its own section above), Performance Split (one table **per team**, not one combined table — `groupCoachesIntoTeams()`), Least Recently Synced, **Invite a Coach** (generate a code) sitting immediately next to **Invite Codes** (the list of all codes ever generated, open vs. redeemed) — these two were split apart by Performance Split/Least-Recently-Synced in an earlier layout and moved together since they're the same feature end-to-end, then (desktop only) the four reference-table upload/publish panels (Israeli Records ③, Rudolph ④, USA Standards ⑤, Masters World Records ⑥, Masters Top-10 Rankings ⑦) — owner-only "upload once in a while" tools, deliberately kept out of the everyday Extract-tab workflow.
 
 ---
 
@@ -579,6 +635,10 @@ var ENG_MONTHS = ['Jan','Feb',...,'Dec'];           // used by fmtDateShort()
 | A per-swimmer table/card grows unboundedly and can overflow a printed page | A results table with one row per meet has no natural cap | Cap visible rows with an explicit `maxRows` param + a "+N more" note (see `makeEvTable`/PDF Summary report) rather than trusting real data will "usually" be small |
 | Long comma-joined table cell forces the whole table into horizontal scroll | Global `.tbl-card td{white-space:nowrap}` rule (fine for short cells) fights a long list | Wrap each list entry as its own `white-space:nowrap` "chip" inside a `white-space:normal` container — the cell grows taller instead of the table growing wider |
 | New `config/*` reference doc reads/writes fail with "insufficient permissions" | Forgot to add the new doc name to `firestore.rules`' `isMember()`-gated list — the generic pattern isn't automatic | Grep `firestore.rules` for the sibling `config/*` docs (records/rudolph/usaStandards/mastersRecords/mastersTop10) and add the new one alongside them |
+| A new swimmer/team-clustering code path silently produces wrong data (no team, stale sex/age comparisons) | A new "create/select swimmer" flow that bypasses the normal load path (`doLoadFromCloud`, `finalize()`) must explicitly redo everything that path used to do as a side effect — `window.currentTeamId` tagging, `window.__recProfile` refresh, etc. — nothing does it for you automatically | Grep every OTHER place a swimmer gets created/selected (`addSettingsSwimmer`, `doLoadFromCloud`) and mirror what it sets, don't assume "select the swimmer" alone is enough |
+| A `Chart.js`/Recharts instance is `undefined` when read from a test or another function | Desktop: this code runs inside `<script type="module">` (Firebase imports) — a bare `var xChartInst` there is module-scoped, not auto-exposed on `window` the way classic-script chart vars are | Assign chart instances directly as `window.xChartInst`, not a bare module-level `var`, inside any module-script code |
+| A chart/pie renders as a broken sliver or is missing in a screenshot | Caught mid-mount-animation (Chart.js/Recharts both animate in by default) — a timing artifact of the capture, not a real render bug | Wait longer (1-2s) before screenshotting, or re-check after the fact — don't assume a mid-animation frame is the final state |
+| A coach's personal `teamName` label matches a real team's name | Coincidental (or left over from converting a legacy cluster into an explicit team without also renaming the personal label) — any untagged swimmer landing in that coach's legacy grouping will display as an indistinguishable duplicate of the real team | Keep personal account labels distinct from every real team name; if converting a legacy cluster into a team, rename the personal label(s) too, don't just create the `teams/{id}` doc |
 
 ---
 
@@ -587,9 +647,10 @@ var ENG_MONTHS = ['Jan','Feb',...,'Dec'];           // used by fmtDateShort()
 `tests/` (repo root) — a headless Playwright suite driving the REAL `swim_tracker.html`/mobile app in a browser, with only the Firebase CDN modules/imports swapped for in-memory mocks (`tests/mocks/`, `tests/mobile-mocks/`) — real clicks/fills/saves against the shipped UI, not unit tests against extracted logic.
 
 - **Run it**: `cd tests && npm install && node run-all.js` (or `npm test`). Prints a step-by-step ✓/✗ report per scenario plus a final PASS/FAIL table; exits 0/1.
-- **~39 scenarios** as of this writing, in `tests/scenarios/` (desktop + `mobile-*` twins covering the same behavior on each app where applicable).
+- **60 scenarios** as of this writing, in `tests/scenarios/` (desktop + `mobile-*` twins covering the same behavior on each app where applicable).
 - **Standing rule**: every new feature or bug fix ships with a corresponding scenario — not an afterthought, part of "done." Prefer `button:has-text("X")` over bare `text=X` for anything clickable (bare text can match unrelated prose elsewhere on the page and silently no-op a click).
 - **CI**: `.github/workflows/tests.yml` runs the full suite on every push/PR to `master`.
+- **A `seed()` function passed to `openDesktopApp`/`openMobileApp` is serialized via `.toString()` and re-parsed standalone in the browser page — it CANNOT see outer Node.js closures.** A shared helper function referenced from inside `seed()` (e.g. a `evt()` row-builder, or a `seedShared()` wrapper factored out across two calls) fails silently inside the page (`"X is not defined"`, swallowed — not a page crash), leaving `window.__mockStore` only partially seeded, which then produces confusing downstream test failures that look unrelated to the real cause. Always inline seed data fully inside each `seed()` function; never factor it into a function defined outside it.
 
 ---
 
