@@ -1396,9 +1396,10 @@ function landingSignIn(){
       <button id="raceClearBtn2" onclick="clearRace2()" style="display:none;padding:5px 12px;background:#f5f4f0;color:#555;border:1px solid #e8e6e0;border-radius:7px;font-size:11px;cursor:pointer">✕ Clear 2nd race</button>
     </div>
     <div id="raceCompareHighlight" style="display:none;margin-bottom:14px">
-      <p style="font-size:11px;color:#888;margin-bottom:6px">Highlight from 2nd race:</p>
+      <p style="font-size:11px;color:#888;margin-bottom:6px">Compare swimmer B (any swimmer from the 2nd race):</p>
       <div id="raceSwimmerSelect2" style="display:flex;gap:6px;flex-wrap:wrap"></div>
     </div>
+    <div id="raceCompareTable" style="display:none"></div>
 
   </div>
 
@@ -4571,8 +4572,81 @@ function renderRaceResults(){
     return '<button class="ev-btn'+(i===raceHighlight?' active':'')+'" onclick="selectRaceSwimmer('+i+')" style="font-size:12px">'+sw.place+'. '+sw.name+' ('+sw.totalFmt+')</button>';
   }).join('');
   renderRaceChart();renderRaceMetrics();renderRaceLapTable();renderRaceInsights();
+  renderRaceCompare();
 }
 function selectRaceSwimmer(idx){raceHighlight=idx;renderRaceResults();};
+
+// ── 2nd-race comparison: pick any swimmer from race 2's own field to
+// compare against the swimmer selected above (same swimmer across two
+// races — e.g. heats vs finals — or two different swimmers entirely). ──
+function selectRaceSwimmer2(idx){raceHighlight2=idx;renderRaceResults();};
+function renderRaceCompare(){
+  var wrap=document.getElementById('raceCompareHighlight');
+  var tableWrap=document.getElementById('raceCompareTable');
+  var clearBtn2=document.getElementById('raceClearBtn2');
+  if(!raceData2||!raceData2.length){
+    if(wrap)wrap.style.display='none';
+    if(tableWrap)tableWrap.style.display='none';
+    if(clearBtn2)clearBtn2.style.display='none';
+    return;
+  }
+  if(clearBtn2)clearBtn2.style.display='';
+  if(wrap){
+    wrap.style.display='';
+    var sel2=document.getElementById('raceSwimmerSelect2');
+    sel2.innerHTML=raceData2.map(function(s,i){
+      return '<button class="ev-btn'+(i===raceHighlight2?' active':'')+'" onclick="selectRaceSwimmer2('+i+')" style="font-size:12px">'+s.place+'. '+s.name+' ('+s.totalFmt+')</button>';
+    }).join('');
+  }
+  var A=raceData[raceHighlight],B=raceData2[raceHighlight2];
+  if(!tableWrap||!A||!B||!A.splits||!B.splits){if(tableWrap)tableWrap.style.display='none';return;}
+  tableWrap.style.display='';
+  function avgOf(vals){var v=vals.filter(function(x){return x!=null;});return v.length?v.reduce(function(a,b){return a+b;},0)/v.length:null;}
+  function avg100(splits){
+    var pairs=[];
+    for(var i=0;i+1<splits.length;i+=2){if(splits[i]!=null&&splits[i+1]!=null)pairs.push(splits[i]+splits[i+1]);}
+    return avgOf(pairs);
+  }
+  var aAvg50=avgOf(A.splits),bAvg50=avgOf(B.splits);
+  var aAvg100=avg100(A.splits),bAvg100=avg100(B.splits);
+  function fmtDelta(a,b){
+    if(a==null||b==null)return '<span style="color:#aaa">—</span>';
+    var d=a-b; // positive = B faster
+    if(Math.abs(d)<0.005)return '<span style="color:#888">even</span>';
+    return '<span style="color:'+(d>0?'#1a9e6f':'#c0392b')+'">'+(d>0?'B −':'B +')+Math.abs(d).toFixed(2)+'s</span>';
+  }
+  var nLaps=Math.max(A.splits.length,B.splits.length);
+  var rows='';
+  for(var i=0;i<nLaps;i++){
+    var av=A.splits[i],bv=B.splits[i];
+    rows+='<tr><td style="padding:5px 10px;color:#888">'+((i+1)*50)+'m</td>'
+      +'<td style="padding:5px 10px;text-align:right">'+(av!=null?fmtSec(av):'—')+'</td>'
+      +'<td style="padding:5px 10px;text-align:right">'+(bv!=null?fmtSec(bv):'—')+'</td>'
+      +'<td style="padding:5px 10px;text-align:right;font-weight:600">'+fmtDelta(av,bv)+'</td></tr>';
+  }
+  tableWrap.innerHTML=
+    '<div class="section-title" style="margin-top:14px">Race Comparison</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">'
+      +'<div></div>'
+      +'<div style="text-align:center;font-weight:700;font-size:12px;color:#185FA5">A: '+A.name+'</div>'
+      +'<div style="text-align:center;font-weight:700;font-size:12px;color:#EF9F27">B: '+B.name+'</div>'
+    +'</div>'
+    +'<div class="card" style="padding:14px 18px;margin-bottom:14px">'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px">'
+        +'<div style="color:#888">Total time</div><div style="text-align:center">'+A.totalFmt+'</div><div style="text-align:center">'+B.totalFmt+'</div>'
+        +'<div style="color:#888">Place</div><div style="text-align:center">'+(A.place||'—')+'</div><div style="text-align:center">'+(B.place||'—')+'</div>'
+        +'<div style="color:#888">Avg 50m split</div><div style="text-align:center">'+(aAvg50!=null?fmtSec(aAvg50):'—')+'</div><div style="text-align:center">'+(bAvg50!=null?fmtSec(bAvg50):'—')+'</div>'
+        +'<div style="color:#888">Avg 100m split</div><div style="text-align:center">'+(aAvg100!=null?fmtSec(aAvg100):'—')+'</div><div style="text-align:center">'+(bAvg100!=null?fmtSec(bAvg100):'—')+'</div>'
+      +'</div>'
+    +'</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<thead><tr style="border-bottom:1px solid #e5e7eb"><th style="padding:5px 10px;text-align:left;color:#9ca3af;font-size:10px;text-transform:uppercase">Split</th>'
+        +'<th style="padding:5px 10px;text-align:right;color:#185FA5;font-size:10px;text-transform:uppercase">A</th>'
+        +'<th style="padding:5px 10px;text-align:right;color:#EF9F27;font-size:10px;text-transform:uppercase">B</th>'
+        +'<th style="padding:5px 10px;text-align:right;color:#9ca3af;font-size:10px;text-transform:uppercase">Δ</th></tr></thead>'
+      +'<tbody>'+rows+'</tbody>'
+    +'</table>';
+}
 
 function renderRaceChart(){
   var sw=raceData[raceHighlight],winner=raceData[0];
@@ -4603,10 +4677,15 @@ function renderRaceChart(){
       borderColor:'#185FA5',backgroundColor:'transparent',borderWidth:2,
       borderDash:[8,4],pointRadius:3,pointBackgroundColor:'#185FA5',tension:0.3,spanGaps:true,order:1});
   }
-  // Compute tight Y range from actual split data
+  // Compute tight Y range from only the swimmers actually highlighted on the
+  // chart (winner, the selected swimmer, the 2nd-race swimmer) — NOT every
+  // swimmer in the field. A single DNF/DQ/timing-glitch row elsewhere in the
+  // results (e.g. a swimmer who stopped mid-race, logged with lap times of a
+  // minute-plus) would otherwise blow the range out for everyone, even
+  // though that swimmer only ever renders as a thin, mostly-irrelevant gray
+  // background line.
   var _allSp=[];
-  raceData.forEach(function(s){if(s.splits)s.splits.forEach(function(v){if(v>5&&v<300)_allSp.push(v);});});
-  if(raceData2)raceData2.forEach(function(s){if(s.splits)s.splits.forEach(function(v){if(v>5&&v<300)_allSp.push(v);});});
+  [sw,winner,(raceData2&&raceData2[raceHighlight2])].forEach(function(s){if(s&&s.splits)s.splits.forEach(function(v){if(v>5&&v<300)_allSp.push(v);});});
   var _rYMin=_allSp.length?Math.max(20,Math.floor(Math.min.apply(null,_allSp))-2):28;
   var _rYMax=_allSp.length?Math.ceil(Math.max.apply(null,_allSp))+2:52;
   if(raceChartInst)raceChartInst.destroy();
@@ -4736,7 +4815,7 @@ function handleRaceDrop2(file){
       if(raceData2&&raceData2.length){
         st.textContent='✅ Loaded '+raceData2.length+' swimmer(s) for comparison.';
         st.style.color='#1a9e6f';
-        if(typeof renderRaceChart==='function')renderRaceChart();
+        if(typeof renderRaceResults==='function')renderRaceResults();
       } else {
         st.textContent='No race data found in PDF.';
         st.style.color='#a32d2d';
@@ -4752,7 +4831,7 @@ function clearRace2(){
   raceData2=null;raceHighlight2=0;
   var el=document.getElementById('raceCompareStatus');
   if(el)el.textContent='';
-  if(typeof renderRaceChart==='function')renderRaceChart();
+  if(typeof renderRaceResults==='function')renderRaceResults();
 };
 </script>
 
