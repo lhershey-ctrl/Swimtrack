@@ -1347,6 +1347,9 @@ function landingSignIn(){
 
   <details style="margin-bottom:12px"><summary style="font-size:11px;color:#aaa;cursor:pointer;user-select:none">🔍 Show extracted text (debug)</summary><textarea id="raceDebugArea" rows="8" readonly style="width:100%;box-sizing:border-box;margin-top:6px;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:10px;font-family:monospace;direction:ltr;background:#f8f8f8;color:#666;resize:vertical"></textarea></details>
   <div id="raceResults" style="display:none">
+    <div class="section-title">All Results<span id="raceEventBadge" style="font-weight:400;color:#888;font-size:12px;margin-left:8px"></span></div>
+    <div id="raceFullTable" style="margin-bottom:20px"></div>
+
     <div class="section-title">Swimmer Highlight</div>
     <div id="raceSwimmerSelect" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
 
@@ -1395,10 +1398,33 @@ function landingSignIn(){
       <span id="raceCompareStatus" style="font-size:12px;color:#888"></span>
       <button id="raceClearBtn2" onclick="clearRace2()" style="display:none;padding:5px 12px;background:#f5f4f0;color:#555;border:1px solid #e8e6e0;border-radius:7px;font-size:11px;cursor:pointer">✕ Clear 2nd race</button>
     </div>
+    <div id="raceRosterSplit" style="display:none;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:10px">
+        <div>
+          <div class="section-title" style="margin-bottom:6px">Swimmers in Both Races</div>
+          <div id="raceMatchedList" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
+        <div>
+          <div class="section-title" style="margin-bottom:6px">Only Swam One Race</div>
+          <div id="raceUnmatchedList" style="display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:#aaa"></div>
+        </div>
+      </div>
+      <div id="raceIncompleteWrap" style="display:none">
+        <div class="section-title" style="margin-bottom:6px">Matched, But Incomplete Data</div>
+        <div id="raceIncompleteList" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+      </div>
+    </div>
+
+    <div id="raceProgressWrap" style="display:none;margin-bottom:20px">
+      <div class="section-title">Progress — Every Matched Swimmer</div>
+      <div id="raceProgressTable"></div>
+    </div>
+
     <div id="raceCompareHighlight" style="display:none;margin-bottom:14px">
-      <p style="font-size:11px;color:#888;margin-bottom:6px">Compare swimmer B (any swimmer from the 2nd race):</p>
+      <p style="font-size:11px;color:#888;margin-bottom:6px">Compare swimmer B (any swimmer from the 2nd race — swap to compare a different swimmer entirely):</p>
       <div id="raceSwimmerSelect2" style="display:flex;gap:6px;flex-wrap:wrap"></div>
     </div>
+    <div id="raceWhatChanged" style="display:none;margin-bottom:14px"></div>
     <div id="raceCompareTable" style="display:none"></div>
 
   </div>
@@ -4449,7 +4475,25 @@ function renderRaceInsights(){
 
 // ── RACE ANALYSIS ──────────────────────────────────────────────────
 var raceData=null,raceChartInst=null,raceHighlight=0;
+var raceEventMeta=null,raceEventMeta2=null;
 function initRaceTab(){}
+// Extracts distance/stroke/sex from a LogLig race-results PDF header, e.g.
+// "400 חופשי - נ - תוצאות" → 400m Free (Girls). Used to detect whether two
+// loaded races are actually the same event before allowing a comparison.
+function parseEventMeta(raw){
+  if(!raw)return null;
+  var strokeMap={'חופשי':'Free','גב':'Back','חזה':'Breast','פרפר':'Fly','מעורב':'IM','מדליה':'IM'};
+  var m=raw.match(/(\d{2,4})\s*(חופשי|גב|חזה|פרפר|מעורב|מדליה)/);
+  if(!m)return null;
+  var sexM=raw.match(/[-–]\s*(נ|ז)\s*[-–]/);
+  var stroke=strokeMap[m[2]]||m[2];
+  var sex=sexM?(sexM[1]==='נ'?'Girls':'Boys'):null;
+  return {distance:parseInt(m[1],10),stroke:stroke,sex:sex,label:m[1]+'m '+stroke+(sex?' ('+sex+')':'')};
+}
+function eventMetaMatches(a,b){
+  if(!a||!b)return null; // couldn't parse one/both — don't block on uncertainty
+  return a.distance===b.distance&&a.stroke===b.stroke&&a.sex===b.sex;
+}
 function clearRaceResults(){raceData=null;document.getElementById('raceResults').style.display='none';document.getElementById('raceParseStatus').textContent='';var cb=document.getElementById('raceClearBtn');if(cb)cb.style.display='none';var dz=document.getElementById('racePdfInput');if(dz)dz.value='';}
 function parseTime(s){
   if(!s)return null;s=s.trim();
@@ -4466,6 +4510,7 @@ function parseRaceTextFromString(raw){
     document.getElementById('raceParseStatus').textContent='No text found in PDF.';
     return;
   }
+  raceEventMeta=parseEventMeta(raw);
 
   // Show raw extracted text for debugging
   var dbg=document.getElementById('raceDebugArea');
@@ -4567,30 +4612,162 @@ function parseRaceTextFromString(raw){
 function renderRaceResults(){
   if(!raceData)return;
   document.getElementById('raceResults').style.display='';
+  var badge=document.getElementById('raceEventBadge');
+  if(badge)badge.textContent=raceEventMeta?('· '+raceEventMeta.label):'';
   var sel=document.getElementById('raceSwimmerSelect');
   sel.innerHTML=raceData.map(function(sw,i){
     return '<button class="ev-btn'+(i===raceHighlight?' active':'')+'" onclick="selectRaceSwimmer('+i+')" style="font-size:12px">'+sw.place+'. '+sw.name+' ('+sw.totalFmt+')</button>';
   }).join('');
+  renderRaceFullTable();
   renderRaceChart();renderRaceMetrics();renderRaceLapTable();renderRaceInsights();
   renderRaceCompare();
 }
 function selectRaceSwimmer(idx){raceHighlight=idx;renderRaceResults();};
 
+// Full results table: every swimmer, every split — not just the highlighted
+// one. Click a row to change who's highlighted in the chart/metrics below.
+function renderRaceFullTable(){
+  var wrap=document.getElementById('raceFullTable');
+  if(!wrap||!raceData||!raceData.length)return;
+  var nLaps=0;raceData.forEach(function(s){if(s.splits&&s.splits.length>nLaps)nLaps=s.splits.length;});
+  var head='<tr style="background:#f5f4f0;font-size:10.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.03em">'
+    +'<th style="padding:7px 10px;text-align:left">Place</th><th style="padding:7px 10px;text-align:left">Swimmer</th><th style="padding:7px 10px">Total</th>';
+  for(var l=0;l<nLaps;l++)head+='<th style="padding:7px 10px">'+((l+1)*50)+'m</th>';
+  head+='</tr>';
+  var rows=raceData.map(function(sw,i){
+    var incomplete=!sw.splits||sw.splits.length<nLaps||sw.splits.indexOf(null)!==-1;
+    var cells='<td style="padding:6px 10px;font-weight:600;color:#888">'+(sw.place||(i+1))+'</td>'
+      +'<td style="padding:6px 10px;font-weight:600">'+sw.name+(incomplete?' <span style="color:#c0392b;font-weight:700;font-size:10px">DNF</span>':'')+'</td>'
+      +'<td style="padding:6px 10px;text-align:center;font-weight:700">'+(sw.totalFmt||'—')+'</td>';
+    for(var l=0;l<nLaps;l++){
+      var v=sw.splits?sw.splits[l]:null;
+      cells+='<td style="padding:6px 10px;text-align:center'+(incomplete?';color:#c0392b':'')+'">'+(v!=null?fmtSec(v):'—')+'</td>';
+    }
+    return '<tr onclick="selectRaceSwimmer('+i+')" style="border-top:1px solid #f0efe9;font-size:12px;cursor:pointer;'
+      +(i===raceHighlight?'background:#eef5fc':'')+'" onmouseover="this.style.background=\'#f7f9fb\'" onmouseout="this.style.background=\''+(i===raceHighlight?'#eef5fc':'')+'\'">'+cells+'</tr>';
+  }).join('');
+  wrap.innerHTML='<div class="tbl-card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;white-space:nowrap">'+head+rows+'</table></div>';
+}
+
 // ── 2nd-race comparison: pick any swimmer from race 2's own field to
 // compare against the swimmer selected above (same swimmer across two
 // races — e.g. heats vs finals — or two different swimmers entirely). ──
 function selectRaceSwimmer2(idx){raceHighlight2=idx;renderRaceResults();};
+function normSwName(n){return (n||'').replace(/\s+/g,' ').trim();}
+// A swim only counts as "complete" if every 50m mark up to the race's own
+// full distance has a real recorded split — a DNF/DQ that stopped partway
+// (nulls from that point on) must never feed a before/after comparison, or
+// the "progress" number would be measuring a swim that didn't happen.
+function isCompleteSwim(sw,expectedLaps){
+  if(!sw||!sw.splits||!expectedLaps)return false;
+  if(sw.splits.length<expectedLaps)return false;
+  for(var i=0;i<expectedLaps;i++){if(sw.splits[i]==null)return false;}
+  return true;
+}
+function computeRaceCompareBuckets(){
+  var nLapsA=0;raceData.forEach(function(s){if(s.splits&&s.splits.length>nLapsA)nLapsA=s.splits.length;});
+  var nLapsB=0;raceData2.forEach(function(s){if(s.splits&&s.splits.length>nLapsB)nLapsB=s.splits.length;});
+  var mapB={};raceData2.forEach(function(s,i){mapB[normSwName(s.name)]=i;});
+  var matched=[],onlyA=[],onlyB=[],incomplete=[],seenB={};
+  raceData.forEach(function(sA,iA){
+    var key=normSwName(sA.name);
+    if(Object.prototype.hasOwnProperty.call(mapB,key)){
+      var iB=mapB[key];seenB[iB]=true;
+      var okA=isCompleteSwim(sA,nLapsA),okB=isCompleteSwim(raceData2[iB],nLapsB);
+      (okA&&okB?matched:incomplete).push({iA:iA,iB:iB,name:sA.name});
+    } else onlyA.push({iA:iA,name:sA.name});
+  });
+  raceData2.forEach(function(sB,iB){if(!seenB[iB])onlyB.push({iB:iB,name:sB.name});});
+  return {matched:matched,onlyA:onlyA,onlyB:onlyB,incomplete:incomplete};
+}
+// Plain-language read of what changed between two swims of the SAME
+// swimmer — only meaningful for a genuine self-comparison, not swimmer-vs-
+// swimmer (caller checks that before rendering this).
+function computeWhatChanged(a,b){
+  var n=Math.min(a.length,b.length),deltas=[];
+  for(var i=0;i<n;i++){if(a[i]!=null&&b[i]!=null)deltas.push({i:i,d:a[i]-b[i]});} // positive d = B faster
+  if(!deltas.length)return [];
+  var out=[];
+  var best=deltas.reduce(function(m,x){return x.d>m.d?x:m;},deltas[0]);
+  if(best.d>0.05)out.push({t:'green',i:'🚀',h:'Biggest gain: '+(best.i*50)+'–'+((best.i+1)*50)+'m',b:'−'+best.d.toFixed(2)+'s on that lap alone — the single largest improvement of the swim.'});
+  var worst=deltas.reduce(function(m,x){return x.d<m.d?x:m;},deltas[0]);
+  if(worst.d<-0.05)out.push({t:'orange',i:'⚠️',h:'Only slower split: '+(worst.i*50)+'–'+((worst.i+1)*50)+'m',b:'+'+Math.abs(worst.d).toFixed(2)+'s there vs. last time.'});
+  else out.push({t:'green',i:'✅',h:'No regressions',b:'Every split matched or improved on the previous swim.'});
+  if(deltas.every(function(x){return x.d>=-0.02;}))out.push({t:'blue',i:'📈',h:'Even improvement, front to back',b:'Every split improved by a similar margin — not one lucky lap.'});
+  function fade(arr){var h=Math.floor(arr.length/2),f=arr.slice(0,h).reduce(function(x,y){return x+(y||0);},0),s=arr.slice(h).reduce(function(x,y){return x+(y||0);},0);return f?((s/f-1)*100):null;}
+  var fa=fade(a),fb=fade(b);
+  if(fa!=null&&fb!=null){
+    if(fb<fa-0.5)out.push({t:'green',i:'🏁',h:'Stronger finish',b:'Faded '+(fa-fb).toFixed(1)+'% less over the back half than last time.'});
+    else if(fb>fa+0.5)out.push({t:'orange',i:'📉',h:'Faded more this time',b:'Back-half fade increased by '+(fb-fa).toFixed(1)+'% vs. last time.'});
+  }
+  return out;
+}
 function renderRaceCompare(){
   var wrap=document.getElementById('raceCompareHighlight');
   var tableWrap=document.getElementById('raceCompareTable');
   var clearBtn2=document.getElementById('raceClearBtn2');
+  var rosterWrap=document.getElementById('raceRosterSplit');
+  var progressWrap=document.getElementById('raceProgressWrap');
+  var whatChangedWrap=document.getElementById('raceWhatChanged');
   if(!raceData2||!raceData2.length){
     if(wrap)wrap.style.display='none';
     if(tableWrap)tableWrap.style.display='none';
     if(clearBtn2)clearBtn2.style.display='none';
+    if(rosterWrap)rosterWrap.style.display='none';
+    if(progressWrap)progressWrap.style.display='none';
+    if(whatChangedWrap)whatChangedWrap.style.display='none';
     return;
   }
   if(clearBtn2)clearBtn2.style.display='';
+
+  var buckets=computeRaceCompareBuckets();
+
+  // ── Matched / unmatched / incomplete roster split ──
+  if(rosterWrap){
+    rosterWrap.style.display='';
+    document.getElementById('raceMatchedList').innerHTML=buckets.matched.map(function(m){
+      var active=(m.iA===raceHighlight&&m.iB===raceHighlight2);
+      return '<button class="ev-btn'+(active?' active':'')+'" onclick="selectRaceComparePair('+m.iA+','+m.iB+')" style="font-size:12px">'+m.name+'</button>';
+    }).join('')||'<span style="font-size:12px;color:#aaa">None</span>';
+    var unmatchedHtml=buckets.onlyA.map(function(m){return '<span class="ev-btn" style="font-size:11px;opacity:.6;cursor:default">'+m.name+' <em style="font-style:normal;color:#aaa">(race 1 only)</em></span>';})
+      .concat(buckets.onlyB.map(function(m){return '<span class="ev-btn" style="font-size:11px;opacity:.6;cursor:default">'+m.name+' <em style="font-style:normal;color:#aaa">(race 2 only)</em></span>';})).join('');
+    document.getElementById('raceUnmatchedList').innerHTML=unmatchedHtml||'<span style="font-size:12px;color:#aaa">None — every swimmer raced both</span>';
+    var incWrap=document.getElementById('raceIncompleteWrap');
+    if(buckets.incomplete.length){
+      incWrap.style.display='';
+      document.getElementById('raceIncompleteList').innerHTML=buckets.incomplete.map(function(m){
+        return '<span class="ev-btn" style="font-size:11px;opacity:.6;cursor:default;border-color:#e8b4ac">'+m.name+' <em style="font-style:normal;color:#c0392b">(DNF/incomplete)</em></span>';
+      }).join('');
+    } else incWrap.style.display='none';
+  }
+
+  // ── Progress summary: every matched, comparable swimmer, best-first ──
+  if(progressWrap){
+    if(!buckets.matched.length){progressWrap.style.display='none';}
+    else{
+      progressWrap.style.display='';
+      var rows=buckets.matched.map(function(m){
+        var sa=raceData[m.iA],sb=raceData2[m.iB];
+        var d=sa.total-sb.total,pct=sa.total?(d/sa.total*100):0;
+        return {name:m.name,ta:sa.totalFmt,tb:sb.totalFmt,d:d,pct:pct};
+      }).sort(function(x,y){return y.pct-x.pct;});
+      document.getElementById('raceProgressTable').innerHTML=
+        '<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+        +'<thead><tr style="border-bottom:1px solid #e5e7eb"><th style="padding:6px 10px;text-align:left;color:#9ca3af;font-size:10px;text-transform:uppercase">Swimmer</th>'
+          +'<th style="padding:6px 10px;text-align:right;color:#9ca3af;font-size:10px;text-transform:uppercase">Race 1</th>'
+          +'<th style="padding:6px 10px;text-align:right;color:#9ca3af;font-size:10px;text-transform:uppercase">Race 2</th>'
+          +'<th style="padding:6px 10px;text-align:right;color:#9ca3af;font-size:10px;text-transform:uppercase">Change</th></tr></thead>'
+        +'<tbody>'+rows.map(function(r){
+          var col=r.d>0.02?'#1a9e6f':r.d<-0.02?'#c0392b':'#888';
+          var arrow=r.d>0.02?'▼':r.d<-0.02?'▲':'—';
+          return '<tr><td style="padding:6px 10px;font-weight:600">'+r.name+'</td>'
+            +'<td style="padding:6px 10px;text-align:right">'+r.ta+'</td>'
+            +'<td style="padding:6px 10px;text-align:right">'+r.tb+'</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-weight:700;color:'+col+'">'+arrow+' '+Math.abs(r.d).toFixed(2)+'s · '+Math.abs(r.pct).toFixed(1)+'%</td></tr>';
+        }).join('')+'</tbody></table>';
+    }
+  }
+
   if(wrap){
     wrap.style.display='';
     var sel2=document.getElementById('raceSwimmerSelect2');
@@ -4599,7 +4776,11 @@ function renderRaceCompare(){
     }).join('');
   }
   var A=raceData[raceHighlight],B=raceData2[raceHighlight2];
-  if(!tableWrap||!A||!B||!A.splits||!B.splits){if(tableWrap)tableWrap.style.display='none';return;}
+  if(!tableWrap||!A||!B||!A.splits||!B.splits){
+    if(tableWrap)tableWrap.style.display='none';
+    if(whatChangedWrap)whatChangedWrap.style.display='none';
+    return;
+  }
   tableWrap.style.display='';
   function avgOf(vals){var v=vals.filter(function(x){return x!=null;});return v.length?v.reduce(function(a,b){return a+b;},0)/v.length:null;}
   function avg100(splits){
@@ -4646,7 +4827,21 @@ function renderRaceCompare(){
         +'<th style="padding:5px 10px;text-align:right;color:#9ca3af;font-size:10px;text-transform:uppercase">Δ</th></tr></thead>'
       +'<tbody>'+rows+'</tbody>'
     +'</table>';
+
+  // ── "What changed" — only meaningful for a genuine self-comparison ──
+  if(whatChangedWrap){
+    if(normSwName(A.name)===normSwName(B.name)){
+      var changes=computeWhatChanged(A.splits,B.splits);
+      if(changes.length){
+        whatChangedWrap.style.display='';
+        whatChangedWrap.innerHTML='<div class="section-title">What Changed</div><div class="insights-grid">'
+          +changes.map(function(c){return '<div class="insight '+c.t+'"><div class="ico">'+c.i+'</div><div><h4>'+c.h+'</h4><p>'+c.b+'</p></div></div>';}).join('')
+          +'</div>';
+      } else whatChangedWrap.style.display='none';
+    } else whatChangedWrap.style.display='none';
+  }
 }
+function selectRaceComparePair(iA,iB){raceHighlight=iA;raceHighlight2=iB;renderRaceResults();}
 
 function renderRaceChart(){
   var sw=raceData[raceHighlight],winner=raceData[0];
@@ -4808,10 +5003,21 @@ function handleRaceDrop2(file){
       return pages.reduce(function(chain,pNum){return chain.then(function(acc){return pdf.getPage(pNum).then(function(page){return page.getTextContent({normalizeWhitespace:false}).then(function(tc){var rows={};tc.items.forEach(function(item){var y=Math.round(item.transform[5]);if(!rows[y])rows[y]=[];rows[y].push({x:item.transform[4],str:item.str});});var ys=Object.keys(rows).map(Number).sort(function(a,b){return b-a;});acc.push(ys.map(function(y){return rows[y].sort(function(a,b){return b.x-a.x;}).map(function(i){return i.str;}).join(' ');}).join('\n'));return acc;});});});},Promise.resolve([]));
     }).then(function(pages){
       raceData2=null;
-      var savedData=raceData,savedHL=raceHighlight;
+      var savedData=raceData,savedHL=raceHighlight,savedMeta=raceEventMeta;
       parseRaceTextFromString(pages.join('\n'));
-      raceData2=raceData;raceHighlight2=raceHighlight;
-      raceData=savedData;raceHighlight=savedHL;
+      var newData=raceData,newMeta=raceEventMeta;
+      // Same-event check: block outright rather than silently comparing two
+      // different races. eventMetaMatches() returns null (not false) when
+      // either side couldn't be parsed — in that case we can't be sure, so
+      // don't block on uncertainty.
+      if(eventMetaMatches(savedMeta,newMeta)===false){
+        raceData=savedData;raceHighlight=savedHL;raceEventMeta=savedMeta;
+        st.innerHTML='❌ This file looks like <b>'+newMeta.label+'</b> — your first file was <b>'+savedMeta.label+'</b>. Comparison needs the same event. Please reload the correct file.';
+        st.style.color='#a32d2d';
+        return;
+      }
+      raceData2=newData;raceHighlight2=raceHighlight;raceEventMeta2=newMeta;
+      raceData=savedData;raceHighlight=savedHL;raceEventMeta=savedMeta;
       if(raceData2&&raceData2.length){
         st.textContent='✅ Loaded '+raceData2.length+' swimmer(s) for comparison.';
         st.style.color='#1a9e6f';
