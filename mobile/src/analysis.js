@@ -90,7 +90,7 @@ export function ageGroupLabel(age) {
   if (!age) return "";
   const a = Math.floor(age);
   if (a <= 11) return "U12";
-  if (a <= 15) return "Age " + a;
+  if (a <= 15) return ""; // ages 12-15: no separate bracket name — callers already show "Age N" itself, so a label here would just repeat it
   if (a <= 17) return "Cadet (16-17)";
   if (a <= 19) return "Junior (18-19)";
   return "Senior (20+)";
@@ -542,7 +542,8 @@ export function seasonRecap(D, swimmer) {
     const endYear = parseInt(String(sk).split("-")[1]) || parseInt(sk);
     const by = swimmer && swimmer.birthdate ? birthYear(swimmer.birthdate) : null;
     const age = by && endYear ? endYear - by : null;
-    return { season: sk, ageLabel: age != null ? "Age " + age + " · " + ageGroupLabel(age) : "",
+    const agl = age != null ? ageGroupLabel(age) : "";
+    return { season: sk, ageLabel: age != null ? "Age " + age + (agl ? " · " + agl : "") : "",
       nMeets, nSwims: res.length, nPBs, pbEvs, bestPts, impEv: impEv ? impEv.replace("|", " ") : null, impPct };
   });
 }

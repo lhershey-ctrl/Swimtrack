@@ -24,7 +24,7 @@ export function summaryText(sw, D) {
   const pbs = recentPBs(D, 5);
   const L = [];
   L.push("🏊 " + (sw && sw.name ? sw.name : "Swimmer") + " — SwimTrack");
-  if (age) L.push("Age " + Math.floor(age) + " · " + ageGroupLabel(age));
+  if (age) { const agl = ageGroupLabel(age); L.push("Age " + Math.floor(age) + (agl ? " · " + agl : "")); }
   L.push(ss.length + " season" + (ss.length !== 1 ? "s" : "") + " · " + ar.length + " swims");
   if (pbs.length) {
     L.push("");
@@ -68,7 +68,8 @@ export function makeCardBlob(sw, D) {
     x.fillText((sw && sw.name) || "Swimmer", 64, 170);
     x.font = "500 40px -apple-system, Segoe UI, sans-serif";
     x.fillStyle = "rgba(255,255,255,.85)";
-    x.fillText(age ? "Age " + Math.floor(age) + " · " + ageGroupLabel(age) : "SwimTrack", 64, 240);
+    const shareAgl = age ? ageGroupLabel(age) : "";
+    x.fillText(age ? "Age " + Math.floor(age) + (shareAgl ? " · " + shareAgl : "") : "SwimTrack", 64, 240);
     x.font = "800 34px -apple-system, Segoe UI, sans-serif";
     x.fillStyle = "rgba(255,255,255,.9)";
     x.fillText("🏊  SwimTrack", 64, 320);

@@ -533,7 +533,7 @@ function landingSignIn(){
         var _bd=typeof parseDate==='function'?parseDate(sw.birthdate):null;
         var swimAge=_bd?(new Date().getFullYear()-new Date(_bd).getFullYear()):null;
         var age=swimAge||Math.floor(getAgeAt(sw.birthdate,'')||0)||null;
-        if(age)ageLine='<span style="opacity:.8;font-size:12px">Age '+age+' · '+ageGroupLabel(age)+'</span>';
+        if(age){var _agl=ageGroupLabel(age);ageLine='<span style="opacity:.8;font-size:12px">Age '+age+(_agl?' · '+_agl:'')+'</span>';}
       }
 
       // Season tags — auto-detected (see autoAddSeasonId); still removable
@@ -2231,7 +2231,7 @@ function renderSwimmerBanner(){
     +'<div style="font-size:28px;line-height:1">'+icon+'</div>'
     +'<div style="flex:1;min-width:0">'
       +'<div style="font-size:22px;font-weight:800;letter-spacing:-.3px;line-height:1.1">'+sw.name+'</div>'
-      +'<div style="font-size:12px;opacity:.75;margin-top:3px">Player ID: '+sw.id+(sw.birthdate?(' &nbsp;·&nbsp; Born '+sw.birthdate+' &nbsp;·&nbsp; '+(function(){var _bbd=parseDate(sw.birthdate);var _sa=_bbd?(new Date().getFullYear()-new Date(_bbd).getFullYear()):Math.floor(getAgeAt(sw.birthdate,'')||0);return 'Age '+_sa+' · '+ageGroupLabel(_sa);}())):'')+'</div>'    +'</div>'
+      +'<div style="font-size:12px;opacity:.75;margin-top:3px">Player ID: '+sw.id+(sw.birthdate?(' &nbsp;·&nbsp; Born '+sw.birthdate+' &nbsp;·&nbsp; '+(function(){var _bbd=parseDate(sw.birthdate);var _sa=_bbd?(new Date().getFullYear()-new Date(_bbd).getFullYear()):Math.floor(getAgeAt(sw.birthdate,'')||0);var _agl=ageGroupLabel(_sa);return 'Age '+_sa+(_agl?' · '+_agl:'');}())):'')+'</div>'    +'</div>'
     +'<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">'
       +'<div style="text-align:center"><div style="font-size:20px;font-weight:700">'+ss.length+'</div>'
         +'<div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.05em">Season'+(ss.length!==1?'s':'')+'</div></div>'
@@ -2412,10 +2412,7 @@ function ageGroupLabel(age){
   if(!age)return'';
   var a=Math.floor(age);
   if(a<=11)return'U12';
-  if(a===12)return'Age 12';
-  if(a===13)return'Age 13';
-  if(a===14)return'Age 14';
-  if(a===15)return'Age 15';
+  if(a<=15)return''; // ages 12-15: no separate bracket name — callers already show "Age N" itself, so a label here would just repeat it
   if(a<=17)return'Cadet (16-17)';
   if(a<=19)return'Junior (18-19)';
   return'Senior (20+)';
@@ -2672,7 +2669,8 @@ function buildSeasonRecap(){
     var endYear=parseInt(String(sk).split('-')[1])||parseInt(sk);
     var bdTs=sw&&sw.birthdate?parseDate(sw.birthdate):null;
     var seasonAge=(bdTs&&endYear)?(endYear-new Date(bdTs).getFullYear()):null;
-    var ageLabel=(seasonAge!=null)?(' · Age '+seasonAge+' · '+ageGroupLabel(seasonAge)):'';
+    var _sagl=(seasonAge!=null)?ageGroupLabel(seasonAge):'';
+    var ageLabel=(seasonAge!=null)?(' · Age '+seasonAge+(_sagl?' · '+_sagl:'')):'';
 
     var id='recap-'+sk.replace(/[^a-z0-9]/gi,'_');
     var html='<div style="border:1px solid #e5e7eb;border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)">'
@@ -4572,7 +4570,7 @@ function renderRaceResults(){
   sel.innerHTML=raceData.map(function(sw,i){
     return '<button class="ev-btn'+(i===raceHighlight?' active':'')+'" onclick="selectRaceSwimmer('+i+')" style="font-size:12px">'+sw.place+'. '+sw.name+' ('+sw.totalFmt+')</button>';
   }).join('');
-  renderRaceChart();renderRaceMetrics();renderRaceLapTable();renderRaceInsights();renderRacePosition();renderRaceOpenClose();
+  renderRaceChart();renderRaceMetrics();renderRaceLapTable();renderRaceInsights();
 }
 function selectRaceSwimmer(idx){raceHighlight=idx;renderRaceResults();};
 
@@ -4619,7 +4617,7 @@ function renderRaceChart(){
         tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label.replace(/^[★🥇] /,'')+': '+fmtSec(c.raw);}}}},
       scales:{
         x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#999',font:{size:10}}},
-        y:{reverse:true,ticks:{color:'#888',font:{size:10},callback:function(v){return fmtSec(v);}},grid:{color:'rgba(0,0,0,.04)'},title:{display:true,text:'Split time (lower = faster)',color:'#aaa',font:{size:10}}}
+        y:{min:_rYMin,max:_rYMax,ticks:{color:'#888',font:{size:10},callback:function(v){return fmtSec(v);}},grid:{color:'rgba(0,0,0,.04)'},title:{display:true,text:'Split time (lower = faster)',color:'#aaa',font:{size:10}}}
       }
     }
   });

@@ -584,7 +584,7 @@ function HomeTab({ D, swimmer }) {
           <div>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#fff" }}>{swimmer?.name}</div>
             <div style={{ color: "rgba(255,255,255,.85)", fontSize: 13, marginTop: 4 }}>
-              ID {swimmer?.id}{age ? ` · Age ${Math.floor(age)} · ${ageGroupLabel(age)}` : ""}
+              ID {swimmer?.id}{age ? ` · Age ${Math.floor(age)}${ageGroupLabel(age) ? " · " + ageGroupLabel(age) : ""}` : ""}
             </div>
           </div>
           <button onClick={onShare} style={{ flexShrink: 0, background: "rgba(255,255,255,.18)", color: "#fff",
