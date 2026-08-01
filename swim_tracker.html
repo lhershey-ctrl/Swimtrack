@@ -677,7 +677,7 @@ function landingSignIn(){
       +'</div>' // end card
       );
     }).join('');
-    setTimeout(buildSwimmerPhysCharts,0);
+    setTimeout(function(){if(window.buildSwimmerPhysCharts)window.buildSwimmerPhysCharts();},0);
     setTimeout(function(){if(window.refreshAllNameSuggestions)window.refreshAllNameSuggestions();},0);
   }
   window.selectSwimmer=function(idx){

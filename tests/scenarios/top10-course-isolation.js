@@ -57,7 +57,15 @@ module.exports = async function run() {
       page.click('#top10Chip-SCM-2025'),
     ]);
     await fileChooser.setFiles(path.join(__dirname, '..', 'fixtures', 'world-masters-top10-scm-2025-synthetic.pdf'));
-    await page.waitForTimeout(1500);
+    // Client-side PDF parsing is async and its duration varies with machine
+    // load (a slower/shared CI runner can take noticeably longer than a local
+    // dev machine) — wait for the real completion signal (Review button goes
+    // from disabled to enabled once parsedEntries is populated) instead of a
+    // fixed timeout that can be too tight under CI.
+    await page.waitForFunction(() => {
+      const rb = document.getElementById('top10ReviewBtn');
+      return rb && !rb.disabled;
+    }, { timeout: 15000 });
 
     await page.click('#top10ReviewBtn');
     await page.waitForTimeout(800);
