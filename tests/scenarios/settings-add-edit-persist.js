@@ -44,9 +44,17 @@ module.exports = async function run() {
     steps.push({ desc: 'Profile (name/ID/birthdate) is actually persisted to localStorage', ok: true });
 
     // Reload the page entirely — confirms this survives a real session boundary,
-    // not just the in-memory SWIMMERS array from the same page load.
+    // not just the in-memory SWIMMERS array from the same page load. Poll for
+    // the real completion signal (picker actually populated) instead of a
+    // fixed timeout — page-init speed (parsing/executing the whole script,
+    // re-reading localStorage) varies with machine load, and a fixed wait
+    // tuned for a fast local machine can be too tight on a slower/shared CI
+    // runner.
     await page.reload();
-    await page.waitForTimeout(500);
+    await page.waitForFunction(() => {
+      const el = document.getElementById('loadSwimmerPicker');
+      return el && el.textContent.trim().length > 0;
+    }, { timeout: 15000 });
     const pickerAfterReload = await page.$eval('#loadSwimmerPicker', (el) => el.textContent.trim());
     assert(pickerAfterReload.includes('Manual Swimmer'), 'picker should still show the swimmer after a full page reload, got: ' + pickerAfterReload);
     steps.push({ desc: 'Swimmer survives a full page reload (real localStorage persistence, not just in-memory state)', ok: true });
