@@ -1762,7 +1762,7 @@ function TeamNameEditor({ user }) {
       <div style={{ display: "flex", gap: 8 }}>
         <input value={value} onChange={(e) => setValue(e.target.value)}
           style={{ flex: 1, padding: "9px 12px", borderRadius: 10, background: c.card2, color: c.text, border: `1px solid ${c.line}`, fontSize: 14 }} />
-        <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
+        <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save Label</button>
       </div>
       {status && <div style={{ fontSize: 12, color: c.dim, marginTop: 6 }}>{status}</div>}
       <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>
@@ -1822,7 +1822,7 @@ function ActiveTeamNameEditor({ user, teamId, reloadSwimmers }) {
       <div style={{ display: "flex", gap: 8 }}>
         <input value={value} onChange={(e) => setValue(e.target.value)}
           style={{ flex: 1, padding: "9px 12px", borderRadius: 10, background: c.card2, color: c.text, border: `1px solid ${c.line}`, fontSize: 14 }} />
-        <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
+        <button onClick={save} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: c.blue, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save Name</button>
       </div>
       {status && <div style={{ fontSize: 12, color: c.dim, marginTop: 6 }}>{status}</div>}
       <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>
@@ -2163,7 +2163,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmai
 
   function addMeas(setArr, arr, date, value) {
     const v = parseFloat(value);
-    if (!date.trim() || isNaN(v)) { setStatus("Enter a date (DD/MM/YYYY) and a number."); return; }
+    if (!date.trim() || isNaN(v)) { setStatus("Pick a date and enter a number."); return; }
     const next = [...arr, { date: date.trim(), value: v }].sort((a, b) => (parseDate(a.date) || 0) - (parseDate(b.date) || 0));
     setArr(next); setStatus("");
   }
@@ -2210,7 +2210,7 @@ function SwimmerEditor({ sw, open, onToggle, reloadSwimmers, coachUid, coachEmai
           <MeasEditor title="⚖️ Weight (kg)" unit="kg" color={c.amber} arr={weights} setArr={setWeights} onAdd={addMeas} />
 
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button onClick={save} style={{ flex: 1, padding: 11, borderRadius: 12, border: "none", background: c.green, color: "#fff", fontWeight: 800, cursor: "pointer" }}>Save</button>
+            <button onClick={save} style={{ flex: 1, padding: 11, borderRadius: 12, border: "none", background: c.green, color: "#fff", fontWeight: 800, cursor: "pointer" }}>Save Changes</button>
             <button onClick={del} style={{ padding: "11px 16px", borderRadius: 12, border: `1px solid ${c.red}`, background: "transparent", color: c.red, fontWeight: 700, cursor: "pointer" }}>Remove</button>
           </div>
           {status && <div style={{ marginTop: 8, fontSize: 12.5, color: status[0] === "✅" ? c.green : c.amber }}>{status}</div>}
@@ -2228,6 +2228,13 @@ function Field({ label, children }) {
     </div>
   );
 }
+// <input type="date"> gives ISO (yyyy-mm-dd); the rest of the app (parseDate,
+// growth charts, desktop) expects DD/MM/YYYY — convert at the boundary so no
+// stored data or downstream code needs to change.
+function isoToDDMMYYYY(iso) {
+  const m = (iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
 function MeasEditor({ title, unit, color, arr, setArr, onAdd }) {
   const { c, s } = useUI();
   const [date, setDate] = useState("");
@@ -2244,9 +2251,9 @@ function MeasEditor({ title, unit, color, arr, setArr, onAdd }) {
         </div>
       ))}
       <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-        <input value={date} onChange={(e) => setDate(e.target.value)} placeholder="DD/MM/YYYY" style={{ ...s.input, flex: 1 }} />
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...s.input, flex: 1 }} />
         <input value={value} onChange={(e) => setValue(e.target.value)} placeholder={unit} inputMode="decimal" style={{ ...s.input, width: 70 }} />
-        <button onClick={() => { onAdd(setArr, arr, date, value); setDate(""); setValue(""); }} style={{ padding: "0 14px", borderRadius: 10, border: "none", background: color, color: "#fff", fontWeight: 700, cursor: "pointer" }}>+</button>
+        <button onClick={() => { onAdd(setArr, arr, isoToDDMMYYYY(date), value); setDate(""); setValue(""); }} style={{ padding: "0 14px", borderRadius: 10, border: "none", background: color, color: "#fff", fontWeight: 700, cursor: "pointer" }}>+</button>
       </div>
       {chart.length > 1 && (
         <div style={{ height: 130, marginTop: 10 }}>
